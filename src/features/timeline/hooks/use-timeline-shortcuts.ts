@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useTimelineStore } from '../stores/timeline-store';
+import { useSelectionStore } from '@/features/editor/stores/selection-store';
 
 export interface TimelineShortcutCallbacks {
   onPlay?: () => void;
@@ -18,8 +19,8 @@ export interface TimelineShortcutCallbacks {
  * - Space: Play/Pause
  * - Arrow Left/Right: Previous/Next frame
  * - Home/End: Go to start/end
- * - Delete/Backspace: Delete selected clips
- * - C: Split clip at playhead
+ * - Delete/Backspace: Delete selected items
+ * - C: Split item at playhead
  * - Cmd/Ctrl+Z: Undo
  * - Cmd/Ctrl+Shift+Z: Redo
  */
@@ -30,8 +31,8 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
   const setCurrentFrame = usePlaybackStore((s) => s.setCurrentFrame);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
 
-  const selectedItemIds = useTimelineStore((s) => s.selectedItemIds);
-  const removeClips = useTimelineStore((s) => s.removeClips);
+  const selectedItemIds = useSelectionStore((s) => s.selectedItemIds);
+  const removeItems = useTimelineStore((s) => s.removeItems);
   const fps = useTimelineStore((s) => s.fps);
 
   useEffect(() => {
@@ -83,10 +84,10 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
 
         case 'Delete':
         case 'Backspace':
-          // Delete selected clips
+          // Delete selected items
           if (selectedItemIds.length > 0) {
             event.preventDefault();
-            removeClips(selectedItemIds);
+            removeItems(selectedItemIds);
             if (callbacks.onDelete) {
               callbacks.onDelete();
             }
@@ -95,7 +96,7 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
 
         case 'c':
         case 'C':
-          // Split clip at playhead
+          // Split item at playhead
           if (!modifier) {
             event.preventDefault();
             if (callbacks.onSplit) {
@@ -162,7 +163,7 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
     setCurrentFrame,
     isPlaying,
     selectedItemIds,
-    removeClips,
+    removeItems,
     fps,
     callbacks,
   ]);

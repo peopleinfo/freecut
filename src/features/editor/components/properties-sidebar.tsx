@@ -55,11 +55,11 @@ export function PropertiesSidebar() {
                   No Selection
                 </h3>
                 <p className="text-xs text-muted-foreground max-w-[200px]">
-                  Select a clip on the timeline to edit its properties
+                  Select an item on the timeline to edit its properties
                 </p>
               </div>
 
-              {/* TODO: Add property controls when a clip is selected
+              {/* TODO: Add property controls when an item is selected
                   Example: Transform, Effects, Opacity, Blend Mode, etc.
               */}
             </div>

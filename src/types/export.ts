@@ -7,21 +7,9 @@ export interface ExportSettings {
   audioBitrate?: string;
 }
 
-export interface RemotionItem {
-  id: string;
-  from: number;
-  durationInFrames: number;
-  offset?: number;
-  type: 'video' | 'audio' | 'image';
-  src: string;
-}
-
-export interface RemotionTrack {
-  name: string;
-  items: RemotionItem[];
-}
+import type { TimelineTrack } from './timeline';
 
 export interface RemotionInputProps {
   fps: number;
-  tracks: RemotionTrack[];
+  tracks: TimelineTrack[];
 }

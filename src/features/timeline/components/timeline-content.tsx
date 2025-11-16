@@ -13,13 +13,13 @@ export interface TimelineContentProps {
  * Main timeline rendering area that composes:
  * - TimelineMarkers (time ruler)
  * - TimelinePlayhead (in ruler)
- * - TimelineTracks (all tracks with clips)
+ * - TimelineTracks (all tracks with items)
  * - TimelinePlayhead (through tracks)
  */
 export function TimelineContent({ duration }: TimelineContentProps) {
   // Use granular selectors - Zustand v5 best practice
   const tracks = useTimelineStore((s) => s.tracks);
-  const clips = useTimelineStore((s) => s.clips);
+  const items = useTimelineStore((s) => s.items);
 
   return (
     <div className="flex-1 overflow-x-auto overflow-y-hidden relative bg-background/30">
@@ -32,7 +32,7 @@ export function TimelineContent({ duration }: TimelineContentProps) {
       {/* Track lanes */}
       <div className="relative">
         {tracks.map((track) => (
-          <TimelineTrack key={track.id} track={track} clips={clips} />
+          <TimelineTrack key={track.id} track={track} items={items} />
         ))}
 
         {/* Playhead line through all tracks */}

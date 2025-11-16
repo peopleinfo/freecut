@@ -1,11 +1,11 @@
-import type { TimelineClip, Gap } from '@/types/timeline';
+import type { TimelineItem, Gap } from '@/types/timeline';
 
-export function findGaps(clips: TimelineClip[]): Gap[] {
+export function findGaps(items: TimelineItem[]): Gap[] {
   // TODO: Implement gap finding logic
   return [];
 }
 
-export function removeGaps(clips: TimelineClip[]): TimelineClip[] {
+export function removeGaps(items: TimelineItem[]): TimelineItem[] {
   // TODO: Implement gap removal logic
-  return clips;
+  return items;
 }

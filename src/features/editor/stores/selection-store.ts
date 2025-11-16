@@ -4,31 +4,31 @@ import type { SelectionState, SelectionActions } from '../types';
 // IMPORTANT: Always use granular selectors to prevent unnecessary re-renders!
 //
 // ✅ CORRECT: Use granular selectors
-// const selectedClipIds = useSelectionStore(s => s.selectedClipIds);
-// const selectClips = useSelectionStore(s => s.selectClips);
+// const selectedItemIds = useSelectionStore(s => s.selectedItemIds);
+// const selectItems = useSelectionStore(s => s.selectItems);
 //
 // ❌ WRONG: Don't destructure the entire store
-// const { selectedClipIds, selectClips } = useSelectionStore();
+// const { selectedItemIds, selectItems } = useSelectionStore();
 
 export const useSelectionStore = create<SelectionState & SelectionActions>((set) => ({
   // State
-  selectedClipIds: [],
+  selectedItemIds: [],
   selectedTrackId: null,
   selectionType: null,
 
   // Actions
-  selectClips: (ids) => set({
-    selectedClipIds: ids,
+  selectItems: (ids) => set({
+    selectedItemIds: ids,
     selectedTrackId: null,
-    selectionType: ids.length > 0 ? 'clip' : null,
+    selectionType: ids.length > 0 ? 'item' : null,
   }),
   selectTrack: (id) => set({
     selectedTrackId: id,
-    selectedClipIds: [],
+    selectedItemIds: [],
     selectionType: id ? 'track' : null,
   }),
   clearSelection: () => set({
-    selectedClipIds: [],
+    selectedItemIds: [],
     selectedTrackId: null,
     selectionType: null,
   }),

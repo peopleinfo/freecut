@@ -19,13 +19,13 @@ export interface EditorActions {
 }
 
 export interface SelectionState {
-  selectedClipIds: string[];
+  selectedItemIds: string[];
   selectedTrackId: string | null;
-  selectionType: 'clip' | 'track' | null;
+  selectionType: 'item' | 'track' | null;
 }
 
 export interface SelectionActions {
-  selectClips: (ids: string[]) => void;
+  selectItems: (ids: string[]) => void;
   selectTrack: (id: string | null) => void;
   clearSelection: () => void;
 }

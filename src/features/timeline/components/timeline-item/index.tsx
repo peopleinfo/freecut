@@ -1,18 +1,18 @@
-import type { TimelineClip } from '@/types/timeline';
+import type { TimelineItem } from '@/types/timeline';
 import { useTimelineZoom } from '../../hooks/use-timeline-zoom';
-import { useTimelineStore } from '../../stores/timeline-store';
+import { useSelectionStore } from '@/features/editor/stores/selection-store';
 
 export interface TimelineItemProps {
-  clip: TimelineClip;
+  item: TimelineItem;
 }
 
 /**
  * Timeline Item Component
  *
- * Renders an individual clip on the timeline:
- * - Positioned based on start time
- * - Width based on duration
- * - Visual styling based on clip type
+ * Renders an individual item on the timeline:
+ * - Positioned based on start frame (from)
+ * - Width based on duration in frames
+ * - Visual styling based on item type
  * - Selection state
  * - Click to select
  *
@@ -22,28 +22,30 @@ export interface TimelineItemProps {
  * - Trim indicators
  * - Thumbnail preview
  */
-export function TimelineItem({ clip }: TimelineItemProps) {
+export function TimelineItem({ item }: TimelineItemProps) {
   const { timeToPixels } = useTimelineZoom();
-  const selectedItemIds = useTimelineStore((s) => s.selectedItemIds);
-  const selectItems = useTimelineStore((s) => s.selectItems);
+  const selectedItemIds = useSelectionStore((s) => s.selectedItemIds);
+  const selectItems = useSelectionStore((s) => s.selectItems);
 
-  const isSelected = selectedItemIds.includes(clip.id);
+  const isSelected = selectedItemIds.includes(item.id);
 
-  // Calculate position and width
-  const left = timeToPixels(clip.start);
-  const width = timeToPixels(clip.duration);
+  // Calculate position and width (convert frames to time)
+  const left = timeToPixels(item.from);
+  const width = timeToPixels(item.durationInFrames);
 
-  // Get color based on clip type or custom color
-  const getClipColor = () => {
-    if (clip.color) return clip.color;
-
-    switch (clip.type) {
+  // Get color based on item type
+  const getItemColor = () => {
+    switch (item.type) {
       case 'video':
         return 'bg-primary/30 border-primary';
       case 'audio':
         return 'bg-green-500/30 border-green-500';
       case 'image':
         return 'bg-blue-500/30 border-blue-500';
+      case 'text':
+        return `bg-purple-500/30 border-purple-500`;
+      case 'shape':
+        return 'bg-orange-500/30 border-orange-500';
       default:
         return 'bg-primary/30 border-primary';
     }
@@ -55,13 +57,13 @@ export function TimelineItem({ clip }: TimelineItemProps) {
     if (e.metaKey || e.ctrlKey) {
       // Multi-select: add to selection
       if (isSelected) {
-        selectItems(selectedItemIds.filter((id) => id !== clip.id));
+        selectItems(selectedItemIds.filter((id) => id !== item.id));
       } else {
-        selectItems([...selectedItemIds, clip.id]);
+        selectItems([...selectedItemIds, item.id]);
       }
     } else {
       // Single select
-      selectItems([clip.id]);
+      selectItems([item.id]);
     }
   };
 
@@ -69,7 +71,7 @@ export function TimelineItem({ clip }: TimelineItemProps) {
     <div
       className={`
         absolute top-2 h-12 rounded overflow-hidden cursor-pointer transition-all
-        ${getClipColor()}
+        ${getItemColor()}
         ${isSelected ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''}
         hover:brightness-110
       `}
@@ -79,9 +81,9 @@ export function TimelineItem({ clip }: TimelineItemProps) {
       }}
       onClick={handleClick}
     >
-      {/* Clip label */}
+      {/* Item label */}
       <div className="px-2 py-1 text-xs font-medium text-primary-foreground truncate">
-        {clip.label}
+        {item.label}
       </div>
 
       {/* Gradient overlay for depth */}

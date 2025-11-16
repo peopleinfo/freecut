@@ -21,30 +21,25 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
   temporal((set) => ({
   // State
   tracks: [],
-  clips: [],
+  items: [],
   currentFrame: 0,
   isPlaying: false,
   fps: 30,
-  zoomLevel: 1,
   scrollPosition: 0,
   snapEnabled: true,
-  selectedItemIds: [],
-  selectedTrackId: null,
 
   // Actions
   setTracks: (tracks) => set({ tracks }),
-  addClip: (clip) => set((state) => ({ clips: [...state.clips, clip] })),
-  updateClip: (id, updates) => set((state) => ({
-    clips: state.clips.map((c) => (c.id === id ? { ...c, ...updates } : c)),
+  addItem: (item) => set((state) => ({ items: [...state.items, item] })),
+  updateItem: (id, updates) => set((state) => ({
+    items: state.items.map((i) => (i.id === id ? { ...i, ...updates } : i)),
   })),
-  removeClips: (ids) => set((state) => ({
-    clips: state.clips.filter((c) => !ids.includes(c.id)),
+  removeItems: (ids) => set((state) => ({
+    items: state.items.filter((i) => !ids.includes(i.id)),
   })),
   setCurrentFrame: (frame) => set({ currentFrame: frame }),
   play: () => set({ isPlaying: true }),
   pause: () => set({ isPlaying: false }),
-  setZoom: (level) => set({ zoomLevel: level }),
   toggleSnap: () => set((state) => ({ snapEnabled: !state.snapEnabled })),
-  selectItems: (ids) => set({ selectedItemIds: ids }),
   }))
 );

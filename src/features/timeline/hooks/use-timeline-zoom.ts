@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useTimelineStore } from '../stores/timeline-store';
+import { useZoomStore } from '../stores/zoom-store';
 
 export interface UseTimelineZoomOptions {
   initialZoom?: number;
@@ -15,16 +16,16 @@ export interface UseTimelineZoomOptions {
 export function useTimelineZoom(options: UseTimelineZoomOptions = {}) {
   const {
     minZoom = 0.1,
-    maxZoom = 2,
+    maxZoom = 10,
   } = options;
 
   // Use granular selectors - Zustand v5 best practice
-  const zoomLevel = useTimelineStore((s) => s.zoomLevel);
-  const setZoom = useTimelineStore((s) => s.setZoom);
+  const zoomLevel = useZoomStore((s) => s.level);
+  const setZoomLevel = useZoomStore((s) => s.setZoomLevel);
+  const zoomInAction = useZoomStore((s) => s.zoomIn);
+  const zoomOutAction = useZoomStore((s) => s.zoomOut);
+  const pixelsPerSecond = useZoomStore((s) => s.pixelsPerSecond);
   const fps = useTimelineStore((s) => s.fps);
-
-  // Pixels per second at current zoom level
-  const pixelsPerSecond = zoomLevel * 100;
 
   /**
    * Convert time (in seconds) to pixels at current zoom level
@@ -69,25 +70,25 @@ export function useTimelineZoom(options: UseTimelineZoomOptions = {}) {
   );
 
   /**
-   * Zoom in by 10%
+   * Zoom in
    */
   const zoomIn = useCallback(() => {
-    setZoom(Math.min(maxZoom, zoomLevel + 0.1));
-  }, [zoomLevel, maxZoom, setZoom]);
+    zoomInAction();
+  }, [zoomInAction]);
 
   /**
-   * Zoom out by 10%
+   * Zoom out
    */
   const zoomOut = useCallback(() => {
-    setZoom(Math.max(minZoom, zoomLevel - 0.1));
-  }, [zoomLevel, minZoom, setZoom]);
+    zoomOutAction();
+  }, [zoomOutAction]);
 
   /**
    * Reset zoom to 1x
    */
   const resetZoom = useCallback(() => {
-    setZoom(1);
-  }, [setZoom]);
+    setZoomLevel(1);
+  }, [setZoomLevel]);
 
   return {
     zoomLevel,
@@ -99,6 +100,6 @@ export function useTimelineZoom(options: UseTimelineZoomOptions = {}) {
     zoomIn,
     zoomOut,
     resetZoom,
-    setZoom: (level: number) => setZoom(Math.max(minZoom, Math.min(maxZoom, level))),
+    setZoom: (level: number) => setZoomLevel(Math.max(minZoom, Math.min(maxZoom, level))),
   };
 }
