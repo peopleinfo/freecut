@@ -22,7 +22,7 @@ function NewProject() {
       if (result.success && result.project) {
         // Navigate to editor with new project
         navigate({
-          to: '/projects/$projectId/editor',
+          to: '/editor/$projectId',
           params: { projectId: result.project.id },
         });
       } else {

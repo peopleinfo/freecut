@@ -78,7 +78,7 @@ export function ProjectCard({ project, onEdit }: ProjectCardProps) {
     <div className="group relative panel-bg border border-border rounded-lg overflow-hidden transition-all hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5">
       {/* Thumbnail */}
       <Link
-        to="/projects/$projectId/editor"
+        to="/editor/$projectId"
         params={{ projectId: project.id }}
         className="block relative aspect-video bg-secondary/30 overflow-hidden"
       >
@@ -137,7 +137,7 @@ export function ProjectCard({ project, onEdit }: ProjectCardProps) {
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem asChild>
                 <Link
-                  to="/projects/$projectId/editor"
+                  to="/editor/$projectId"
                   params={{ projectId: project.id }}
                   className="flex items-center gap-2 cursor-pointer"
                 >

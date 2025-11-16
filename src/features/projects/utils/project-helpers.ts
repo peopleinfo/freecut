@@ -1,10 +1,13 @@
 import type { Project } from '@/types/project';
 
 /**
- * Generate a unique project ID
+ * Generate a unique project ID (8-character base62 hash)
  */
 export function generateProjectId(): string {
-  return `project_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const array = new Uint8Array(8);
+  crypto.getRandomValues(array);
+  return Array.from(array).map(b => chars[b % 62]).join('');
 }
 
 /**
