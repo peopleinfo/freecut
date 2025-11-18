@@ -39,6 +39,12 @@ export function TimelineTrack({ track, items, timelineWidth }: TimelineTrackProp
   const trackItems = items.filter((item) => item.trackId === track.id);
 
   const handleDragOver = (e: React.DragEvent) => {
+    // Don't allow drops on locked tracks
+    if (track.locked) {
+      e.dataTransfer.dropEffect = 'none';
+      return;
+    }
+
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
     setIsDragOver(true);
@@ -67,6 +73,11 @@ export function TimelineTrack({ track, items, timelineWidth }: TimelineTrackProp
     e.preventDefault();
     setIsDragOver(false);
     setDropPreviewX(null);
+
+    // Don't allow drops on locked tracks
+    if (track.locked) {
+      return;
+    }
 
     // Parse drag data
     try {
@@ -187,7 +198,7 @@ export function TimelineTrack({ track, items, timelineWidth }: TimelineTrackProp
       onDrop={handleDrop}
     >
       {/* Drop indicator */}
-      {isDragOver && (
+      {isDragOver && !track.locked && (
         <>
           <div className="absolute inset-0 border-2 border-dashed border-primary pointer-events-none rounded" />
           {/* Drop preview line */}
@@ -200,10 +211,17 @@ export function TimelineTrack({ track, items, timelineWidth }: TimelineTrackProp
         </>
       )}
 
-      {/* Render all items for this track */}
+      {/* Render all items for this track - always visible in timeline UI */}
       {trackItems.map((item) => (
-        <TimelineItem key={item.id} item={item} timelineDuration={30} />
+        <TimelineItem key={item.id} item={item} timelineDuration={30} trackLocked={track.locked} />
       ))}
+
+      {/* Locked track overlay indicator */}
+      {track.locked && (
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          <div className="text-xs text-muted-foreground/50 font-mono">LOCKED</div>
+        </div>
+      )}
     </div>
   );
 }

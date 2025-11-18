@@ -23,10 +23,12 @@ export const dragOffsetRef = { current: { x: 0, y: 0 } };
  *
  * @param item - The timeline item to make draggable
  * @param timelineDuration - Total timeline duration in seconds
+ * @param trackLocked - Whether the track is locked (prevents dragging)
  */
 export function useTimelineDrag(
   item: TimelineItem,
-  timelineDuration: number
+  timelineDuration: number,
+  trackLocked: boolean = false
 ): UseTimelineDragReturn {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -105,6 +107,11 @@ export function useTimelineDrag(
    */
   const handleDragStart = useCallback(
     (e: React.MouseEvent) => {
+      // Don't allow dragging on locked tracks
+      if (trackLocked) {
+        return;
+      }
+
       // Prevent if clicking on resize handles
       const target = e.target as HTMLElement;
       if (target.classList.contains('cursor-ew-resize')) {
@@ -195,7 +202,7 @@ export function useTimelineDrag(
       window.addEventListener('mousemove', checkDragThreshold);
       window.addEventListener('mouseup', cancelDrag);
     },
-    [item.id, item.from, item.trackId, selectItems]
+    [item.id, item.from, item.trackId, selectItems, trackLocked, setDragState]
   );
 
   /**

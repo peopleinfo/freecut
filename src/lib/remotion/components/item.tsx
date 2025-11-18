@@ -4,6 +4,7 @@ import type { TimelineItem } from '@/types/timeline';
 
 export interface ItemProps {
   item: TimelineItem;
+  muted?: boolean;
 }
 
 /**
@@ -15,8 +16,9 @@ export interface ItemProps {
  * - Image: Uses img tag
  * - Text: Renders text with styling
  * - Shape: Renders solid colors or shapes
+ * - Respects mute state for audio/video items
  */
-export const Item: React.FC<ItemProps> = ({ item }) => {
+export const Item: React.FC<ItemProps> = ({ item, muted = false }) => {
   if (item.type === 'video') {
     // Guard against missing src (media resolution failed)
     if (!item.src) {
@@ -30,6 +32,7 @@ export const Item: React.FC<ItemProps> = ({ item }) => {
       <OffthreadVideo
         src={item.src}
         startFrom={item.offset || 0}
+        volume={muted ? 0 : 1}
       />
     );
   }
@@ -43,6 +46,7 @@ export const Item: React.FC<ItemProps> = ({ item }) => {
       <Audio
         src={item.src}
         startFrom={item.offset || 0}
+        volume={muted ? 0 : 1}
       />
     );
   }

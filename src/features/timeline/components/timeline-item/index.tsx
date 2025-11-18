@@ -9,6 +9,7 @@ import { DRAG_OPACITY } from '../../constants';
 export interface TimelineItemProps {
   item: TimelineItem;
   timelineDuration?: number;
+  trackLocked?: boolean;
 }
 
 /**
@@ -28,7 +29,7 @@ export interface TimelineItemProps {
  * - Trim indicators
  * - Thumbnail preview
  */
-export function TimelineItem({ item, timelineDuration = 30 }: TimelineItemProps) {
+export function TimelineItem({ item, timelineDuration = 30, trackLocked = false }: TimelineItemProps) {
   const { timeToPixels } = useTimelineZoom();
   const selectedItemIds = useSelectionStore((s) => s.selectedItemIds);
   const selectItems = useSelectionStore((s) => s.selectItems);
@@ -36,8 +37,8 @@ export function TimelineItem({ item, timelineDuration = 30 }: TimelineItemProps)
 
   const isSelected = selectedItemIds.includes(item.id);
 
-  // Drag-and-drop functionality (local state for anchor item)
-  const { isDragging, dragOffset, handleDragStart } = useTimelineDrag(item, timelineDuration);
+  // Drag-and-drop functionality (local state for anchor item) - disabled if track is locked
+  const { isDragging, dragOffset, handleDragStart } = useTimelineDrag(item, timelineDuration, trackLocked);
 
   // Check if this item is part of a multi-drag (but not the anchor)
   const isPartOfDrag = dragState?.isDragging && dragState.draggedItemIds.includes(item.id) && !isDragging;
@@ -126,6 +127,11 @@ export function TimelineItem({ item, timelineDuration = 30 }: TimelineItemProps)
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
 
+    // Don't allow selection on locked tracks
+    if (trackLocked) {
+      return;
+    }
+
     if (e.metaKey || e.ctrlKey) {
       // Multi-select: add to selection
       if (isSelected) {
@@ -146,29 +152,29 @@ export function TimelineItem({ item, timelineDuration = 30 }: TimelineItemProps)
       className={`
         absolute top-2 h-12 rounded overflow-hidden transition-all
         ${getItemColor()}
-        ${isSelected ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''}
-        ${isBeingDragged ? 'cursor-grabbing' : 'cursor-grab'}
-        ${!isBeingDragged && 'hover:brightness-110'}
+        ${isSelected && !trackLocked ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''}
+        ${trackLocked ? 'cursor-not-allowed opacity-60' : isBeingDragged ? 'cursor-grabbing' : 'cursor-grab'}
+        ${!isBeingDragged && !trackLocked && 'hover:brightness-110'}
       `}
       style={{
         left: `${left}px`,
         width: `${width}px`,
         // Anchor item uses its own dragOffset, followers get updated via RAF
         transform: isDragging ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
-        opacity: isDragging ? DRAG_OPACITY : 1,
+        opacity: isDragging ? DRAG_OPACITY : trackLocked ? 0.6 : 1,
         transition: isDragging ? 'none' : 'all 0.2s',
         pointerEvents: isDragging ? 'none' : 'auto',
       }}
       onClick={handleClick}
-      onMouseDown={handleDragStart}
+      onMouseDown={trackLocked ? undefined : handleDragStart}
     >
       {/* Item label */}
       <div className="px-2 py-1 text-xs font-medium text-primary-foreground truncate">
         {item.label}
       </div>
 
-      {/* Resize handles (placeholder for future implementation) */}
-      {isSelected && (
+      {/* Resize handles (placeholder for future implementation) - disabled on locked tracks */}
+      {isSelected && !trackLocked && (
         <>
           {/* Left handle */}
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary cursor-ew-resize" />

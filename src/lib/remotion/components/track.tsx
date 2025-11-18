@@ -5,6 +5,7 @@ import { Item } from './item';
 
 export interface TrackProps {
   track: TimelineTrack;
+  muted?: boolean;
 }
 
 /**
@@ -14,8 +15,9 @@ export interface TrackProps {
  * Following Remotion best practices from the guide:
  * - Each item is wrapped in a <Sequence> with `from` and `durationInFrames`
  * - Items are rendered in an <AbsoluteFill> so they overlay each other
+ * - Respects track mute state for audio/video items
  */
-export const Track: React.FC<TrackProps> = ({ track }) => {
+export const Track: React.FC<TrackProps> = ({ track, muted = false }) => {
   return (
     <AbsoluteFill>
       {track.items.map((item) => {
@@ -25,7 +27,7 @@ export const Track: React.FC<TrackProps> = ({ track }) => {
             from={item.from}
             durationInFrames={item.durationInFrames}
           >
-            <Item item={item} />
+            <Item item={item} muted={muted} />
           </Sequence>
         );
       })}
