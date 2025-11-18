@@ -14,6 +14,7 @@ import { useTimelineShortcuts } from '@/features/timeline/hooks/use-timeline-sho
 import { useEditorHotkeys } from '@/hooks/use-editor-hotkeys';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import type { TimelineTrack } from '@/types/timeline';
+import type { ProjectTimeline } from '@/types/project';
 
 export interface EditorProps {
   projectId: string;
@@ -23,6 +24,7 @@ export interface EditorProps {
     width: number;
     height: number;
     fps: number;
+    timeline?: ProjectTimeline;
   };
 }
 
@@ -37,50 +39,84 @@ export interface EditorProps {
  * - Comprehensive keyboard shortcuts
  */
 export function Editor({ projectId, project }: EditorProps) {
-  const setTracks = useTimelineStore((s) => s.setTracks);
-
-  // Initialize timeline with sample tracks (only runs when projectId changes)
+  // Initialize timeline from project data (or create default tracks for new projects)
   useEffect(() => {
-    // Create sample tracks (generic containers - items have colors)
-    const sampleTracks: TimelineTrack[] = [
-      {
-        id: 'track-1',
-        name: 'Track 1',
-        height: 64,
-        locked: false,
-        muted: false,
-        solo: false,
-        order: 0,
-        items: [],
-      },
-      {
-        id: 'track-2',
-        name: 'Track 2',
-        height: 64,
-        locked: false,
-        muted: false,
-        solo: false,
-        order: 1,
-        items: [],
-      },
-      {
-        id: 'track-3',
-        name: 'Track 3',
-        height: 56,
-        locked: false,
-        muted: false,
-        solo: false,
-        order: 2,
-        items: [],
-      },
-    ];
+    const { setTracks } = useTimelineStore.getState();
 
-    setTracks(sampleTracks);
+    if (project.timeline) {
+      // Load timeline from project data (router already loaded it)
+      const tracksWithItems = project.timeline.tracks.map(track => ({
+        ...track,
+        items: [], // Items are stored separately in the store
+      }));
+
+      // Set both tracks and items from project data
+      useTimelineStore.setState({
+        tracks: tracksWithItems,
+        items: project.timeline.items as any, // Type assertion needed for serialization
+      });
+    } else {
+      // Initialize with default tracks for new projects
+      setTracks([
+        {
+          id: 'track-1',
+          name: 'Track 1',
+          height: 64,
+          locked: false,
+          muted: false,
+          solo: false,
+          order: 0,
+          items: [],
+        },
+        {
+          id: 'track-2',
+          name: 'Track 2',
+          height: 64,
+          locked: false,
+          muted: false,
+          solo: false,
+          order: 1,
+          items: [],
+        },
+        {
+          id: 'track-3',
+          name: 'Track 3',
+          height: 56,
+          locked: false,
+          muted: false,
+          solo: false,
+          order: 2,
+          items: [],
+        },
+      ]);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]); // Only re-initialize when projectId changes
+  }, [projectId, project.timeline]); // Re-initialize when projectId or timeline data changes
+
+  // Save timeline to project
+  const handleSave = async () => {
+    const { saveTimeline } = useTimelineStore.getState();
+    try {
+      await saveTimeline(projectId);
+      console.log('Project saved successfully');
+      // TODO: Show success toast notification
+    } catch (error) {
+      console.error('Failed to save project:', error);
+      // TODO: Show error toast notification
+    }
+  };
+
+  const handleExport = () => {
+    // TODO: Implement export functionality
+    console.log('Export video for project:', projectId);
+  };
 
   // Enable keyboard shortcuts
-  useEditorHotkeys(); // Global editor shortcuts (save, export, etc.)
+  useEditorHotkeys({
+    onSave: handleSave,
+    onExport: handleExport,
+  });
+
   useTimelineShortcuts({
     onPlay: () => console.log('Playing'),
     onPause: () => console.log('Paused'),
@@ -89,11 +125,6 @@ export function Editor({ projectId, project }: EditorProps) {
     onUndo: () => console.log('Undo'),
     onRedo: () => console.log('Redo'),
   });
-
-  const handleExport = () => {
-    // TODO: Implement export functionality
-    console.log('Export video for project:', projectId);
-  };
 
   // TODO: Get actual timeline duration from project/timeline store
   const timelineDuration = 30; // 30 seconds placeholder
@@ -105,6 +136,7 @@ export function Editor({ projectId, project }: EditorProps) {
         <Toolbar
           projectId={projectId}
           project={project}
+          onSave={handleSave}
           onExport={handleExport}
         />
 

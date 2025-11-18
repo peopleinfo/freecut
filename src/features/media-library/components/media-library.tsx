@@ -30,6 +30,7 @@ export interface MediaLibraryProps {
 export function MediaLibrary({ onMediaSelect }: MediaLibraryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [idsToDelete, setIdsToDelete] = useState<string[]>([]);
 
   // Store selectors
   const loadMediaItems = useMediaLibraryStore((s) => s.loadMediaItems);
@@ -88,15 +89,21 @@ export function MediaLibrary({ onMediaSelect }: MediaLibraryProps) {
 
   const handleDeleteSelected = () => {
     if (selectedMediaIds.length === 0) return;
+    // Capture the IDs BEFORE opening dialog (selection may be cleared by click outside)
+    setIdsToDelete([...selectedMediaIds]);
     setShowDeleteDialog(true);
   };
 
   const handleConfirmDelete = async () => {
+    console.log('Deleting items:', idsToDelete);
     setShowDeleteDialog(false);
     try {
-      await deleteMediaBatch(selectedMediaIds);
+      await deleteMediaBatch(idsToDelete);
+      console.log('Delete completed successfully');
+      setIdsToDelete([]); // Clear after successful delete
     } catch (error) {
       console.error('Delete failed:', error);
+      setIdsToDelete([]); // Clear even on error
     }
   };
 
@@ -331,14 +338,14 @@ export function MediaLibrary({ onMediaSelect }: MediaLibraryProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete selected items?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete {selectedMediaIds.length} selected item{selectedMediaIds.length > 1 ? 's' : ''}?
+              Are you sure you want to delete {idsToDelete.length} selected item{idsToDelete.length > 1 ? 's' : ''}?
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete {selectedMediaIds.length} item{selectedMediaIds.length > 1 ? 's' : ''}
+              Delete {idsToDelete.length} item{idsToDelete.length > 1 ? 's' : ''}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

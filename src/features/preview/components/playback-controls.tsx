@@ -41,8 +41,9 @@ export function PlaybackControls({ totalFrames, fps }: PlaybackControlsProps) {
   const setCurrentFrame = usePlaybackStore((s) => s.setCurrentFrame);
   const setVolume = usePlaybackStore((s) => s.setVolume);
 
-  // Handle automatic playback loop
-  usePlaybackLoop({ totalFrames, fps });
+  // Note: Automatic playback loop is now handled by Remotion Player
+  // The Player controls frame advancement via frameupdate events
+  // usePlaybackLoop({ totalFrames, fps }); // Disabled - Player handles this now
 
   const handleGoToStart = () => setCurrentFrame(0);
   const handleGoToEnd = () => setCurrentFrame(totalFrames);

@@ -5,6 +5,7 @@ export interface PlaybackState {
   loop: boolean;
   volume: number;
   muted: boolean;
+  zoom: number;
 }
 
 export interface PlaybackActions {
@@ -16,4 +17,5 @@ export interface PlaybackActions {
   toggleLoop: () => void;
   setVolume: (volume: number) => void;
   toggleMute: () => void;
+  setZoom: (zoom: number) => void;
 }

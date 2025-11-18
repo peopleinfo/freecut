@@ -13,11 +13,16 @@ import {
 import { useProjectStore } from '@/features/projects/stores/project-store';
 import { useProjectActions } from '@/features/projects/hooks/use-project-actions';
 import { useProjectsLoading, useProjectsError } from '@/features/projects/hooks/use-project-selectors';
+import { cleanupBlobUrls } from '@/features/preview/utils/media-resolver';
 import type { Project } from '@/types/project';
 import type { ProjectFormData } from '@/features/projects/utils/validation';
 
 export const Route = createFileRoute('/projects/')({
   component: ProjectsIndex,
+  // Clean up any media blob URLs when returning to projects page
+  beforeLoad: () => {
+    cleanupBlobUrls();
+  },
   loader: async () => {
     // Load projects from IndexedDB into store
     const { loadProjects } = useProjectStore.getState();

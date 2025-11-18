@@ -14,6 +14,7 @@ import {
   Undo2,
   Redo2,
   Download,
+  Save,
 } from 'lucide-react';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 
@@ -26,10 +27,11 @@ export interface ToolbarProps {
     height: number;
     fps: number;
   };
+  onSave?: () => void;
   onExport?: () => void;
 }
 
-export function Toolbar({ project, onExport }: ToolbarProps) {
+export function Toolbar({ project, onSave, onExport }: ToolbarProps) {
   // Access undo/redo from Zundo temporal middleware
   const handleUndo = () => {
     useTimelineStore.temporal.getState().undo();
@@ -137,11 +139,18 @@ export function Toolbar({ project, onExport }: ToolbarProps) {
 
       <Separator orientation="vertical" className="h-6" />
 
-      {/* Export */}
-      <Button size="sm" className="gap-2 glow-primary-sm" onClick={onExport}>
-        <Download className="w-4 h-4" />
-        Export
-      </Button>
+      {/* Save & Export */}
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" className="gap-2" onClick={onSave}>
+          <Save className="w-4 h-4" />
+          Save
+        </Button>
+
+        <Button size="sm" className="gap-2 glow-primary-sm" onClick={onExport}>
+          <Download className="w-4 h-4" />
+          Export
+        </Button>
+      </div>
     </div>
   );
 }

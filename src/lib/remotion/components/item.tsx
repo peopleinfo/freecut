@@ -18,6 +18,14 @@ export interface ItemProps {
  */
 export const Item: React.FC<ItemProps> = ({ item }) => {
   if (item.type === 'video') {
+    // Guard against missing src (media resolution failed)
+    if (!item.src) {
+      return (
+        <AbsoluteFill style={{ backgroundColor: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <p style={{ color: '#666', fontSize: 14 }}>Media not loaded</p>
+        </AbsoluteFill>
+      );
+    }
     return (
       <OffthreadVideo
         src={item.src}
@@ -27,6 +35,10 @@ export const Item: React.FC<ItemProps> = ({ item }) => {
   }
 
   if (item.type === 'audio') {
+    // Guard against missing src (media resolution failed)
+    if (!item.src) {
+      return null; // Audio can fail silently
+    }
     return (
       <Audio
         src={item.src}
@@ -36,6 +48,14 @@ export const Item: React.FC<ItemProps> = ({ item }) => {
   }
 
   if (item.type === 'image') {
+    // Guard against missing src (media resolution failed)
+    if (!item.src) {
+      return (
+        <AbsoluteFill style={{ backgroundColor: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <p style={{ color: '#666', fontSize: 14 }}>Image not loaded</p>
+        </AbsoluteFill>
+      );
+    }
     return (
       <AbsoluteFill>
         <img

@@ -200,6 +200,7 @@ export function useMarqueeSelection({
       }
 
       // Don't start marquee if clicking on an interactive element
+      // Note: Removed draggable check to allow drag-to-select on media cards
       const target = e.target as HTMLElement;
       if (
         target.tagName === 'BUTTON' ||
@@ -208,8 +209,7 @@ export function useMarqueeSelection({
         target.closest('button') ||
         target.closest('input') ||
         target.closest('a') ||
-        target.closest('[role="button"]') ||
-        target.closest('[draggable="true"]')
+        target.closest('[role="button"]')
       ) {
         return;
       }

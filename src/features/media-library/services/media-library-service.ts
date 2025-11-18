@@ -215,19 +215,40 @@ export class MediaLibraryService {
    * Delete multiple media items in batch
    */
   async deleteMediaBatch(ids: string[]): Promise<void> {
+    const errors: Array<{ id: string; error: unknown }> = [];
+
     for (const id of ids) {
       try {
         await this.deleteMedia(id);
       } catch (error) {
         console.error(`Failed to delete media ${id}:`, error);
+        errors.push({ id, error });
       }
+    }
+
+    // If ALL deletions failed, throw an error to trigger rollback
+    if (errors.length === ids.length) {
+      throw new Error(
+        `Failed to delete all ${ids.length} items. Check console for details.`
+      );
+    }
+
+    // If SOME deletions failed, log a warning but don't throw
+    if (errors.length > 0) {
+      console.warn(
+        `Partially deleted: ${ids.length - errors.length}/${ids.length} items deleted successfully.`
+      );
     }
   }
 
   /**
-   * Get media file as File object
+   * Get media file as Blob object
+   *
+   * Note: Returns Blob instead of File to prevent OPFS access handle leaks.
+   * File objects maintain stronger internal references that can prevent
+   * new access handles from being created on the same file.
    */
-  async getMediaFile(id: string): Promise<File | null> {
+  async getMediaFile(id: string): Promise<Blob | null> {
     const media = await getMediaDB(id);
 
     if (!media) {
@@ -236,10 +257,10 @@ export class MediaLibraryService {
 
     try {
       const arrayBuffer = await opfsService.getFile(media.opfsPath);
-      const file = new File([arrayBuffer], media.fileName, {
+      const blob = new Blob([arrayBuffer], {
         type: media.mimeType,
       });
-      return file;
+      return blob;
     } catch (error) {
       console.error('Failed to get media file from OPFS:', error);
       return null;

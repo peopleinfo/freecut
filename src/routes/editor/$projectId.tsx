@@ -1,17 +1,25 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { Editor } from '@/features/editor/components/editor';
+import { getProject } from '@/lib/storage/indexeddb';
+import { cleanupBlobUrls } from '@/features/preview/utils/media-resolver';
 
 export const Route = createFileRoute('/editor/$projectId')({
   component: EditorPage,
   loader: async ({ params }) => {
-    // TODO: Load project data for editor
+    const project = await getProject(params.projectId);
+
+    if (!project) {
+      throw new Error(`Project not found: ${params.projectId}`);
+    }
+
     return {
       project: {
-        id: params.projectId,
-        name: 'Summer Vacation 2024',
-        width: 1920,
-        height: 1080,
-        fps: 30,
+        id: project.id,
+        name: project.name,
+        width: project.metadata.width,
+        height: project.metadata.height,
+        fps: project.metadata.fps,
+        timeline: project.timeline,
       },
     };
   },

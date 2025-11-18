@@ -18,6 +18,7 @@ export const usePlaybackStore = create<PlaybackState & PlaybackActions>((set) =>
   loop: false,
   volume: 1,
   muted: false,
+  zoom: 1, // 1 = 100% zoom
 
   // Actions
   setCurrentFrame: (frame) => set({ currentFrame: frame }),
@@ -28,4 +29,5 @@ export const usePlaybackStore = create<PlaybackState & PlaybackActions>((set) =>
   toggleLoop: () => set((state) => ({ loop: !state.loop })),
   setVolume: (volume) => set({ volume }),
   toggleMute: () => set((state) => ({ muted: !state.muted })),
+  setZoom: (zoom) => set({ zoom }),
 }));
