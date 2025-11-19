@@ -134,14 +134,23 @@ export function useTimelineTracks() {
 
   /**
    * Toggle track solo state
+   * Only one track can be soloed at a time - soloíng a track will unsolo all others
    */
   const toggleTrackSolo = useCallback(
     (id: string) => {
-      updateTrack(id, {
-        solo: !tracks.find((t) => t.id === id)?.solo,
-      });
+      const targetTrack = tracks.find((t) => t.id === id);
+      const isCurrentlySolo = targetTrack?.solo;
+
+      // If track is currently solo, just unsolo it
+      // If track is not solo, solo it and unsolo all others
+      setTracks(
+        tracks.map((track) => ({
+          ...track,
+          solo: track.id === id ? !isCurrentlySolo : false,
+        }))
+      );
     },
-    [tracks, updateTrack]
+    [tracks, setTracks]
   );
 
   return {
