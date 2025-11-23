@@ -45,6 +45,13 @@ export function Timeline({ duration }: TimelineProps) {
   const trackHeadersContainerRef = useRef<HTMLDivElement>(null);
   const timelineContentRef = useRef<HTMLDivElement>(null);
 
+  // Store zoom handlers from TimelineContent
+  const [zoomHandlers, setZoomHandlers] = useState<{
+    handleZoomChange: (newZoom: number) => void;
+    handleZoomIn: () => void;
+    handleZoomOut: () => void;
+  } | null>(null);
+
   // State for drop indicator (updated via RAF from drag hook)
   const [dropIndicatorIndex, setDropIndicatorIndex] = useState(-1);
 
@@ -157,7 +164,11 @@ export function Timeline({ duration }: TimelineProps) {
   return (
     <div className="timeline-bg h-full border-t border-border flex flex-col">
       {/* Timeline Header */}
-      <TimelineHeader />
+      <TimelineHeader
+        onZoomChange={zoomHandlers?.handleZoomChange}
+        onZoomIn={zoomHandlers?.handleZoomIn}
+        onZoomOut={zoomHandlers?.handleZoomOut}
+      />
 
       {/* Timeline Content */}
       <div className="flex-1 flex overflow-hidden min-h-0">
@@ -244,7 +255,11 @@ export function Timeline({ duration }: TimelineProps) {
         </div>
 
         {/* Timeline Canvas */}
-        <TimelineContent duration={duration} scrollRef={timelineContentRef} />
+        <TimelineContent
+          duration={duration}
+          scrollRef={timelineContentRef}
+          onZoomHandlersReady={setZoomHandlers}
+        />
       </div>
     </div>
   );

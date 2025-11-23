@@ -16,7 +16,11 @@ import { useTimelineZoom } from '../../hooks/use-timeline-zoom';
 import { useTimelineStore } from '../../stores/timeline-store';
 import { useSelectionStore } from '@/features/editor/stores/selection-store';
 
-export interface TimelineHeaderProps {}
+export interface TimelineHeaderProps {
+  onZoomChange?: (newZoom: number) => void;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+}
 
 /**
  * Timeline Header Component
@@ -27,7 +31,7 @@ export interface TimelineHeaderProps {}
  * - Snap to grid toggle
  * - Additional timeline tools
  */
-export function TimelineHeader(_props: TimelineHeaderProps) {
+export function TimelineHeader({ onZoomChange, onZoomIn, onZoomOut }: TimelineHeaderProps) {
   const { zoomLevel, zoomIn, zoomOut, setZoom } = useTimelineZoom();
   const snapEnabled = useTimelineStore((s) => s.snapEnabled);
   const toggleSnap = useTimelineStore((s) => s.toggleSnap);
@@ -50,7 +54,14 @@ export function TimelineHeader(_props: TimelineHeaderProps) {
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
-                onClick={zoomOut}
+                onClick={() => {
+                  // Use provided handler with playhead centering if available, otherwise fallback
+                  if (onZoomOut) {
+                    onZoomOut();
+                  } else {
+                    zoomOut();
+                  }
+                }}
               >
                 <ZoomOut className="w-3 h-3" />
               </Button>
@@ -60,7 +71,15 @@ export function TimelineHeader(_props: TimelineHeaderProps) {
 
           <Slider
             value={[zoomLevel]}
-            onValueChange={(values) => setZoom(values[0] ?? 1)}
+            onValueChange={(values) => {
+              const newZoom = values[0] ?? 1;
+              // Use provided handler with playhead centering if available, otherwise fallback
+              if (onZoomChange) {
+                onZoomChange(newZoom);
+              } else {
+                setZoom(newZoom);
+              }
+            }}
             min={0.01}
             max={2}
             step={0.01}
@@ -73,7 +92,14 @@ export function TimelineHeader(_props: TimelineHeaderProps) {
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
-                onClick={zoomIn}
+                onClick={() => {
+                  // Use provided handler with playhead centering if available, otherwise fallback
+                  if (onZoomIn) {
+                    onZoomIn();
+                  } else {
+                    zoomIn();
+                  }
+                }}
               >
                 <ZoomIn className="w-3 h-3" />
               </Button>
