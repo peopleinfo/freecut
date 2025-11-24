@@ -259,6 +259,7 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
             durationInFrames: item.durationInFrames,
             label: item.label,
             mediaId: item.mediaId,
+            originId: item.originId, // Stable key lineage tracking
             type: item.type,
             // Save trim properties for all items
             ...(item.trimStart !== undefined && { trimStart: item.trimStart }),

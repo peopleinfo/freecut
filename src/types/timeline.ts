@@ -6,6 +6,7 @@ type BaseTimelineItem = {
   durationInFrames: number; // Duration in frames (Remotion convention)
   label: string;
   mediaId?: string;
+  originId?: string; // Tracks lineage - items from same split share this for stable React keys
   // Trim properties for media items
   trimStart?: number; // Frames trimmed from start of source media
   trimEnd?: number; // Frames trimmed from end of source media

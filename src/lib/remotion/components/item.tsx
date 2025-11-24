@@ -36,6 +36,7 @@ export const Item: React.FC<ItemProps> = ({ item, muted = false }) => {
         src={item.src}
         trimBefore={trimBefore}
         volume={muted ? 0 : 1}
+        pauseWhenBuffering
       />
     );
   }

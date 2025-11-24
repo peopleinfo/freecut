@@ -167,6 +167,7 @@ export function TimelineTrack({ track, items, timelineWidth }: TimelineTrackProp
         durationInFrames: itemDuration,
         label: fileName,
         mediaId: mediaId,
+        originId: crypto.randomUUID(), // Unique origin for stable React keys
         // Initialize trim/source properties for new items
         sourceStart: 0,
         sourceEnd: itemDuration,

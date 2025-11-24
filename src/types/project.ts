@@ -29,6 +29,7 @@ export interface ProjectTimeline {
     durationInFrames: number;
     label: string;
     mediaId?: string;
+    originId?: string; // Tracks lineage for stable React keys
     type: 'video' | 'audio' | 'text' | 'image' | 'shape';
     // Type-specific fields stored as optional for flexibility
     src?: string;
