@@ -5,6 +5,10 @@ import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 export interface TimelineSplitIndicatorProps {
   /** X position in pixels relative to timeline container */
   cursorX: number | null;
+  /** The hovered item element for positioning the indicator to clip height */
+  hoveredElement: HTMLElement | null;
+  /** Reference to the tracks container for calculating relative position */
+  tracksContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 // Snap threshold in pixels
@@ -17,13 +21,13 @@ const SNAP_THRESHOLD_PX = 10;
  * Positioned above the playhead (z-index > 9999) so it's always visible.
  * Snaps to frame boundaries and playhead position for precise cuts.
  */
-export function TimelineSplitIndicator({ cursorX }: TimelineSplitIndicatorProps) {
+export function TimelineSplitIndicator({ cursorX, hoveredElement, tracksContainerRef }: TimelineSplitIndicatorProps) {
   const { pixelsToFrame, frameToPixels } = useTimelineZoom();
   const fps = useTimelineStore((s) => s.fps);
   const currentFrame = usePlaybackStore((s) => s.currentFrame);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
 
-  if (cursorX === null) return null;
+  if (cursorX === null || !hoveredElement || !tracksContainerRef.current) return null;
 
   // Get playhead position in pixels
   const playheadX = frameToPixels(currentFrame);
@@ -45,11 +49,19 @@ export function TimelineSplitIndicator({ cursorX }: TimelineSplitIndicatorProps)
     snappedX = frameToPixels(snappedFrame);
   }
 
+  // Calculate clip position relative to tracks container
+  const containerRect = tracksContainerRef.current.getBoundingClientRect();
+  const elementRect = hoveredElement.getBoundingClientRect();
+  const clipTop = elementRect.top - containerRect.top;
+  const clipHeight = elementRect.height;
+
   return (
     <div
-      className="absolute top-0 bottom-0 w-0.5 bg-red-500 pointer-events-none"
+      className="absolute w-0.5 bg-red-500 pointer-events-none"
       style={{
         left: `${snappedX}px`,
+        top: `${clipTop}px`,
+        height: `${clipHeight}px`,
         zIndex: 10000, // Above playhead (9999)
         boxShadow: '0 0 4px rgba(239, 68, 68, 0.5)',
       }}

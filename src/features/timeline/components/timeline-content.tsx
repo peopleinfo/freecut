@@ -55,9 +55,10 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
 
   // Track cursor position for razor tool - only when hovering over an item
   const [razorCursorX, setRazorCursorX] = useState<number | null>(null);
-  const [isHoveringItem, setIsHoveringItem] = useState(false);
+  const [hoveredItemElement, setHoveredItemElement] = useState<HTMLElement | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const tracksContainerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
   const marqueeWasActiveRef = useRef(false);
@@ -215,27 +216,27 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
   const handleMouseMoveForRazor = useCallback((e: React.MouseEvent) => {
     if (activeTool !== 'razor') {
       if (razorCursorX !== null) setRazorCursorX(null);
-      if (isHoveringItem) setIsHoveringItem(false);
+      if (hoveredItemElement) setHoveredItemElement(null);
       return;
     }
 
     // Check if we're hovering over a timeline item
     const target = e.target as HTMLElement;
-    const itemElement = target.closest('[data-item-id]');
+    const itemElement = target.closest('[data-item-id]') as HTMLElement | null;
 
     if (itemElement) {
       const rect = e.currentTarget.getBoundingClientRect();
       setRazorCursorX(e.clientX - rect.left);
-      if (!isHoveringItem) setIsHoveringItem(true);
+      if (hoveredItemElement !== itemElement) setHoveredItemElement(itemElement);
     } else {
       if (razorCursorX !== null) setRazorCursorX(null);
-      if (isHoveringItem) setIsHoveringItem(false);
+      if (hoveredItemElement) setHoveredItemElement(null);
     }
-  }, [activeTool, razorCursorX, isHoveringItem]);
+  }, [activeTool, razorCursorX, hoveredItemElement]);
 
   const handleMouseLeaveForRazor = useCallback(() => {
     setRazorCursorX(null);
-    setIsHoveringItem(false);
+    setHoveredItemElement(null);
   }, []);
 
   // Calculate the actual timeline duration and width based on content
@@ -385,6 +386,7 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
 
       {/* Track lanes */}
       <div
+        ref={tracksContainerRef}
         className="relative timeline-tracks"
         style={{
           width: `${timelineWidth}px`,
@@ -407,8 +409,12 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
         )}
 
         {/* Split indicator (shown in razor mode when hovering over an item) */}
-        {activeTool === 'razor' && isHoveringItem && (
-          <TimelineSplitIndicator cursorX={razorCursorX} />
+        {activeTool === 'razor' && hoveredItemElement && (
+          <TimelineSplitIndicator
+            cursorX={razorCursorX}
+            hoveredElement={hoveredItemElement}
+            tracksContainerRef={tracksContainerRef}
+          />
         )}
 
         {/* Playhead line through all tracks */}
