@@ -21,6 +21,7 @@ export function TimelineSplitIndicator({ cursorX }: TimelineSplitIndicatorProps)
   const { pixelsToFrame, frameToPixels } = useTimelineZoom();
   const fps = useTimelineStore((s) => s.fps);
   const currentFrame = usePlaybackStore((s) => s.currentFrame);
+  const isPlaying = usePlaybackStore((s) => s.isPlaying);
 
   if (cursorX === null) return null;
 
@@ -28,8 +29,9 @@ export function TimelineSplitIndicator({ cursorX }: TimelineSplitIndicatorProps)
   const playheadX = frameToPixels(currentFrame);
 
   // Check if cursor is near playhead (snap to playhead)
+  // Don't snap to playhead when video is playing - it moves too fast
   const distanceToPlayhead = Math.abs(cursorX - playheadX);
-  const shouldSnapToPlayhead = distanceToPlayhead <= SNAP_THRESHOLD_PX;
+  const shouldSnapToPlayhead = !isPlaying && distanceToPlayhead <= SNAP_THRESHOLD_PX;
 
   let snappedX: number;
 
