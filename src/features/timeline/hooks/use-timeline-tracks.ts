@@ -14,10 +14,16 @@ export function useTimelineTracks() {
 
   /**
    * Add a new track to the timeline (at the top/beginning)
+   * Automatically sets order to be lowest (appears at top after sorting)
    */
   const addTrack = useCallback(
     (track: TimelineTrack) => {
-      setTracks([track, ...tracks]);
+      // Give it an order lower than all existing tracks
+      const minOrder = tracks.length > 0
+        ? Math.min(...tracks.map(t => t.order ?? 0))
+        : 0;
+      const trackWithOrder = { ...track, order: minOrder - 1 };
+      setTracks([trackWithOrder, ...tracks]);
     },
     [tracks, setTracks]
   );
@@ -45,25 +51,43 @@ export function useTimelineTracks() {
   /**
    * Insert a new track before a specific track ID (so it appears above it)
    * If beforeTrackId is not found or null, inserts at the top
+   * Sets the order property so the track sorts correctly
    */
   const insertTrack = useCallback(
     (track: TimelineTrack, beforeTrackId: string | null = null) => {
       if (!beforeTrackId) {
-        // Insert at the top (beginning)
-        setTracks([track, ...tracks]);
+        // Insert at the top - give it an order lower than all existing tracks
+        const minOrder = tracks.length > 0
+          ? Math.min(...tracks.map(t => t.order ?? 0))
+          : 0;
+        const trackWithOrder = { ...track, order: minOrder - 1 };
+        setTracks([trackWithOrder, ...tracks]);
         return;
       }
 
-      const index = tracks.findIndex((t) => t.id === beforeTrackId);
-      if (index === -1) {
+      const targetIndex = tracks.findIndex((t) => t.id === beforeTrackId);
+      if (targetIndex === -1) {
         // Track not found, insert at the top
-        setTracks([track, ...tracks]);
+        const minOrder = tracks.length > 0
+          ? Math.min(...tracks.map(t => t.order ?? 0))
+          : 0;
+        const trackWithOrder = { ...track, order: minOrder - 1 };
+        setTracks([trackWithOrder, ...tracks]);
         return;
       }
 
-      // Insert before the found track (same index position)
+      // Get the target track's order and the track above it (if any)
+      const targetOrder = tracks[targetIndex].order ?? targetIndex;
+      const prevOrder = targetIndex > 0
+        ? (tracks[targetIndex - 1].order ?? (targetIndex - 1))
+        : targetOrder - 2; // Default to 2 less than target if no previous track
+
+      // Set order between previous track and target track
+      const newOrder = (prevOrder + targetOrder) / 2;
+      const trackWithOrder = { ...track, order: newOrder };
+
       const newTracks = [...tracks];
-      newTracks.splice(index, 0, track);
+      newTracks.splice(targetIndex, 0, trackWithOrder);
       setTracks(newTracks);
     },
     [tracks, setTracks]

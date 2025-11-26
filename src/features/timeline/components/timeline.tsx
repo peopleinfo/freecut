@@ -173,6 +173,12 @@ export function Timeline({ duration }: TimelineProps) {
    * Inserts before the active track (appears above it), or at the top if no active track
    */
   const handleAddTrack = () => {
+    // Find the minimum order value to place new track at the top
+    // New tracks should have order lower than all existing tracks
+    const minOrder = tracks.length > 0
+      ? Math.min(...tracks.map(t => t.order ?? 0))
+      : 0;
+
     const newTrack: TimelineTrack = {
       id: `track-${Date.now()}`,
       name: getNextTrackName(),
@@ -181,7 +187,7 @@ export function Timeline({ duration }: TimelineProps) {
       visible: true,
       muted: false,
       solo: false,
-      order: tracks.length,
+      order: minOrder - 1, // Place above all existing tracks
       items: [],
     };
 
