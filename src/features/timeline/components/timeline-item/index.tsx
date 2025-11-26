@@ -64,11 +64,20 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     )
   );
 
+  // Granular selector: check if Alt key is held during drag (for duplication indicator)
+  const isAltDrag = useSelectionStore(
+    useCallback(
+      (s) => s.dragState?.isDragging && s.dragState.draggedItemIds.includes(item.id) && s.dragState.isAltDrag,
+      [item.id]
+    )
+  );
+
   // Check if this item is part of a multi-drag (but not the anchor)
   const isPartOfDrag = isPartOfMultiDrag && !isDragging;
 
   // Ref for transform style (updated via RAF for smooth dragging without re-renders)
   const transformRef = useRef<HTMLDivElement>(null);
+  const ghostRef = useRef<HTMLDivElement>(null); // Ghost element for alt-drag followers
   const wasDraggingRef = useRef(false);
 
   // Disable transition when anchor item drag ends to avoid animation
@@ -86,6 +95,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   }, [isDragging]);
 
   // Use RAF to update transform for items being dragged along (not the anchor)
+  // During alt-drag, items stay in place (no transform applied) but ghost follows cursor
   useEffect(() => {
     if (!isPartOfDrag || !transformRef.current) return;
 
@@ -93,10 +103,30 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     const updateTransform = () => {
       if (transformRef.current && isPartOfDrag) {
         const offset = dragOffsetRef.current;
-        transformRef.current.style.transform = `translate(${offset.x}px, ${offset.y}px)`;
-        transformRef.current.style.opacity = String(DRAG_OPACITY);
-        transformRef.current.style.transition = 'none';
-        transformRef.current.style.pointerEvents = 'none';
+
+        // During alt-drag, keep items in place (no transform/opacity change)
+        if (isAltDrag) {
+          transformRef.current.style.transform = '';
+          transformRef.current.style.opacity = '';
+          transformRef.current.style.transition = 'none';
+          transformRef.current.style.pointerEvents = 'none';
+
+          // Update ghost position for alt-drag (ghost is a sibling, needs absolute positioning)
+          if (ghostRef.current) {
+            ghostRef.current.style.transform = `translate(${offset.x}px, ${offset.y}px)`;
+            ghostRef.current.style.display = 'block';
+          }
+        } else {
+          transformRef.current.style.transform = `translate(${offset.x}px, ${offset.y}px)`;
+          transformRef.current.style.opacity = String(DRAG_OPACITY);
+          transformRef.current.style.transition = 'none';
+          transformRef.current.style.pointerEvents = 'none';
+
+          // Hide ghost during normal drag
+          if (ghostRef.current) {
+            ghostRef.current.style.display = 'none';
+          }
+        }
         rafId = requestAnimationFrame(updateTransform);
       }
     };
@@ -117,8 +147,12 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
           }
         });
       }
+      // Hide ghost
+      if (ghostRef.current) {
+        ghostRef.current.style.display = 'none';
+      }
     };
-  }, [isPartOfDrag]);
+  }, [isPartOfDrag, isAltDrag]);
 
   // Determine if this item is being dragged (anchor or follower)
   const isBeingDragged = isDragging || isPartOfDrag;
@@ -283,6 +317,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     : 'cursor-grab';
 
   return (
+    <>
     <div
       ref={transformRef}
       data-item-id={item.id}
@@ -296,8 +331,9 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         left: isStretching ? `${stretchVisualLeft}px` : isTrimming ? `${trimVisualLeft}px` : `${left}px`,
         width: isStretching ? `${stretchVisualWidth}px` : isTrimming ? `${trimVisualWidth}px` : `${width}px`,
         // Anchor item uses its own dragOffset, followers get updated via RAF
-        transform: isDragging ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
-        opacity: isDragging ? DRAG_OPACITY : trackLocked ? 0.6 : 1,
+        // During alt-drag, original stays in place (no transform) - only show ghost
+        transform: isDragging && !isAltDrag ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
+        opacity: isDragging && !isAltDrag ? DRAG_OPACITY : trackLocked ? 0.6 : 1,
         transition: isDragging || isTrimming || isStretching ? 'none' : 'all 0.2s',
         pointerEvents: isDragging ? 'none' : 'auto',
       }}
@@ -373,7 +409,44 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
           )}
         </>
       )}
+
     </div>
+
+      {/* Alt-drag ghost for anchor item: rendered outside clipped container */}
+      {isAltDrag && isDragging && (
+        <div
+          className="absolute top-2 h-12 rounded border-2 border-dashed border-primary bg-primary/20 pointer-events-none z-50"
+          style={{
+            left: `${left + dragOffset.x}px`,
+            width: `${width}px`,
+            top: `calc(0.5rem + ${dragOffset.y}px)`,
+          }}
+        >
+          {/* Duplication indicator on ghost */}
+          <div className="absolute -top-1 -right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center text-xs font-bold text-primary-foreground shadow-md">
+            +
+          </div>
+        </div>
+      )}
+
+      {/* Alt-drag ghost for follower items: updated via RAF, rendered outside clipped container */}
+      {isPartOfDrag && (
+        <div
+          ref={ghostRef}
+          className="absolute top-2 h-12 rounded border-2 border-dashed border-primary bg-primary/20 pointer-events-none z-50"
+          style={{
+            left: `${left}px`,
+            width: `${width}px`,
+            display: 'none',
+          }}
+        >
+          {/* Duplication indicator on ghost */}
+          <div className="absolute -top-1 -right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center text-xs font-bold text-primary-foreground shadow-md">
+            +
+          </div>
+        </div>
+      )}
+    </>
   );
 }, (prevProps, nextProps) => {
   // Custom equality check - only re-render when relevant props change

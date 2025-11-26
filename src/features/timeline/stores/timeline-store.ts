@@ -3,6 +3,7 @@ import { temporal } from 'zundo';
 import type { TimelineState, TimelineActions } from '../types';
 import { getProject, updateProject } from '@/lib/storage/indexeddb';
 import type { ProjectTimeline } from '@/types/project';
+import type { TimelineItem } from '@/types/timeline';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useZoomStore } from './zoom-store';
 import { generatePlayheadThumbnail } from '@/features/projects/utils/thumbnail-generator';
@@ -67,6 +68,41 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
           ? { ...i, from: update.from, ...(update.trackId && { trackId: update.trackId }) }
           : i;
       }),
+      isDirty: true,
+    };
+  }),
+
+  // Duplicate items at new positions (for Alt+drag)
+  duplicateItems: (itemIds, positions) => set((state) => {
+    const newItems: TimelineItem[] = [];
+
+    itemIds.forEach((id, index) => {
+      const sourceItem = state.items.find((i) => i.id === id);
+      if (!sourceItem) return;
+
+      const position = positions[index];
+      if (!position) return;
+
+      // Generate new ID for the duplicate
+      const newId = crypto.randomUUID();
+
+      // Deep copy with new ID and NEW originId
+      // Unlike split (which preserves originId for stable keys during trim),
+      // duplication creates a fully independent clip with its own lineage.
+      // This ensures the stable key is unique and prevents React key collisions.
+      const duplicate: TimelineItem = {
+        ...sourceItem,
+        id: newId,
+        originId: newId, // New origin = independent clip
+        from: position.from,
+        trackId: position.trackId,
+      };
+
+      newItems.push(duplicate);
+    });
+
+    return {
+      items: [...state.items, ...newItems],
       isDirty: true,
     };
   }),
@@ -241,7 +277,8 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
     };
   }),
 
-  // Rate stretch item: change duration and speed while preserving all content
+  // Rate stretch item: change duration and speed while preserving the CURRENT trimmed region
+  // If clip shows [B-C] of source [A-D], rate stretch only affects [B-C], not the full source
   rateStretchItem: (id, newFrom, newDuration, newSpeed) => set((state) => ({
     items: state.items.map((item) => {
       if (item.id !== id) return item;
@@ -252,16 +289,21 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
       // Clamp speed to valid range (0.1x to 10x)
       const clampedSpeed = Math.max(0.1, Math.min(10, newSpeed));
 
-      // Calculate sourceDuration if not already set
-      // sourceDuration = timeline duration * current speed (the total source frames)
+      // Get current source region being displayed
       const currentSpeed = item.speed || 1;
-      const sourceDuration = item.sourceDuration || Math.round(item.durationInFrames * currentSpeed);
+      const currentSourceStart = item.sourceStart || 0;
 
-      // When rate-stretching, we show ALL source content at the new speed
-      // So sourceStart=0, sourceEnd=sourceDuration, and trims are reset
-      // This ensures the user can later trim within the full source bounds
-      const sourceStart = 0;
-      const sourceEnd = sourceDuration;
+      // Calculate the source frames currently being shown (the [B-C] region)
+      // This is the content that will be stretched, not the full source
+      const currentSourceFramesShown = Math.round(item.durationInFrames * currentSpeed);
+
+      // Preserve the full source duration (the entire video file [A-D])
+      // This is needed for validation in Remotion to prevent seeking past the source
+      const fullSourceDuration = item.sourceDuration || currentSourceFramesShown;
+
+      // sourceStart stays the same - we're still starting from point B
+      // sourceEnd is recalculated based on the visible region
+      const sourceEnd = currentSourceStart + currentSourceFramesShown;
 
       // Ensure frame values are integers (Remotion requirement)
       return {
@@ -269,13 +311,15 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
         from: Math.round(newFrom),
         durationInFrames: Math.round(newDuration),
         speed: clampedSpeed,
-        // Set source properties to full content range
-        sourceDuration,
-        sourceStart,
+        // Preserve source position - still starts at B
+        sourceStart: currentSourceStart,
         sourceEnd,
-        // Reset trim values since we're showing full content at new speed
-        trimStart: 0,
-        trimEnd: 0,
+        // IMPORTANT: Keep sourceDuration as the FULL source, not the visible region
+        // This is used by Remotion's clamping logic to validate seek positions
+        sourceDuration: fullSourceDuration,
+        // Preserve trim values - they define where in the original we are
+        trimStart: item.trimStart || 0,
+        trimEnd: item.trimEnd || 0,
       };
     }),
     isDirty: true,

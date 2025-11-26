@@ -34,12 +34,16 @@ export function useTimelineDrag(
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const dragStateRef = useRef<DragState | null>(null);
 
+  // Track Alt key state for duplication mode (dynamic toggle during drag)
+  const isAltDragRef = useRef(false);
+
   // Track previous snap target to avoid unnecessary store updates
   const prevSnapTargetRef = useRef<{ frame: number; type: string } | null>(null);
 
   // Get store actions and state with granular selectors
   const moveItem = useTimelineStore((s) => s.moveItem);
   const moveItems = useTimelineStore((s) => s.moveItems);
+  const duplicateItems = useTimelineStore((s) => s.duplicateItems);
   const tracks = useTimelineStore((s) => s.tracks);
   const items = useTimelineStore((s) => s.items);
 
@@ -52,16 +56,23 @@ export function useTimelineDrag(
   // Get zoom utilities
   const { pixelsToFrame } = useTimelineZoom();
 
+  // Get current alt-drag state from selection store for snap exclusion logic
+  const isAltDragActive = useSelectionStore((s) => s.dragState?.isAltDrag ?? false);
+
   // Snap calculator - only use magnetic snap targets (item edges), not grid lines
   // Pass all selected item IDs to exclude from snap targets (for group selection)
+  // During alt-drag (duplicate), DON'T exclude original items - allow snapping to them
   const excludeFromSnap = useMemo(() => {
-    // If this item is in the selection, exclude all selected items
-    // Otherwise just exclude this item
+    // During alt-drag, include original items as snap targets
+    if (isAltDragActive) {
+      return null; // Don't exclude any items
+    }
+    // Normal drag: exclude dragging items from snap targets
     if (selectedItemIds.includes(item.id)) {
       return selectedItemIds;
     }
     return item.id;
-  }, [selectedItemIds, item.id]);
+  }, [selectedItemIds, item.id, isAltDragActive]);
 
   const { magneticSnapTargets, snapThresholdFrames, snapEnabled } = useSnapCalculator(
     timelineDuration,
@@ -75,6 +86,7 @@ export function useTimelineDrag(
   const pixelsToFrameRef = useRef(pixelsToFrame);
   const moveItemRef = useRef(moveItem);
   const moveItemsRef = useRef(moveItems);
+  const duplicateItemsRef = useRef(duplicateItems);
   const tracksRef = useRef(tracks);
   const itemsRef = useRef(items);
   const allItemsRef = useRef(allItems);
@@ -92,11 +104,12 @@ export function useTimelineDrag(
     pixelsToFrameRef.current = pixelsToFrame;
     moveItemRef.current = moveItem;
     moveItemsRef.current = moveItems;
+    duplicateItemsRef.current = duplicateItems;
     tracksRef.current = tracks;
     itemsRef.current = items;
     allItemsRef.current = allItems;
     selectedItemIdsRef.current = selectedItemIds;
-  }, [pixelsToFrame, moveItem, moveItems, tracks, items, allItems, selectedItemIds]);
+  }, [pixelsToFrame, moveItem, moveItems, duplicateItems, tracks, items, allItems, selectedItemIds]);
 
   /**
    * Calculate which track the mouse is over based on Y position
@@ -249,9 +262,10 @@ export function useTimelineDrag(
 
         // Check if we've moved enough to start dragging
         if (Math.abs(deltaX) > DRAG_THRESHOLD_PIXELS || Math.abs(deltaY) > DRAG_THRESHOLD_PIXELS) {
-          // Start the drag
+          // Start the drag - track Alt key state
+          isAltDragRef.current = e.altKey;
           setIsDragging(true);
-          document.body.style.cursor = 'grabbing';
+          document.body.style.cursor = e.altKey ? 'copy' : 'grabbing';
           document.body.style.userSelect = 'none';
 
           // Broadcast drag state to all selected items
@@ -260,6 +274,7 @@ export function useTimelineDrag(
             isDragging: true,
             draggedItemIds: draggedIds,
             offset: { x: 0, y: 0 },
+            isAltDrag: e.altKey,
           });
 
           // Remove this listener - the main useEffect will handle it now
@@ -292,6 +307,13 @@ export function useTimelineDrag(
 
       const deltaX = e.clientX - dragStateRef.current.startMouseX;
       const deltaY = e.clientY - dragStateRef.current.startMouseY;
+
+      // Dynamic Alt key toggle - update state and cursor
+      const altKeyChanged = isAltDragRef.current !== e.altKey;
+      isAltDragRef.current = e.altKey;
+      if (altKeyChanged) {
+        document.body.style.cursor = e.altKey ? 'copy' : 'grabbing';
+      }
 
       // Update drag offset for visual preview (local state for anchor item)
       setDragOffset({ x: deltaX, y: deltaY });
@@ -337,7 +359,7 @@ export function useTimelineDrag(
 
       const snapResult = calculateMagneticSnap(snapStartFrame, snapDuration);
 
-      // Only update store when snap target actually changes to reduce re-renders
+      // Only update store when snap target or alt state actually changes to reduce re-renders
       const prevSnap = prevSnapTargetRef.current;
       const newSnap = snapResult.snapTarget;
       const snapChanged =
@@ -345,7 +367,7 @@ export function useTimelineDrag(
         (prevSnap !== null && newSnap === null) ||
         (prevSnap !== null && newSnap !== null && (prevSnap.frame !== newSnap.frame || prevSnap.type !== newSnap.type));
 
-      if (snapChanged) {
+      if (snapChanged || altKeyChanged) {
         prevSnapTargetRef.current = newSnap ? { frame: newSnap.frame, type: newSnap.type } : null;
         const draggedIds = dragStateRef.current?.draggedItems.map((item) => item.id) || [];
         setDragState({
@@ -353,6 +375,7 @@ export function useTimelineDrag(
           draggedItemIds: draggedIds,
           offset: { x: deltaX, y: deltaY },
           activeSnapTarget: snapResult.snapTarget,
+          isAltDrag: e.altKey,
         });
       }
     };
@@ -362,109 +385,132 @@ export function useTimelineDrag(
 
       const dragState = dragStateRef.current;
       const deltaX = dragState.currentMouseX - dragState.startMouseX;
+      const isAltDrag = isAltDragRef.current;
 
-      // Apply changes (we only get here if isDragging is true)
-      if (true) {
-        // Calculate frame delta
-        const deltaFrames = pixelsToFrameRef.current(deltaX);
+      // Calculate frame delta
+      const deltaFrames = pixelsToFrameRef.current(deltaX);
 
-        // Calculate new track for anchor item
-        const newTrackId = getTrackIdFromMouseY(dragState.currentMouseY, dragState.startTrackId);
+      // Calculate new track for anchor item
+      const newTrackId = getTrackIdFromMouseY(dragState.currentMouseY, dragState.startTrackId);
 
-        // Multi-item drag or single?
-        if (dragState.draggedItems.length > 1) {
-          // Multi-item drag: calculate group bounding box for snapping
-          // Snap should only happen at the edges of the entire selection, not individual items
-          let groupStartFrame = Infinity;
-          let groupEndFrame = -Infinity;
+      // Multi-item drag or single?
+      if (dragState.draggedItems.length > 1) {
+        // Multi-item drag: calculate group bounding box for snapping
+        // Snap should only happen at the edges of the entire selection, not individual items
+        let groupStartFrame = Infinity;
+        let groupEndFrame = -Infinity;
 
-          for (const draggedItem of dragState.draggedItems) {
-            const sourceItem = itemsRef.current.find((i) => i.id === draggedItem.id);
-            if (!sourceItem) continue;
+        for (const draggedItem of dragState.draggedItems) {
+          const sourceItem = itemsRef.current.find((i) => i.id === draggedItem.id);
+          if (!sourceItem) continue;
 
-            const proposedStart = draggedItem.initialFrame + deltaFrames;
-            const proposedEnd = proposedStart + sourceItem.durationInFrames;
+          const proposedStart = draggedItem.initialFrame + deltaFrames;
+          const proposedEnd = proposedStart + sourceItem.durationInFrames;
 
-            if (proposedStart < groupStartFrame) groupStartFrame = proposedStart;
-            if (proposedEnd > groupEndFrame) groupEndFrame = proposedEnd;
+          if (proposedStart < groupStartFrame) groupStartFrame = proposedStart;
+          if (proposedEnd > groupEndFrame) groupEndFrame = proposedEnd;
+        }
+
+        // Ensure valid bounds
+        groupStartFrame = Math.max(0, groupStartFrame);
+        const groupDuration = groupEndFrame - groupStartFrame;
+
+        // Calculate snap using the group's bounding box
+        let snapDelta = 0;
+        if (groupDuration > 0) {
+          const snapResult = calculateMagneticSnap(groupStartFrame, groupDuration);
+          snapDelta = snapResult.snappedFrame - groupStartFrame;
+        }
+
+        // Multi-item drag: calculate new positions for all items
+        const movedItems = dragState.draggedItems.map((draggedItem) => {
+          const sourceItem = itemsRef.current.find((i) => i.id === draggedItem.id);
+          if (!sourceItem) return null;
+
+          // Calculate new frame (maintain relative offset from anchor)
+          // Apply both the frame delta AND the snap adjustment to all items
+          const newFrom = Math.max(0, draggedItem.initialFrame + deltaFrames + snapDelta);
+
+          // Calculate new track (maintain relative offset)
+          const anchorTrackIndex = tracksRef.current.findIndex(
+            (t) => t.id === dragState.startTrackId
+          );
+          const itemTrackIndex = tracksRef.current.findIndex(
+            (t) => t.id === draggedItem.initialTrackId
+          );
+          const newAnchorTrackIndex = tracksRef.current.findIndex((t) => t.id === newTrackId);
+          const trackOffset = itemTrackIndex - anchorTrackIndex;
+          const newItemTrackIndex = Math.max(
+            0,
+            Math.min(tracksRef.current.length - 1, newAnchorTrackIndex + trackOffset)
+          );
+          const itemNewTrackId = tracksRef.current[newItemTrackIndex]?.id || draggedItem.initialTrackId;
+
+          return {
+            id: draggedItem.id,
+            newFrom,
+            newTrackId: itemNewTrackId,
+            durationInFrames: sourceItem.durationInFrames,
+          };
+        }).filter((i) => i !== null) as Array<{
+          id: string;
+          newFrom: number;
+          newTrackId: string;
+          durationInFrames: number;
+        }>;
+
+        // For multi-item drag: check if ANY item would collide, and if so, snap the whole group forward
+        // Find the earliest collision among all moved items
+        const draggedItemIds = movedItems.map((m) => m.id);
+        // For alt-drag (duplicate), include all items in collision check since originals stay in place
+        const itemsExcludingDragged = isAltDrag
+          ? allItemsRef.current
+          : allItemsRef.current.filter((i) => !draggedItemIds.includes(i.id));
+
+        let maxSnapForward = 0; // How many frames we need to move the whole group forward
+
+        for (const movedItem of movedItems) {
+          const finalPosition = findNearestAvailableSpace(
+            movedItem.newFrom,
+            movedItem.durationInFrames,
+            movedItem.newTrackId,
+            itemsExcludingDragged
+          );
+
+          if (finalPosition === null) {
+            console.warn(isAltDrag ? 'Cannot duplicate items: no available space' : 'Cannot move items: no available space');
+            // Clean up and cancel
+            setIsDragging(false);
+            setDragOffset({ x: 0, y: 0 });
+            setDragState(null);
+            dragOffsetRef.current = { x: 0, y: 0 };
+            prevSnapTargetRef.current = null;
+            dragStateRef.current = null;
+            isAltDragRef.current = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            return;
           }
 
-          // Ensure valid bounds
-          groupStartFrame = Math.max(0, groupStartFrame);
-          const groupDuration = groupEndFrame - groupStartFrame;
-
-          // Calculate snap using the group's bounding box
-          let snapDelta = 0;
-          if (groupDuration > 0) {
-            const snapResult = calculateMagneticSnap(groupStartFrame, groupDuration);
-            snapDelta = snapResult.snappedFrame - groupStartFrame;
+          // Calculate how much this item needs to move forward
+          const snapAmount = finalPosition - movedItem.newFrom;
+          if (snapAmount > maxSnapForward) {
+            maxSnapForward = snapAmount;
           }
+        }
 
-          // Multi-item drag: calculate new positions for all items
-          const movedItems = dragState.draggedItems.map((draggedItem) => {
-            const sourceItem = itemsRef.current.find((i) => i.id === draggedItem.id);
-            if (!sourceItem) return null;
+        if (isAltDrag) {
+          // ALT-DRAG: Duplicate items at new positions
+          const itemIds = movedItems.map((m) => m.id);
+          const positions = movedItems.map((m) => ({
+            from: m.newFrom + maxSnapForward,
+            trackId: m.newTrackId,
+          }));
 
-            // Calculate new frame (maintain relative offset from anchor)
-            // Apply both the frame delta AND the snap adjustment to all items
-            const newFrom = Math.max(0, draggedItem.initialFrame + deltaFrames + snapDelta);
-
-            // Calculate new track (maintain relative offset)
-            const anchorTrackIndex = tracksRef.current.findIndex(
-              (t) => t.id === dragState.startTrackId
-            );
-            const itemTrackIndex = tracksRef.current.findIndex(
-              (t) => t.id === draggedItem.initialTrackId
-            );
-            const newAnchorTrackIndex = tracksRef.current.findIndex((t) => t.id === newTrackId);
-            const trackOffset = itemTrackIndex - anchorTrackIndex;
-            const newItemTrackIndex = Math.max(
-              0,
-              Math.min(tracksRef.current.length - 1, newAnchorTrackIndex + trackOffset)
-            );
-            const itemNewTrackId = tracksRef.current[newItemTrackIndex]?.id || draggedItem.initialTrackId;
-
-            return {
-              id: draggedItem.id,
-              newFrom,
-              newTrackId: itemNewTrackId,
-              durationInFrames: sourceItem.durationInFrames,
-            };
-          }).filter((i) => i !== null) as Array<{
-            id: string;
-            newFrom: number;
-            newTrackId: string;
-            durationInFrames: number;
-          }>;
-
-          // For multi-item drag: check if ANY item would collide, and if so, snap the whole group forward
-          // Find the earliest collision among all moved items
-          const draggedItemIds = movedItems.map((m) => m.id);
-          const itemsExcludingDragged = allItemsRef.current.filter((i) => !draggedItemIds.includes(i.id));
-
-          let maxSnapForward = 0; // How many frames we need to move the whole group forward
-
-          for (const movedItem of movedItems) {
-            const finalPosition = findNearestAvailableSpace(
-              movedItem.newFrom,
-              movedItem.durationInFrames,
-              movedItem.newTrackId,
-              itemsExcludingDragged
-            );
-
-            if (finalPosition === null) {
-              console.warn('Cannot move items: no available space');
-              return; // Cancel the entire multi-drag
-            }
-
-            // Calculate how much this item needs to move forward
-            const snapAmount = finalPosition - movedItem.newFrom;
-            if (snapAmount > maxSnapForward) {
-              maxSnapForward = snapAmount;
-            }
-          }
-
-          // Apply the snap to ALL items in the group
+          // Duplicate items (single undo snapshot)
+          duplicateItemsRef.current(itemIds, positions);
+        } else {
+          // Normal drag: Apply the snap to ALL items in the group
           const allUpdates = movedItems.map((m) => ({
             id: m.id,
             from: m.newFrom + maxSnapForward,
@@ -475,31 +521,42 @@ export function useTimelineDrag(
 
           // Apply batch update (single undo snapshot)
           moveItemsRef.current(allUpdates);
-        } else {
-          // Single item drag
-          let proposedFrame = Math.max(0, dragState.startFrame + deltaFrames);
+        }
+      } else {
+        // Single item drag
+        let proposedFrame = Math.max(0, dragState.startFrame + deltaFrames);
 
-          // Apply snapping
-          const snapResult = calculateMagneticSnap(proposedFrame, item.durationInFrames);
-          proposedFrame = snapResult.snappedFrame;
+        // Apply snapping
+        const snapResult = calculateMagneticSnap(proposedFrame, item.durationInFrames);
+        proposedFrame = snapResult.snappedFrame;
 
-          // Find nearest available space (snaps forward if collision)
-          // Exclude the item being dragged from collision detection
-          const itemsExcludingDragged = allItemsRef.current.filter((i) => i.id !== item.id);
-          const finalFrame = findNearestAvailableSpace(
-            proposedFrame,
-            item.durationInFrames,
-            newTrackId,
-            itemsExcludingDragged
-          );
+        // Find nearest available space (snaps forward if collision)
+        // For alt-drag, include the original item in collision check since it stays in place
+        const itemsExcludingDragged = isAltDrag
+          ? allItemsRef.current
+          : allItemsRef.current.filter((i) => i.id !== item.id);
+        const finalFrame = findNearestAvailableSpace(
+          proposedFrame,
+          item.durationInFrames,
+          newTrackId,
+          itemsExcludingDragged
+        );
 
-          if (finalFrame !== null) {
+        if (finalFrame !== null) {
+          if (isAltDrag) {
+            // ALT-DRAG: Duplicate item at new position
+            duplicateItemsRef.current(
+              [item.id],
+              [{ from: finalFrame, trackId: newTrackId }]
+            );
+          } else {
+            // Normal drag: Move item
             const trackChanged = newTrackId !== dragState.startTrackId;
             moveItemRef.current(item.id, finalFrame, trackChanged ? newTrackId : undefined);
-          } else {
-            // No space available - cancel drag (keep at original position)
-            console.warn('Cannot move item: no available space');
           }
+        } else {
+          // No space available - cancel drag (keep at original position)
+          console.warn(isAltDrag ? 'Cannot duplicate item: no available space' : 'Cannot move item: no available space');
         }
       }
 
@@ -510,6 +567,7 @@ export function useTimelineDrag(
       dragOffsetRef.current = { x: 0, y: 0 }; // Reset shared ref
       prevSnapTargetRef.current = null; // Reset snap target tracking
       dragStateRef.current = null;
+      isAltDragRef.current = false; // Reset alt drag state
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
@@ -523,7 +581,7 @@ export function useTimelineDrag(
         window.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [isDragging, item.id, getTrackIdFromMouseY, calculateMagneticSnap]);
+  }, [isDragging, item.id, item.durationInFrames, getTrackIdFromMouseY, calculateMagneticSnap]);
 
   return {
     isDragging,

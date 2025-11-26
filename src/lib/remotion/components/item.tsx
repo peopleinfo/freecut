@@ -1,6 +1,10 @@
 import React from 'react';
 import { AbsoluteFill, OffthreadVideo, Audio } from 'remotion';
 import type { TimelineItem } from '@/types/timeline';
+import { DebugOverlay } from './debug-overlay';
+
+// Set to true to show debug overlay on video items during rendering
+const DEBUG_VIDEO_OVERLAY = false;
 
 export interface ItemProps {
   item: TimelineItem;
@@ -35,15 +39,55 @@ export const Item: React.FC<ItemProps> = ({ item, muted = false }) => {
     // Get playback rate from speed property (default 1x)
     const playbackRate = item.speed ?? 1;
 
+    // Calculate source frames needed for playback
+    const sourceFramesNeeded = Math.ceil(item.durationInFrames * playbackRate);
+    const sourceEndPosition = trimBefore + sourceFramesNeeded;
+    const sourceDuration = item.sourceDuration || 0;
+
+    // Validate sourceStart doesn't exceed source duration
+    const isInvalidSeek = sourceDuration > 0 && trimBefore >= sourceDuration;
+    const exceedsSource = sourceDuration > 0 && sourceEndPosition > sourceDuration;
+
+    // Clamp trimBefore to valid range if source duration is known
+    let safeTrimBefore = trimBefore;
+    if (sourceDuration > 0) {
+      // Ensure we don't seek past the source
+      const maxTrimBefore = Math.max(0, sourceDuration - sourceFramesNeeded);
+      if (trimBefore > maxTrimBefore) {
+        console.warn('[Remotion Item] trimBefore exceeds valid range, clamping:', {
+          original: trimBefore,
+          clamped: maxTrimBefore,
+          sourceDuration,
+          sourceFramesNeeded,
+        });
+        safeTrimBefore = maxTrimBefore;
+      }
+    }
+
     return (
       <AbsoluteFill style={{ backgroundColor: '#000' }}>
         <OffthreadVideo
           src={item.src}
-          trimBefore={trimBefore > 0 ? trimBefore : undefined}
+          trimBefore={safeTrimBefore > 0 ? safeTrimBefore : undefined}
           volume={muted ? 0 : 1}
           playbackRate={playbackRate}
           pauseWhenBuffering
         />
+        {DEBUG_VIDEO_OVERLAY && (
+          <DebugOverlay
+            id={item.id}
+            speed={playbackRate}
+            trimBefore={trimBefore}
+            safeTrimBefore={safeTrimBefore}
+            sourceStart={item.sourceStart}
+            sourceDuration={sourceDuration}
+            durationInFrames={item.durationInFrames}
+            sourceFramesNeeded={sourceFramesNeeded}
+            sourceEndPosition={sourceEndPosition}
+            isInvalidSeek={isInvalidSeek}
+            exceedsSource={exceedsSource}
+          />
+        )}
       </AbsoluteFill>
     );
   }

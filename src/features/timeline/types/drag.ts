@@ -26,6 +26,8 @@ export interface DragState {
     initialFrame: number;
     initialTrackId: string;
   }>;
+  /** Whether Alt key is held (triggers duplication instead of move) */
+  isAltDrag?: boolean;
 }
 
 /**

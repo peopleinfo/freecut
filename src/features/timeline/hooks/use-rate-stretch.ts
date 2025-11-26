@@ -258,11 +258,11 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
       e.stopPropagation();
       e.preventDefault();
 
-      // Calculate the "at normal speed" source duration
-      // This is the content duration that will be preserved regardless of speed
-      // Use stored sourceDuration if available (important for clips that have been trimmed/stretched before)
+      // Calculate the visible source frames (the [B-C] region being displayed)
+      // This is what gets rate-stretched - NOT the full source duration
+      // Formula: timeline frames * current speed = source frames currently shown
       const currentSpeed = item.speed || 1;
-      const sourceDuration = item.sourceDuration ?? (item.durationInFrames * currentSpeed);
+      const visibleSourceFrames = Math.round(item.durationInFrames * currentSpeed);
 
       setStretchState({
         isStretching: true,
@@ -270,7 +270,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
         startX: e.clientX,
         initialFrom: item.from,
         initialDuration: item.durationInFrames,
-        sourceDuration,
+        sourceDuration: visibleSourceFrames,
         initialSpeed: currentSpeed,
         currentDelta: 0,
       });

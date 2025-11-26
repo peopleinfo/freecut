@@ -74,14 +74,21 @@ export function convertTimelineToRemotion(
         };
 
         // Update trim properties for video/audio items
+        // additionalTrimStart/End are in timeline frames, but trim/source properties are in source frames
+        // Must multiply by speed to convert: timeline frames * speed = source frames
         if (item.type === 'video' || item.type === 'audio') {
           const currentTrimStart = item.trimStart || 0;
           const currentTrimEnd = item.trimEnd || 0;
           const currentSourceStart = item.sourceStart || 0;
+          const speed = item.speed || 1;
 
-          (adjustedItem as any).trimStart = currentTrimStart + additionalTrimStart;
-          (adjustedItem as any).trimEnd = currentTrimEnd + additionalTrimEnd;
-          (adjustedItem as any).sourceStart = currentSourceStart + additionalTrimStart;
+          // Convert timeline frames to source frames
+          const sourceTrimStart = Math.round(additionalTrimStart * speed);
+          const sourceTrimEnd = Math.round(additionalTrimEnd * speed);
+
+          (adjustedItem as any).trimStart = currentTrimStart + sourceTrimStart;
+          (adjustedItem as any).trimEnd = currentTrimEnd + sourceTrimEnd;
+          (adjustedItem as any).sourceStart = currentSourceStart + sourceTrimStart;
           (adjustedItem as any).offset = (adjustedItem as any).trimStart;
         }
 
