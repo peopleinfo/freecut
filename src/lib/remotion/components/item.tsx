@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, OffthreadVideo, Video, Audio } from 'remotion';
+import { AbsoluteFill, OffthreadVideo, Audio } from 'remotion';
 import type { TimelineItem } from '@/types/timeline';
 
 export interface ItemProps {
@@ -35,22 +35,9 @@ export const Item: React.FC<ItemProps> = ({ item, muted = false }) => {
     // Get playback rate from speed property (default 1x)
     const playbackRate = item.speed ?? 1;
 
-    // DEBUG: Log what Remotion is receiving
-    console.log('[Remotion Item] Video props:', {
-      'item.speed': item.speed,
-      playbackRate,
-      trimBefore,
-      'item.sourceStart': item.sourceStart,
-      'item.durationInFrames': item.durationInFrames,
-    });
-
-    // Use regular Video for custom speed clips (OffthreadVideo has caching issues with playbackRate)
-    // Use OffthreadVideo for normal speed (better performance)
-    const VideoComponent = playbackRate !== 1 ? Video : OffthreadVideo;
-
     return (
       <AbsoluteFill style={{ backgroundColor: '#000' }}>
-        <VideoComponent
+        <OffthreadVideo
           src={item.src}
           trimBefore={trimBefore > 0 ? trimBefore : undefined}
           volume={muted ? 0 : 1}

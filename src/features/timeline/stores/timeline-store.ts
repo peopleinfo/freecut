@@ -127,15 +127,6 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
     items: state.items.map((item) => {
       if (item.id !== id) return item;
 
-      // DEBUG: Log input state
-      console.log('[trimItemEnd] Input:', {
-        trimAmount,
-        'item.speed': item.speed,
-        'item.sourceDuration': item.sourceDuration,
-        'item.sourceEnd': item.sourceEnd,
-        'item.durationInFrames': item.durationInFrames,
-      });
-
       const currentTrimEnd = item.trimEnd || 0;
       // Account for speed: timeline frames * speed = source frames
       const speed = item.speed || 1;
@@ -163,16 +154,6 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
       const newSourceEnd = currentSourceEnd - sourceTrimAmount;
       // Ensure frame values are integers (Remotion requirement)
       const newDuration = Math.max(1, Math.round(item.durationInFrames - actualTrimAmount));
-
-      // DEBUG: Log output state
-      console.log('[trimItemEnd] Output:', {
-        'item.speed': item.speed,
-        'preserving speed': item.speed,
-        newSourceEnd,
-        newTrimEnd,
-        newDuration,
-        actualTrimAmount,
-      });
 
       return {
         ...item,
