@@ -1,8 +1,8 @@
 import React from 'react';
 import { AbsoluteFill, OffthreadVideo } from 'remotion';
-import { Audio } from '@remotion/media';
 import type { TimelineItem } from '@/types/timeline';
 import { DebugOverlay } from './debug-overlay';
+import { PitchCorrectedAudio } from './pitch-corrected-audio';
 
 // Set to true to show debug overlay on video items during rendering
 const DEBUG_VIDEO_OVERLAY = false;
@@ -109,12 +109,15 @@ export const Item: React.FC<ItemProps> = ({ item, muted = false }) => {
     // Get playback rate from speed property (default 1x)
     const playbackRate = item.speed ?? 1;
 
+    // Use PitchCorrectedAudio for pitch-preserved playback during preview
+    // and toneFrequency correction during rendering
     return (
-      <Audio
+      <PitchCorrectedAudio
         src={item.src}
-        trimBefore={trimBefore > 0 ? trimBefore : undefined}
+        trimBefore={trimBefore}
         volume={muted ? 0 : 1}
         playbackRate={playbackRate}
+        muted={muted}
       />
     );
   }

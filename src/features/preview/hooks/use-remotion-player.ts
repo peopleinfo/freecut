@@ -210,18 +210,31 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
       // Only attempt resume if we think we're playing
       // This handles Remotion's internal pause/play cycles during buffering/VFR correction
       if (wasPlayingRef.current) {
-        try {
-          setTimeout(() => {
-            const stillWantsToPlay = usePlaybackStore.getState().isPlaying;
-            if (stillWantsToPlay && playerRef.current) {
-              playerRef.current.play();
+        setTimeout(async () => {
+          const stillWantsToPlay = usePlaybackStore.getState().isPlaying;
+          if (stillWantsToPlay && playerRef.current) {
+            try {
+              // Use async/await to properly catch play() promise rejections
+              await playerRef.current.play();
+            } catch (e) {
+              // Play failed - this can happen at clip boundaries during buffering
+              // Retry once after a longer delay before giving up
+              console.warn('[Remotion Sync] Play failed, retrying:', e);
+              setTimeout(async () => {
+                const stillWants = usePlaybackStore.getState().isPlaying;
+                if (stillWants && playerRef.current) {
+                  try {
+                    await playerRef.current.play();
+                  } catch (retryError) {
+                    console.error('[Remotion Sync] Play retry failed:', retryError);
+                    wasPlayingRef.current = false;
+                    pause();
+                  }
+                }
+              }, 100);
             }
-          }, 50);
-        } catch (e) {
-          // If resume fails, sync the pause
-          wasPlayingRef.current = false;
-          pause();
-        }
+          }
+        }, 50);
       }
     };
 

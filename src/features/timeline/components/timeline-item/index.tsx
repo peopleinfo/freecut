@@ -357,33 +357,43 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     return canJoinMultipleItems(selectedItems);
   }, [selectedItemIds]);
 
+  // Subscribe to adjacent neighbors for join indicator updates
+  // Uses a selector that only returns the neighbor info we need, minimizing re-renders
+  const leftNeighbor = useTimelineStore(
+    useCallback(
+      (s) => s.items.find(
+        (other) =>
+          other.id !== item.id &&
+          other.trackId === item.trackId &&
+          other.from + other.durationInFrames === item.from
+      ),
+      [item.id, item.trackId, item.from]
+    )
+  );
+
+  const rightNeighbor = useTimelineStore(
+    useCallback(
+      (s) => s.items.find(
+        (other) =>
+          other.id !== item.id &&
+          other.trackId === item.trackId &&
+          other.from === item.from + item.durationInFrames
+      ),
+      [item.id, item.trackId, item.from, item.durationInFrames]
+    )
+  );
+
   // Check if this clip has a joinable neighbor on the left (this clip is the "right" one)
-  // Read items from store to avoid re-renders during playback
   const hasJoinableLeft = useMemo(() => {
-    const items = useTimelineStore.getState().items;
-    const leftNeighbor = items.find(
-      (other) =>
-        other.id !== item.id &&
-        other.trackId === item.trackId &&
-        other.from + other.durationInFrames === item.from
-    );
     if (!leftNeighbor) return false;
     return canJoinItems(leftNeighbor, item);
-  }, [item.id, item.trackId, item.from]);
+  }, [leftNeighbor, item]);
 
   // Check if this clip has a joinable neighbor on the right (this clip is the "left" one)
-  // Read items from store to avoid re-renders during playback
   const hasJoinableRight = useMemo(() => {
-    const items = useTimelineStore.getState().items;
-    const rightNeighbor = items.find(
-      (other) =>
-        other.id !== item.id &&
-        other.trackId === item.trackId &&
-        other.from === item.from + item.durationInFrames
-    );
     if (!rightNeighbor) return false;
     return canJoinItems(item, rightNeighbor);
-  }, [item.id, item.trackId, item.from, item.durationInFrames]);
+  }, [rightNeighbor, item]);
 
   // For context menu: can join if this clip has any joinable neighbor
   const canJoinFromContextMenu = hasJoinableLeft || hasJoinableRight;
@@ -403,31 +413,17 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
 
   // Handle join with left neighbor
   const handleJoinLeft = useCallback(() => {
-    const items = useTimelineStore.getState().items;
-    const leftNeighbor = items.find(
-      (other) =>
-        other.id !== item.id &&
-        other.trackId === item.trackId &&
-        other.from + other.durationInFrames === item.from
-    );
     if (leftNeighbor) {
       joinItems([leftNeighbor.id, item.id]);
     }
-  }, [joinItems, item.id, item.trackId, item.from]);
+  }, [joinItems, leftNeighbor, item.id]);
 
   // Handle join with right neighbor
   const handleJoinRight = useCallback(() => {
-    const items = useTimelineStore.getState().items;
-    const rightNeighbor = items.find(
-      (other) =>
-        other.id !== item.id &&
-        other.trackId === item.trackId &&
-        other.from === item.from + item.durationInFrames
-    );
     if (rightNeighbor) {
       joinItems([item.id, rightNeighbor.id]);
     }
-  }, [joinItems, item.id, item.trackId, item.from, item.durationInFrames]);
+  }, [joinItems, rightNeighbor, item.id]);
 
   // Handle delete action
   const handleDelete = useCallback(() => {
