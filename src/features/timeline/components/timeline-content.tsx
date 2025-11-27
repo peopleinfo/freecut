@@ -295,20 +295,9 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
     return { actualDuration: totalDuration, timelineWidth: width };
   }, [items, duration, fps, timeToPixels, pixelsToTime, containerWidth]);
 
-  // Viewport culling: only render items that are visible in the viewport + buffer
-  // This significantly improves performance with 50+ items
-  const visibleItems = useMemo(() => {
-    const buffer = 500; // Extra pixels outside viewport to render (prevents pop-in during scroll)
-    const viewportStart = scrollLeft - buffer;
-    const viewportEnd = scrollLeft + containerWidth + buffer;
-
-    return items.filter((item) => {
-      const itemLeft = timeToPixels(item.from / fps);
-      const itemRight = itemLeft + timeToPixels(item.durationInFrames / fps);
-      // Item is visible if any part of it overlaps with the viewport
-      return itemRight >= viewportStart && itemLeft <= viewportEnd;
-    });
-  }, [items, scrollLeft, containerWidth, timeToPixels, fps]);
+  // Render all items - browser handles visibility via CSS content-visibility: auto
+  // This prevents flickering during zoom (items stay in DOM, browser skips off-screen rendering)
+  const visibleItems = items;
 
   /**
    * Adjusts scroll position to center the playhead when zoom changes

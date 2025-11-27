@@ -453,6 +453,9 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         transform: isDragging && !isAltDrag ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
         opacity: isDragging && !isAltDrag ? DRAG_OPACITY : trackLocked ? 0.6 : 1,
         pointerEvents: isDragging ? 'none' : 'auto',
+        // Browser-native virtualization - skip rendering off-screen items without removing from DOM
+        contentVisibility: 'auto',
+        containIntrinsicSize: '0 48px', // Reserve height (h-12 = 48px) for off-screen items
       }}
       onClick={handleClick}
       onMouseDown={trackLocked || isTrimming || isStretching || activeTool === 'razor' || activeTool === 'rate-stretch' || hoveredEdge !== null ? undefined : handleDragStart}
