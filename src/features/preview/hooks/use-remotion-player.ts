@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { PlayerRef } from '@remotion/player';
 import { usePlaybackStore } from '../stores/playback-store';
 
@@ -8,8 +8,9 @@ import { usePlaybackStore } from '../stores/playback-store';
  * Sync strategy:
  * - Timeline seeks trigger Player seeks (both playing and paused)
  * - Player updates are ignored briefly after seeks to prevent loops
- * - Player fires timeupdate → updates timeline scrubber position
+ * - Player fires frameupdate → updates timeline scrubber position
  * - Play/pause state is synced bidirectionally
+ * - Store is authoritative - if store says paused, Player follows
  *
  * @param playerRef - Ref to the Remotion Player instance
  * @returns Player sync handlers and current playback state
@@ -19,6 +20,9 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const currentFrame = usePlaybackStore((s) => s.currentFrame);
   const setCurrentFrame = usePlaybackStore((s) => s.setCurrentFrame);
+
+  // Buffering state for UI feedback
+  const [isBuffering, setIsBuffering] = useState(false);
 
   // Refs for tracking state without causing re-renders
   const lastSyncedFrameRef = useRef<number>(0);
@@ -39,11 +43,9 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
         playerRef.current.play();
       } else if (!isPlaying && wasPlaying) {
         playerRef.current.pause();
-        // Don't sync frame on pause - the timeline state is authoritative
-        // The currentFrame effect will handle seeking the player to the correct position
       }
     } catch (error) {
-      console.error('Failed to control Remotion Player playback:', error);
+      console.error('[Remotion Sync] Failed to control playback:', error);
     }
   }, [isPlaying, playerRef]);
 
@@ -101,10 +103,6 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
   /**
    * Player → Timeline: Listen to frameupdate events
    * Updates timeline scrubber as video plays
-   *
-   * Note: Using 'frameupdate' instead of 'timeupdate' for real-time updates.
-   * - timeupdate: fires every ~250ms (roughly 7-8 frames at 30fps)
-   * - frameupdate: fires for every single frame during playback and seeking
    */
   useEffect(() => {
     if (!playerRef.current) return;
@@ -132,20 +130,50 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
   }, [setCurrentFrame, playerRef]);
 
   /**
-   * Player → Timeline: Sync pause state from Player
-   * Handles cases where Player pauses itself (end of playback, buffering, errors)
+   * Player → Timeline: Sync play/pause/ended state from Player
+   * Handles cases where Player changes state on its own (buffering, errors, end of playback)
    */
   useEffect(() => {
     if (!playerRef.current) return;
 
-    const pause = usePlaybackStore.getState().pause;
+    const { pause } = usePlaybackStore.getState();
+
+    const handlePlayerPlay = () => {
+      const storeIsPlaying = usePlaybackStore.getState().isPlaying;
+
+      // If store says we're paused, the store is authoritative
+      // Force player back to paused state to match store
+      if (!storeIsPlaying) {
+        try {
+          playerRef.current?.pause();
+        } catch (e) {
+          // Ignore
+        }
+        return;
+      }
+
+      // Player started playing and store agrees - ensure refs are synced
+      if (!wasPlayingRef.current) {
+        wasPlayingRef.current = true;
+      }
+    };
 
     const handlePlayerPause = () => {
-      // Only update store if we think we're playing
-      // This prevents feedback loop when WE trigger the pause
+      // Only attempt resume if we think we're playing
+      // This handles Remotion's internal pause/play cycles during buffering/VFR correction
       if (wasPlayingRef.current) {
-        wasPlayingRef.current = false;
-        pause();
+        try {
+          setTimeout(() => {
+            const stillWantsToPlay = usePlaybackStore.getState().isPlaying;
+            if (stillWantsToPlay && playerRef.current) {
+              playerRef.current.play();
+            }
+          }, 50);
+        } catch (e) {
+          // If resume fails, sync the pause
+          wasPlayingRef.current = false;
+          pause();
+        }
       }
     };
 
@@ -154,17 +182,43 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
       pause();
     };
 
+    const handlePlayerError = (e: Event) => {
+      console.error('[Remotion Sync] Player error:', e);
+      if (wasPlayingRef.current) {
+        wasPlayingRef.current = false;
+        pause();
+      }
+    };
+
+    // Buffering state events
+    const handlePlayerWaiting = () => {
+      setIsBuffering(true);
+    };
+
+    const handlePlayerResume = () => {
+      setIsBuffering(false);
+    };
+
+    playerRef.current.addEventListener('play', handlePlayerPlay);
     playerRef.current.addEventListener('pause', handlePlayerPause);
     playerRef.current.addEventListener('ended', handlePlayerEnded);
+    playerRef.current.addEventListener('error', handlePlayerError);
+    playerRef.current.addEventListener('waiting', handlePlayerWaiting);
+    playerRef.current.addEventListener('resume', handlePlayerResume);
 
     return () => {
+      playerRef.current?.removeEventListener('play', handlePlayerPlay);
       playerRef.current?.removeEventListener('pause', handlePlayerPause);
       playerRef.current?.removeEventListener('ended', handlePlayerEnded);
+      playerRef.current?.removeEventListener('error', handlePlayerError);
+      playerRef.current?.removeEventListener('waiting', handlePlayerWaiting);
+      playerRef.current?.removeEventListener('resume', handlePlayerResume);
     };
   }, [playerRef]);
 
   return {
     isPlaying,
     currentFrame,
+    isBuffering,
   };
 }

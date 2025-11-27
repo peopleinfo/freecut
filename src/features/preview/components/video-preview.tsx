@@ -40,7 +40,7 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
   const zoom = usePlaybackStore((s) => s.zoom);
 
   // Remotion Player integration (hook handles bidirectional sync)
-  useRemotionPlayer(playerRef);
+  const { isBuffering } = useRemotionPlayer(playerRef);
 
   // State for resolved tracks (with blob URLs)
   const [resolvedTracks, setResolvedTracks] = useState<TimelineTrack[]>([]);
@@ -199,6 +199,14 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
         {isResolving && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
             <p className="text-white text-sm">Loading media...</p>
+          </div>
+        )}
+
+        {/* Buffering indicator - shows when Remotion is buffering video data */}
+        {isBuffering && !isResolving && (
+          <div className="absolute top-2 left-2 z-20 flex items-center gap-2 bg-black/70 px-2 py-1 rounded">
+            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            <span className="text-white text-xs">Buffering...</span>
           </div>
         )}
 
