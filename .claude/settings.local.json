@@ -25,7 +25,8 @@
       "WebFetch(domain:www.remotion.dev)",
       "Bash(cat:*)",
       "Bash(git log:*)",
-      "Bash(E:)"
+      "Bash(E:)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

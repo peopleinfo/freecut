@@ -188,8 +188,11 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   const fps = useTimelineStore((s) => s.fps);
 
   // Calculate position and width (convert frames to seconds, then to pixels)
-  const left = timeToPixels(item.from / fps);
-  const width = timeToPixels(item.durationInFrames / fps);
+  // Round both left AND right positions to prevent gaps/overlaps at certain zoom levels.
+  // We derive width from (right - left) to ensure adjacent clips share exact pixel boundaries.
+  const left = Math.round(timeToPixels(item.from / fps));
+  const right = Math.round(timeToPixels((item.from + item.durationInFrames) / fps));
+  const width = right - left;
 
   // Calculate trim visual feedback (convert frames to pixels for preview)
   const minWidthPixels = timeToPixels(1 / fps); // Minimum 1 frame width
@@ -220,8 +223,8 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         Math.min(maxTrimPixels, trimDeltaPixels) // Don't trim too much
       );
 
-      trimVisualLeft = left + clampedDelta;
-      trimVisualWidth = width - clampedDelta;
+      trimVisualLeft = Math.round(left + clampedDelta);
+      trimVisualWidth = Math.round(width - clampedDelta);
     } else {
       // End handle: adjust width only
       // Convert source frames to timeline frames (source / speed = timeline)
@@ -238,7 +241,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         Math.min(maxTrimPixels, -trimDeltaPixels) // Don't trim too much (note: trimDelta is negative for extending)
       );
 
-      trimVisualWidth = width - clampedDelta;
+      trimVisualWidth = Math.round(width - clampedDelta);
     }
   }
 
@@ -247,8 +250,10 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   let stretchVisualWidth = trimVisualWidth;
 
   if (isStretching && stretchFeedback) {
-    stretchVisualLeft = timeToPixels(stretchFeedback.from / fps);
-    stretchVisualWidth = timeToPixels(stretchFeedback.duration / fps);
+    // Use same left/right rounding approach for consistent boundaries
+    stretchVisualLeft = Math.round(timeToPixels(stretchFeedback.from / fps));
+    const stretchVisualRight = Math.round(timeToPixels((stretchFeedback.from + stretchFeedback.duration) / fps));
+    stretchVisualWidth = stretchVisualRight - stretchVisualLeft;
   }
 
   // Get color based on item type (using timeline theme colors) - memoized
