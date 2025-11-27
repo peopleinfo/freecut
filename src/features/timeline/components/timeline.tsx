@@ -91,12 +91,18 @@ export function Timeline({ duration }: TimelineProps) {
     };
   }, []);
 
-  // Update drop indicator from shared ref (RAF loop)
+  // Update drop indicator from shared ref (only during drag)
+  // Only runs RAF loop when track dragging is active to avoid unnecessary renders
   useEffect(() => {
+    if (!isTrackDragging) {
+      setDropIndicatorIndex(-1);
+      return;
+    }
+
     let rafId: number;
     const updateDropIndicator = () => {
       const newIndex = trackDropIndexRef.current;
-      setDropIndicatorIndex(newIndex);
+      setDropIndicatorIndex((prev) => (prev !== newIndex ? newIndex : prev));
       rafId = requestAnimationFrame(updateDropIndicator);
     };
 
@@ -104,7 +110,7 @@ export function Timeline({ duration }: TimelineProps) {
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, []);
+  }, [isTrackDragging]);
 
   // Keyboard shortcuts for in/out markers
   useEffect(() => {

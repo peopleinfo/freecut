@@ -18,6 +18,7 @@ interface VideoPreviewProps {
   };
 }
 
+
 /**
  * Video Preview Component
  *
@@ -32,11 +33,10 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
   const playerRef = useRef<PlayerRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Granular selectors
+  // Granular selectors - avoid subscribing to currentFrame here to prevent re-renders
   const fps = useTimelineStore((s) => s.fps);
   const tracks = useTimelineStore((s) => s.tracks);
   const items = useTimelineStore((s) => s.items);
-  const currentFrame = usePlaybackStore((s) => s.currentFrame);
   const zoom = usePlaybackStore((s) => s.zoom);
 
   // Remotion Player integration (hook handles bidirectional sync)
@@ -58,14 +58,13 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
   }, [tracks, items]);
 
   // Calculate total frames from items
-  // Keep at least currentFrame + 1 so playhead position is always valid
-  // This allows empty areas to exist past the last item
+  // Add buffer at the end for empty timeline space
   const totalFrames = useMemo(() => {
     if (items.length === 0) return 900; // Default 30s at 30fps
     const itemsEnd = Math.max(...items.map((item) => item.from + item.durationInFrames));
-    // Ensure composition is at least as long as current playhead position + buffer
-    return Math.max(itemsEnd, currentFrame + 30); // 30 frame buffer (1 second at 30fps)
-  }, [items, currentFrame]);
+    // Add 5 seconds buffer at the end
+    return itemsEnd + (fps * 5);
+  }, [items, fps]);
 
   // Cleanup on mount to clear any stale blob URLs from previous sessions
   // Add small delay to allow garbage collection of old Blob objects
@@ -235,14 +234,6 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
           )}
         />
 
-        {/* Frame Counter */}
-        <div className="absolute -bottom-7 right-0 font-mono text-xs text-primary tabular-nums flex items-center gap-2">
-          <span className="text-muted-foreground">Frame:</span>
-          <span className="font-medium">
-            {String(currentFrame).padStart(5, '0')} /{' '}
-            {String(totalFrames).padStart(5, '0')}
-          </span>
-        </div>
       </div>
       </div>
     </div>

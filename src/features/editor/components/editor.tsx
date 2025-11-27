@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -198,8 +197,7 @@ export function Editor({ projectId, project }: EditorProps) {
   const timelineDuration = 30; // 30 seconds placeholder
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <div className="h-screen bg-background flex flex-col overflow-hidden">
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
         {/* Top Toolbar */}
         <Toolbar
           projectId={projectId}
@@ -234,9 +232,8 @@ export function Editor({ projectId, project }: EditorProps) {
           </ResizablePanel>
         </ResizablePanelGroup>
 
-        {/* Export Dialog */}
-        <ExportDialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} />
-      </div>
-    </TooltipProvider>
+      {/* Export Dialog */}
+      <ExportDialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} />
+    </div>
   );
 }

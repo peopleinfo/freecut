@@ -33,11 +33,11 @@ export function useSnapCalculator(
     return Array.isArray(excludeItemIds) ? excludeItemIds : [excludeItemIds];
   }, [excludeItemIds]);
   // Get state with granular selectors
+  // NOTE: Don't subscribe to currentFrame - read from store when needed to prevent re-renders
   const items = useTimelineStore((s) => s.items);
   const fps = useTimelineStore((s) => s.fps);
   const snapEnabled = useTimelineStore((s) => s.snapEnabled);
   const zoomLevel = useZoomStore((s) => s.level);
-  const currentFrame = usePlaybackStore((s) => s.currentFrame);
   const { pixelsPerSecond } = useTimelineZoom();
 
   /**
@@ -55,6 +55,7 @@ export function useSnapCalculator(
   /**
    * Generate all snap targets (grid + magnetic)
    * Memoized for performance - only recalculates when items/zoom changes
+   * NOTE: Playhead snap target is added dynamically in calculateSnap to avoid re-renders
    */
   const snapTargets = useMemo(() => {
     const targets: SnapTarget[] = [];
@@ -84,14 +85,11 @@ export function useSnapCalculator(
         });
       });
 
-    // 3. Playhead snap point
-    targets.push({
-      frame: currentFrame,
-      type: 'playhead',
-    });
+    // NOTE: Playhead snap target is added dynamically in calculateSnap
+    // to avoid re-renders on every frame update
 
     return targets;
-  }, [items, excludeIds, timelineDuration, fps, zoomLevel, currentFrame]);
+  }, [items, excludeIds, timelineDuration, fps, zoomLevel]);
 
   /**
    * Calculate snap for a given position
@@ -113,17 +111,24 @@ export function useSnapCalculator(
     // Calculate end frame
     const targetEndFrame = targetStartFrame + itemDurationInFrames;
 
+    // Add playhead snap target dynamically (read from store to avoid subscriptions)
+    const currentFrame = usePlaybackStore.getState().currentFrame;
+    const allTargets: SnapTarget[] = [
+      ...snapTargets,
+      { frame: currentFrame, type: 'playhead' as const },
+    ];
+
     // Find nearest snap target for start position
     const nearestStartTarget = findNearestSnapTarget(
       targetStartFrame,
-      snapTargets,
+      allTargets,
       snapThresholdFrames
     );
 
     // Find nearest snap target for end position
     const nearestEndTarget = findNearestSnapTarget(
       targetEndFrame,
-      snapTargets,
+      allTargets,
       snapThresholdFrames
     );
 
@@ -164,11 +169,12 @@ export function useSnapCalculator(
   };
 
   /**
-   * Get magnetic snap targets only (item edges + playhead, for visual guidelines)
+   * Get magnetic snap targets only (item edges, for visual guidelines)
+   * NOTE: Playhead is added dynamically when needed to avoid re-renders
    */
   const magneticSnapTargets = useMemo(() => {
     return snapTargets.filter(
-      (t) => t.type === 'item-start' || t.type === 'item-end' || t.type === 'playhead'
+      (t) => t.type === 'item-start' || t.type === 'item-end'
     );
   }, [snapTargets]);
 

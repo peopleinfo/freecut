@@ -51,7 +51,8 @@ export function TimelineHeader({ onZoomChange, onZoomIn, onZoomOut }: TimelineHe
   const setOutPoint = useTimelineStore((s) => s.setOutPoint);
   const clearInOutPoints = useTimelineStore((s) => s.clearInOutPoints);
   const addMarker = useTimelineStore((s) => s.addMarker);
-  const currentFrame = usePlaybackStore((s) => s.currentFrame);
+  // NOTE: Don't subscribe to currentFrame - only needed in click handlers
+  // Read from store directly when needed to avoid re-renders every frame
   const activeTool = useSelectionStore((s) => s.activeTool);
   const setActiveTool = useSelectionStore((s) => s.setActiveTool);
 
@@ -166,7 +167,7 @@ export function TimelineHeader({ onZoomChange, onZoomIn, onZoomOut }: TimelineHe
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
-                onClick={() => setInPoint(currentFrame)}
+                onClick={() => setInPoint(usePlaybackStore.getState().currentFrame)}
               >
                 <CornerRightDown className="w-3.5 h-3.5" style={{ color: 'oklch(0.65 0.18 142)' }} />
               </Button>
@@ -180,7 +181,7 @@ export function TimelineHeader({ onZoomChange, onZoomIn, onZoomOut }: TimelineHe
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
-                onClick={() => setOutPoint(currentFrame)}
+                onClick={() => setOutPoint(usePlaybackStore.getState().currentFrame)}
               >
                 <CornerRightUp className="w-3.5 h-3.5" style={{ color: 'oklch(0.61 0.22 29)' }} />
               </Button>
@@ -209,7 +210,7 @@ export function TimelineHeader({ onZoomChange, onZoomIn, onZoomOut }: TimelineHe
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
-                onClick={() => addMarker(currentFrame)}
+                onClick={() => addMarker(usePlaybackStore.getState().currentFrame)}
               >
                 <Flag className="w-3.5 h-3.5" style={{ color: 'oklch(0.65 0.20 250)' }} />
               </Button>

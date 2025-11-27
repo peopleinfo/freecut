@@ -53,9 +53,14 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   const joinItems = useTimelineStore((s) => s.joinItems);
   const removeItems = useTimelineStore((s) => s.removeItems);
   const rippleDeleteItems = useTimelineStore((s) => s.rippleDeleteItems);
-  const items = useTimelineStore((s) => s.items);
+  // Access items via getState() in callbacks to avoid re-renders when items array changes
+  // const items = useTimelineStore((s) => s.items);
 
   const isSelected = selectedItemIds.includes(item.id);
+
+  // Use ref for activeTool to avoid callback recreation on mode changes (prevents playback lag)
+  const activeToolRef = useRef(activeTool);
+  activeToolRef.current = activeTool;
 
   // Track which edge is being hovered for showing trim/rate-stretch handles
   const [hoveredEdge, setHoveredEdge] = useState<'start' | 'end' | null>(null);
@@ -299,8 +304,9 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   };
 
   // Handle mouse move to detect edge hover for trim/rate-stretch handles
+  // Use ref for activeTool to prevent callback recreation on mode changes (prevents playback lag)
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (trackLocked || activeTool === 'razor') {
+    if (trackLocked || activeToolRef.current === 'razor') {
       setHoveredEdge(null);
       return;
     }
@@ -316,7 +322,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     } else {
       setHoveredEdge(null);
     }
-  }, [trackLocked, activeTool]);
+  }, [trackLocked]); // Stable - reads activeTool from ref
 
   // Determine cursor class based on tool, state, and edge hover
   const cursorClass = trackLocked
@@ -330,16 +336,20 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     : 'cursor-grab';
 
   // Check if join is available when multiple items are selected
+  // Read items from store to avoid re-renders during playback
   const canJoinSelected = useMemo(() => {
     if (selectedItemIds.length < 2) return false;
+    const items = useTimelineStore.getState().items;
     const selectedItems = selectedItemIds
       .map((id) => items.find((i) => i.id === id))
       .filter((i): i is NonNullable<typeof i> => i !== undefined);
     return canJoinMultipleItems(selectedItems);
-  }, [selectedItemIds, items]);
+  }, [selectedItemIds]);
 
   // Check if this clip has a joinable neighbor on the left (this clip is the "right" one)
+  // Read items from store to avoid re-renders during playback
   const hasJoinableLeft = useMemo(() => {
+    const items = useTimelineStore.getState().items;
     const leftNeighbor = items.find(
       (other) =>
         other.id !== item.id &&
@@ -348,10 +358,12 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     );
     if (!leftNeighbor) return false;
     return canJoinItems(leftNeighbor, item);
-  }, [items, item]);
+  }, [item.id, item.trackId, item.from]);
 
   // Check if this clip has a joinable neighbor on the right (this clip is the "left" one)
+  // Read items from store to avoid re-renders during playback
   const hasJoinableRight = useMemo(() => {
+    const items = useTimelineStore.getState().items;
     const rightNeighbor = items.find(
       (other) =>
         other.id !== item.id &&
@@ -360,7 +372,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     );
     if (!rightNeighbor) return false;
     return canJoinItems(item, rightNeighbor);
-  }, [items, item]);
+  }, [item.id, item.trackId, item.from, item.durationInFrames]);
 
   // For context menu: can join if this clip has any joinable neighbor
   const canJoinFromContextMenu = hasJoinableLeft || hasJoinableRight;
@@ -368,6 +380,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   // Handle join action for multiple selected clips
   const handleJoinSelected = useCallback(() => {
     if (selectedItemIds.length >= 2) {
+      const items = useTimelineStore.getState().items;
       const selectedItems = selectedItemIds
         .map((id) => items.find((i) => i.id === id))
         .filter((i): i is NonNullable<typeof i> => i !== undefined);
@@ -375,10 +388,11 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         joinItems(selectedItemIds);
       }
     }
-  }, [selectedItemIds, items, joinItems]);
+  }, [selectedItemIds, joinItems]);
 
   // Handle join with left neighbor
   const handleJoinLeft = useCallback(() => {
+    const items = useTimelineStore.getState().items;
     const leftNeighbor = items.find(
       (other) =>
         other.id !== item.id &&
@@ -388,10 +402,11 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     if (leftNeighbor) {
       joinItems([leftNeighbor.id, item.id]);
     }
-  }, [items, joinItems, item]);
+  }, [joinItems, item.id, item.trackId, item.from]);
 
   // Handle join with right neighbor
   const handleJoinRight = useCallback(() => {
+    const items = useTimelineStore.getState().items;
     const rightNeighbor = items.find(
       (other) =>
         other.id !== item.id &&
@@ -401,7 +416,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     if (rightNeighbor) {
       joinItems([item.id, rightNeighbor.id]);
     }
-  }, [items, joinItems, item]);
+  }, [joinItems, item.id, item.trackId, item.from, item.durationInFrames]);
 
   // Handle delete action
   const handleDelete = useCallback(() => {

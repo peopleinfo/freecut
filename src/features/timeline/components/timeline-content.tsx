@@ -47,7 +47,8 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
     minZoom: 0.01,
     maxZoom: 2, // Match slider range
   });
-  const currentFrame = usePlaybackStore((s) => s.currentFrame);
+  // NOTE: Don't subscribe to currentFrame here - it would cause re-renders every frame!
+  // Use refs to access it in callbacks instead (see currentFrameRef below)
   const selectItems = useSelectionStore((s) => s.selectItems);
   const clearItemSelection = useSelectionStore((s) => s.clearItemSelection);
   const dragState = useSelectionStore((s) => s.dragState);
@@ -59,6 +60,10 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Use ref for activeTool to avoid callback recreation on mode changes
+  const activeToolRef = useRef(activeTool);
+  activeToolRef.current = activeTool;
+
   const tracksContainerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
@@ -66,8 +71,13 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
   const dragWasActiveRef = useRef(false);
 
   // Use refs to avoid callback recreation on every frame/zoom change
-  const currentFrameRef = useRef(currentFrame);
-  currentFrameRef.current = currentFrame;
+  // Access currentFrame via store subscription (no re-renders) instead of hook
+  const currentFrameRef = useRef(usePlaybackStore.getState().currentFrame);
+  useEffect(() => {
+    return usePlaybackStore.subscribe((state) => {
+      currentFrameRef.current = state.currentFrame;
+    });
+  }, []);
 
   const frameToPixelsRef = useRef(frameToPixels);
   frameToPixelsRef.current = frameToPixels;
@@ -228,10 +238,16 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
   };
 
   // Track cursor position for razor tool split indicator - only over items
+  // Use refs to avoid callback recreation on every mode/state change (prevents playback lag)
+  const razorCursorXRef = useRef(razorCursorX);
+  razorCursorXRef.current = razorCursorX;
+  const hoveredItemElementRef = useRef(hoveredItemElement);
+  hoveredItemElementRef.current = hoveredItemElement;
+
   const handleMouseMoveForRazor = useCallback((e: React.MouseEvent) => {
-    if (activeTool !== 'razor') {
-      if (razorCursorX !== null) setRazorCursorX(null);
-      if (hoveredItemElement) setHoveredItemElement(null);
+    if (activeToolRef.current !== 'razor') {
+      if (razorCursorXRef.current !== null) setRazorCursorX(null);
+      if (hoveredItemElementRef.current) setHoveredItemElement(null);
       return;
     }
 
@@ -242,12 +258,12 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
     if (itemElement) {
       const rect = e.currentTarget.getBoundingClientRect();
       setRazorCursorX(e.clientX - rect.left);
-      if (hoveredItemElement !== itemElement) setHoveredItemElement(itemElement);
+      if (hoveredItemElementRef.current !== itemElement) setHoveredItemElement(itemElement);
     } else {
-      if (razorCursorX !== null) setRazorCursorX(null);
-      if (hoveredItemElement) setHoveredItemElement(null);
+      if (razorCursorXRef.current !== null) setRazorCursorX(null);
+      if (hoveredItemElementRef.current) setHoveredItemElement(null);
     }
-  }, [activeTool, razorCursorX, hoveredItemElement]);
+  }, []); // Stable callback - reads from refs
 
   const handleMouseLeaveForRazor = useCallback(() => {
     setRazorCursorX(null);

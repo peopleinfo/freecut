@@ -34,7 +34,8 @@ interface PlaybackControlsProps {
  */
 export function PlaybackControls({ totalFrames, fps }: PlaybackControlsProps) {
   // Use granular selectors - Zustand v5 best practice
-  const currentFrame = usePlaybackStore((s) => s.currentFrame);
+  // NOTE: Don't subscribe to currentFrame - only needed in click handlers
+  // Read from store directly when needed to avoid re-renders every frame
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const volume = usePlaybackStore((s) => s.volume);
   const togglePlayPause = usePlaybackStore((s) => s.togglePlayPause);
@@ -47,8 +48,14 @@ export function PlaybackControls({ totalFrames, fps }: PlaybackControlsProps) {
 
   const handleGoToStart = () => setCurrentFrame(0);
   const handleGoToEnd = () => setCurrentFrame(totalFrames);
-  const handlePreviousFrame = () => setCurrentFrame(Math.max(0, currentFrame - 1));
-  const handleNextFrame = () => setCurrentFrame(Math.min(totalFrames, currentFrame + 1));
+  const handlePreviousFrame = () => {
+    const currentFrame = usePlaybackStore.getState().currentFrame;
+    setCurrentFrame(Math.max(0, currentFrame - 1));
+  };
+  const handleNextFrame = () => {
+    const currentFrame = usePlaybackStore.getState().currentFrame;
+    setCurrentFrame(Math.min(totalFrames, currentFrame + 1));
+  };
 
   return (
     <div className="h-16 border-t border-border panel-header flex items-center justify-center gap-6 px-6 flex-shrink-0">

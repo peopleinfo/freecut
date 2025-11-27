@@ -16,9 +16,8 @@ import { usePlaybackStore } from '../stores/playback-store';
  * @returns Player sync handlers and current playback state
  */
 export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
-  // Granular selectors
+  // Only subscribe to isPlaying - currentFrame is accessed via ref to prevent re-renders
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
-  const currentFrame = usePlaybackStore((s) => s.currentFrame);
   const setCurrentFrame = usePlaybackStore((s) => s.setCurrentFrame);
 
   // Buffering state for UI feedback
@@ -28,6 +27,15 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
   const lastSyncedFrameRef = useRef<number>(0);
   const ignorePlayerUpdatesRef = useRef<boolean>(false);
   const wasPlayingRef = useRef(isPlaying);
+  const pendingFrameRef = useRef<number | null>(null);
+
+  // Subscribe to currentFrame changes via store subscription (no re-renders)
+  const currentFrameRef = useRef(usePlaybackStore.getState().currentFrame);
+  useEffect(() => {
+    return usePlaybackStore.subscribe((state) => {
+      currentFrameRef.current = state.currentFrame;
+    });
+  }, []);
 
   /**
    * Timeline → Player: Sync play/pause state
@@ -43,69 +51,93 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
         playerRef.current.play();
       } else if (!isPlaying && wasPlaying) {
         playerRef.current.pause();
+        // Sync any pending frame that was throttled during playback
+        if (pendingFrameRef.current !== null) {
+          setCurrentFrame(pendingFrameRef.current);
+          pendingFrameRef.current = null;
+        }
       }
     } catch (error) {
       console.error('[Remotion Sync] Failed to control playback:', error);
     }
-  }, [isPlaying, playerRef]);
+  }, [isPlaying, playerRef, setCurrentFrame]);
 
   /**
    * Timeline → Player: Sync frame position (scrubbing and seeking)
-   * Works both when paused AND when playing
+   * Uses store subscription instead of useEffect to avoid re-renders
    */
   useEffect(() => {
     if (!playerRef.current) return;
 
-    // Check if this is a user-initiated seek (not from Player feedback)
-    const frameDiff = Math.abs(currentFrame - lastSyncedFrameRef.current);
-    if (frameDiff === 0) {
-      return; // Already in sync, no need to seek
-    }
+    const unsubscribe = usePlaybackStore.subscribe((state, prevState) => {
+      if (!playerRef.current) return;
 
-    // During playback, ignore single-frame increments (normal playback progression)
-    // Only seek if user jumped more than 1 frame (actual seek/scrub)
-    if (isPlaying && frameDiff === 1) {
+      const currentFrame = state.currentFrame;
+      const prevFrame = prevState.currentFrame;
+
+      // No change
+      if (currentFrame === prevFrame) return;
+
+      // Check if this is a user-initiated seek (not from Player feedback)
+      const frameDiff = Math.abs(currentFrame - lastSyncedFrameRef.current);
+      if (frameDiff === 0) {
+        return; // Already in sync, no need to seek
+      }
+
+      // During playback, ignore single-frame increments (normal playback progression)
+      // Only seek if user jumped more than 1 frame (actual seek/scrub)
+      if (state.isPlaying && frameDiff === 1) {
+        lastSyncedFrameRef.current = currentFrame;
+        return;
+      }
+
+      // Update lastSyncedFrame IMMEDIATELY to prevent pause handler from
+      // overwriting user-initiated seeks (e.g., clicking on ruler while playing)
       lastSyncedFrameRef.current = currentFrame;
-      return;
-    }
 
-    // Update lastSyncedFrame IMMEDIATELY to prevent pause handler from
-    // overwriting user-initiated seeks (e.g., clicking on ruler while playing)
-    lastSyncedFrameRef.current = currentFrame;
+      // Ignore Player updates during seek
+      ignorePlayerUpdatesRef.current = true;
 
-    // Ignore Player updates during seek
-    ignorePlayerUpdatesRef.current = true;
+      try {
+        const handleSeeked = () => {
+          // After seek completes, trust whatever frame Player is at
+          const actualFrame = playerRef.current?.getCurrentFrame();
+          if (actualFrame !== undefined) {
+            lastSyncedFrameRef.current = actualFrame;
+          }
 
-    try {
-      const handleSeeked = () => {
-        // After seek completes, trust whatever frame Player is at
-        const actualFrame = playerRef.current?.getCurrentFrame();
-        if (actualFrame !== undefined) {
-          lastSyncedFrameRef.current = actualFrame;
-        }
+          // Re-enable Player updates
+          requestAnimationFrame(() => {
+            ignorePlayerUpdatesRef.current = false;
+          });
 
-        // Re-enable Player updates
-        requestAnimationFrame(() => {
-          ignorePlayerUpdatesRef.current = false;
-        });
+          playerRef.current?.removeEventListener('seeked', handleSeeked);
+        };
 
-        playerRef.current?.removeEventListener('seeked', handleSeeked);
-      };
+        playerRef.current.addEventListener('seeked', handleSeeked);
+        playerRef.current.seekTo(currentFrame);
+      } catch (error) {
+        console.error('Failed to seek Remotion Player:', error);
+        ignorePlayerUpdatesRef.current = false;
+      }
+    });
 
-      playerRef.current.addEventListener('seeked', handleSeeked);
-      playerRef.current.seekTo(currentFrame);
-    } catch (error) {
-      console.error('Failed to seek Remotion Player:', error);
-      ignorePlayerUpdatesRef.current = false;
-    }
-  }, [currentFrame, playerRef, isPlaying]);
+    return unsubscribe;
+  }, [playerRef]);
 
   /**
    * Player → Timeline: Listen to frameupdate events
    * Updates timeline scrubber as video plays
+   * Throttled to reduce re-renders and prevent audio stuttering
    */
   useEffect(() => {
     if (!playerRef.current) return;
+
+    let lastUpdateTime = 0;
+    // Minimal throttling during playback - UI updates at ~30fps
+    // After removing currentFrame subscriptions from Editor/TimelineShortcuts/SnapCalculator,
+    // we can afford near-realtime updates. Only TimecodeDisplay and TimelinePlayhead re-render now.
+    const THROTTLE_MS = 33;
 
     const handleFrameUpdate = (e: { detail: { frame: number } }) => {
       // Ignore updates right after we seeked
@@ -118,7 +150,23 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
       // Only update if frame actually changed
       if (newFrame !== lastSyncedFrameRef.current) {
         lastSyncedFrameRef.current = newFrame;
-        setCurrentFrame(newFrame);
+        pendingFrameRef.current = newFrame; // Always store latest frame
+
+        // During active playback, skip most UI updates to prevent audio stuttering
+        // Only update every THROTTLE_MS to give some visual feedback
+        const isPlaying = usePlaybackStore.getState().isPlaying;
+        if (isPlaying) {
+          const now = performance.now();
+          if (now - lastUpdateTime >= THROTTLE_MS) {
+            lastUpdateTime = now;
+            setCurrentFrame(newFrame);
+            pendingFrameRef.current = null;
+          }
+        } else {
+          // When paused/scrubbing, update immediately for responsive feel
+          setCurrentFrame(newFrame);
+          pendingFrameRef.current = null;
+        }
       }
     };
 
@@ -218,7 +266,6 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
 
   return {
     isPlaying,
-    currentFrame,
     isBuffering,
   };
 }

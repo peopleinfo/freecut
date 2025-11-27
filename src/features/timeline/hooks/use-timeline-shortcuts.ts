@@ -31,8 +31,8 @@ export interface TimelineShortcutCallbacks {
  */
 export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) {
   // Access stores with granular selectors (performance optimization)
+  // NOTE: Don't subscribe to currentFrame - read from store in callbacks to prevent re-renders
   const togglePlayPause = usePlaybackStore((s) => s.togglePlayPause);
-  const currentFrame = usePlaybackStore((s) => s.currentFrame);
   const setCurrentFrame = usePlaybackStore((s) => s.setCurrentFrame);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
 
@@ -91,10 +91,11 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
     HOTKEYS.PREVIOUS_FRAME,
     (event) => {
       event.preventDefault();
+      const currentFrame = usePlaybackStore.getState().currentFrame;
       setCurrentFrame(Math.max(0, currentFrame - 1));
     },
     HOTKEY_OPTIONS,
-    [setCurrentFrame, currentFrame]
+    [setCurrentFrame]
   );
 
   // Navigation: Arrow Right - Next frame
@@ -102,10 +103,11 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
     HOTKEYS.NEXT_FRAME,
     (event) => {
       event.preventDefault();
+      const currentFrame = usePlaybackStore.getState().currentFrame;
       setCurrentFrame(currentFrame + 1);
     },
     HOTKEY_OPTIONS,
-    [setCurrentFrame, currentFrame]
+    [setCurrentFrame]
   );
 
   // Navigation: Home - Go to start
@@ -136,6 +138,7 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
     HOTKEYS.NEXT_EDGE,
     (event) => {
       event.preventDefault();
+      const currentFrame = usePlaybackStore.getState().currentFrame;
       // Find the next edge after current frame
       const nextEdge = clipEdges.find((edge) => edge > currentFrame);
       if (nextEdge !== undefined) {
@@ -143,7 +146,7 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
       }
     },
     HOTKEY_OPTIONS,
-    [setCurrentFrame, currentFrame, clipEdges]
+    [setCurrentFrame, clipEdges]
   );
 
   // Navigation: Up - Jump to previous clip edge
@@ -151,6 +154,7 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
     HOTKEYS.PREVIOUS_EDGE,
     (event) => {
       event.preventDefault();
+      const currentFrame = usePlaybackStore.getState().currentFrame;
       // Find the previous edge before current frame
       // Iterate backwards through sorted edges
       let previousEdge: number | undefined;
@@ -165,7 +169,7 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
       }
     },
     HOTKEY_OPTIONS,
-    [setCurrentFrame, currentFrame, clipEdges]
+    [setCurrentFrame, clipEdges]
   );
 
   // Editing: Delete - Delete selected items
@@ -351,10 +355,11 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
     HOTKEYS.ADD_MARKER,
     (event) => {
       event.preventDefault();
+      const currentFrame = usePlaybackStore.getState().currentFrame;
       addMarker(currentFrame);
     },
     HOTKEY_OPTIONS,
-    [addMarker, currentFrame]
+    [addMarker]
   );
 
   // Markers: [ - Jump to previous marker
@@ -362,6 +367,7 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
     HOTKEYS.PREVIOUS_MARKER,
     (event) => {
       event.preventDefault();
+      const currentFrame = usePlaybackStore.getState().currentFrame;
       // Find the previous marker before current frame
       let previousMarker: number | undefined;
       for (let i = markers.length - 1; i >= 0; i--) {
@@ -376,7 +382,7 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
       }
     },
     HOTKEY_OPTIONS,
-    [setCurrentFrame, currentFrame, markers]
+    [setCurrentFrame, markers]
   );
 
   // Markers: ] - Jump to next marker
@@ -384,6 +390,7 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
     HOTKEYS.NEXT_MARKER,
     (event) => {
       event.preventDefault();
+      const currentFrame = usePlaybackStore.getState().currentFrame;
       // Find the next marker after current frame
       const nextMarker = markers.find((m) => m.frame > currentFrame);
       if (nextMarker) {
@@ -391,6 +398,6 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
       }
     },
     HOTKEY_OPTIONS,
-    [setCurrentFrame, currentFrame, markers]
+    [setCurrentFrame, markers]
   );
 }

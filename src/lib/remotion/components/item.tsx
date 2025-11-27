@@ -2,7 +2,6 @@ import React from 'react';
 import { AbsoluteFill, OffthreadVideo } from 'remotion';
 import { Audio } from '@remotion/media';
 import type { TimelineItem } from '@/types/timeline';
-import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import { DebugOverlay } from './debug-overlay';
 
 // Set to true to show debug overlay on video items during rendering
@@ -25,15 +24,9 @@ export interface ItemProps {
  * - Respects mute state for audio/video items (reads directly from store for reactivity)
  * - Supports trimStart/trimEnd for media trimming (uses trimStart as trimBefore)
  */
-export const Item: React.FC<ItemProps> = ({ item, muted: mutedProp = false }) => {
-  // Read muted state directly from store for immediate reactivity
-  // This bypasses the async prop resolution pipeline
-  const trackMuted = useTimelineStore((s) =>
-    s.tracks.find((t) => t.id === item.trackId)?.muted ?? false
-  );
-
-  // Use store value for audio/video, fall back to prop for other cases
-  const muted = (item.type === 'video' || item.type === 'audio') ? trackMuted : mutedProp;
+export const Item: React.FC<ItemProps> = ({ item, muted = false }) => {
+  // Use muted prop directly - MainComposition already passes track.muted
+  // Avoiding store subscription here prevents re-render issues with @remotion/media Audio
   if (item.type === 'video') {
     // Guard against missing src (media resolution failed)
     if (!item.src) {
@@ -120,7 +113,7 @@ export const Item: React.FC<ItemProps> = ({ item, muted: mutedProp = false }) =>
       <Audio
         src={item.src}
         trimBefore={trimBefore > 0 ? trimBefore : undefined}
-        volume={() => (muted ? 0 : 1)}
+        volume={muted ? 0 : 1}
         playbackRate={playbackRate}
       />
     );

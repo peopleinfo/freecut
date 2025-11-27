@@ -23,7 +23,9 @@
       "mcp__ide__getDiagnostics",
       "Bash(npx tsc:*)",
       "WebFetch(domain:www.remotion.dev)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(git log:*)",
+      "Bash(E:)"
     ],
     "deny": [],
     "ask": []

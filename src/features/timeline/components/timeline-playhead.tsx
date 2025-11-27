@@ -28,8 +28,16 @@ export function TimelinePlayhead({ inRuler = false }: TimelinePlayheadProps) {
 
   const [isDragging, setIsDragging] = useState(false);
   const [isExternalDrag, setIsExternalDrag] = useState(false);
-  const activeTool = useSelectionStore((s) => s.activeTool);
   const playheadRef = useRef<HTMLDivElement>(null);
+
+  // Track activeTool via ref subscription to avoid re-renders during playback
+  // This prevents mode toggle from interrupting frame updates
+  const activeToolRef = useRef(useSelectionStore.getState().activeTool);
+  useEffect(() => {
+    return useSelectionStore.subscribe((state) => {
+      activeToolRef.current = state.activeTool;
+    });
+  }, []);
 
   // Use refs to avoid stale closures
   const pixelsToFrameRef = useRef(pixelsToFrame);
@@ -146,9 +154,9 @@ export function TimelinePlayhead({ inRuler = false }: TimelinePlayheadProps) {
           style={{
             left: '-6px', // Center the 14px wide area on the 2px line
             width: '14px',
-            cursor: activeTool === 'razor' ? 'default' : isDragging ? 'grabbing' : 'grab',
+            cursor: activeToolRef.current === 'razor' ? 'default' : isDragging ? 'grabbing' : 'grab',
             // Pass through pointer events in razor mode or during external drag operations
-            pointerEvents: activeTool === 'razor' || isExternalDrag ? 'none' : 'auto',
+            pointerEvents: activeToolRef.current === 'razor' || isExternalDrag ? 'none' : 'auto',
             backgroundColor: 'transparent',
           }}
           onMouseDown={handleMouseDown}
@@ -175,9 +183,9 @@ export function TimelinePlayhead({ inRuler = false }: TimelinePlayheadProps) {
               width: '20px',
               height: '20px',
               transform: 'translateX(-50%)',
-              cursor: activeTool === 'razor' ? 'default' : isDragging ? 'grabbing' : 'grab',
-              // Pass through pointer events during external drag operations
-              pointerEvents: isExternalDrag ? 'none' : 'auto',
+              cursor: activeToolRef.current === 'razor' ? 'default' : isDragging ? 'grabbing' : 'grab',
+              // Pass through pointer events in razor mode or during external drag operations
+              pointerEvents: activeToolRef.current === 'razor' || isExternalDrag ? 'none' : 'auto',
               backgroundColor: 'transparent',
             }}
             onMouseDown={handleMouseDown}

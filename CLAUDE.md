@@ -64,6 +64,7 @@ See `.claude/docs/video-editor/conventions.md` for complete guidelines.
 - `error-handling.md` - Storage errors, quota management, recovery
 - `react-patterns.md` - React 19 features (Activity, Effect Events)
 - `state-management.md` - Zustand v5 best practices, re-render optimization
+- `playback-optimization.md` - Audio/video playback performance, preventing stuttering
 - `conventions.md` - File naming, imports, TypeScript config
 - `development.md` - Setup, testing, debugging
 
@@ -92,5 +93,6 @@ npm run build   # Production build
 - **React 19:** Use Activity for show/hide, Effect Events for playback sync
 - **TypeScript:** Use `import defer` for mediabunny and other heavy libraries
 - **Remotion:** Server-side rendering with `@remotion/renderer`, not client-side
+- **Playback:** Don't subscribe to `currentFrame` - read from store in callbacks (see `playback-optimization.md`)
 
 See `.claude/docs/` for comprehensive documentation on all topics.
