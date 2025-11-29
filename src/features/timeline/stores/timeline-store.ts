@@ -591,6 +591,24 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
     isDirty: true,
   })),
 
+  // Batch update for group transforms (each item gets its own transform)
+  // This is a single undo operation for all items
+  updateItemsTransformMap: (transformsMap) => set((state) => ({
+    items: state.items.map((item) => {
+      const transformUpdates = transformsMap.get(item.id);
+      if (!transformUpdates) return item;
+      const existingTransform = item.transform || {};
+      return {
+        ...item,
+        transform: {
+          ...existingTransform,
+          ...transformUpdates,
+        },
+      };
+    }),
+    isDirty: true,
+  })),
+
   // Save timeline to project in IndexedDB
   saveTimeline: async (projectId) => {
     const state = useTimelineStore.getState();

@@ -277,6 +277,7 @@ export function TransformGizmo({
           border: `2px dashed ${isInteracting ? '#ea580c' : '#f97316'}`,
           boxSizing: 'border-box',
         }}
+        data-gizmo="border"
         onMouseDown={handleTranslateStart}
         onDoubleClick={(e) => e.stopPropagation()}
       />
@@ -287,6 +288,7 @@ export function TransformGizmo({
           key={handle}
           className="bg-white border border-orange-500 pointer-events-auto"
           style={getHandleStyle(handle)}
+          data-gizmo={`scale-${handle}`}
           onMouseDown={(e) => handleScaleStart(handle, e)}
         />
       ))}
@@ -301,6 +303,7 @@ export function TransformGizmo({
           top: -ROTATION_HANDLE_OFFSET,
           marginLeft: -5,
         }}
+        data-gizmo="rotate"
         onMouseDown={handleRotateStart}
       />
 

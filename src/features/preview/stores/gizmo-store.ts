@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { GizmoState, GizmoMode, GizmoHandle, Transform, Point } from '../types/gizmo';
+import type { GizmoState, GizmoHandle, Transform, Point } from '../types/gizmo';
 import { calculateTransform } from '../utils/transform-calculations';
 import { applySnapping, applyScaleSnapping, type SnapLine } from '../utils/snap-utils';
 
@@ -39,6 +39,8 @@ interface GizmoStoreState {
   itemPropertiesPreview: Record<string, ItemPropertiesPreview> | null;
   /** Canvas background color preview (during color picker drag) */
   canvasBackgroundPreview: string | null;
+  /** Group preview transforms during multi-item drag (itemId -> transform) */
+  groupPreviewTransforms: Map<string, Transform> | null;
 }
 
 interface GizmoStoreActions {
@@ -99,6 +101,9 @@ interface GizmoStoreActions {
 
   /** Clear canvas background color preview */
   clearCanvasBackgroundPreview: () => void;
+
+  /** Set group preview transforms during multi-item drag */
+  setGroupPreviewTransforms: (transforms: Map<string, Transform> | null) => void;
 }
 
 export const useGizmoStore = create<GizmoStoreState & GizmoStoreActions>(
@@ -112,6 +117,7 @@ export const useGizmoStore = create<GizmoStoreState & GizmoStoreActions>(
     propertiesPreview: null,
     itemPropertiesPreview: null,
     canvasBackgroundPreview: null,
+    groupPreviewTransforms: null,
 
     // Actions
     setCanvasSize: (width, height) =>
@@ -226,5 +232,8 @@ export const useGizmoStore = create<GizmoStoreState & GizmoStoreActions>(
 
     clearCanvasBackgroundPreview: () =>
       set({ canvasBackgroundPreview: null }),
+
+    setGroupPreviewTransforms: (transforms) =>
+      set({ groupPreviewTransforms: transforms }),
   })
 );

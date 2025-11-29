@@ -41,6 +41,7 @@ export interface TimelineActions {
   updateItemTransform: (id: string, transform: Partial<TransformProperties>) => void;
   resetItemTransform: (id: string) => void;
   updateItemsTransform: (ids: string[], transform: Partial<TransformProperties>) => void;
+  updateItemsTransformMap: (transformsMap: Map<string, Partial<TransformProperties>>) => void;
   saveTimeline: (projectId: string) => Promise<void>;
   loadTimeline: (projectId: string) => Promise<void>;
   clearTimeline: () => void;

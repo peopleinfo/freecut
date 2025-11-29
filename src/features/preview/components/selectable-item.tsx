@@ -81,6 +81,7 @@ export function SelectableItem({
         backgroundColor: isHovered ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
         border: isHovered ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid transparent',
       }}
+      data-gizmo="selectable-item"
       onMouseDown={handleMouseDown}
       onDoubleClick={(e) => e.stopPropagation()}
       onMouseEnter={() => setIsHovered(true)}

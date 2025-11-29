@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, useMemo, useCallback } from 'react';
 import { Player, PlayerRef } from '@remotion/player';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
@@ -8,6 +8,7 @@ import { MainComposition } from '@/lib/remotion/compositions/main-composition';
 import { useRemotionPlayer } from '../hooks/use-remotion-player';
 import { resolveMediaUrl, cleanupBlobUrls } from '../utils/media-resolver';
 import { GizmoOverlay } from './gizmo-overlay';
+import { isMarqueeJustFinished } from '@/hooks/use-marquee-selection';
 
 interface VideoPreviewProps {
   project: {
@@ -39,6 +40,16 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
 
   // State for gizmo overlay positioning
   const [playerContainerRect, setPlayerContainerRect] = useState<DOMRect | null>(null);
+
+  // Callback ref that measures immediately when element is available
+  const setPlayerContainerRefCallback = useCallback((el: HTMLDivElement | null) => {
+    containerRef.current = el;
+    playerContainerRef.current = el;
+    if (el) {
+      // Measure immediately when ref is set
+      setPlayerContainerRect(el.getBoundingClientRect());
+    }
+  }, []);
 
   // Granular selectors - avoid subscribing to currentFrame here to prevent re-renders
   const fps = useTimelineStore((s) => s.fps);
@@ -240,17 +251,15 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
     return playerSize.width > containerSize.width || playerSize.height > containerSize.height;
   }, [zoom, playerSize, containerSize]);
 
-  // Track player container rect for gizmo positioning
-  useEffect(() => {
+  // Track player container rect changes for gizmo positioning
+  // Initial measurement is done in setPlayerContainerRefCallback
+  useLayoutEffect(() => {
     const container = playerContainerRef.current;
     if (!container) return;
 
     const updateRect = () => {
       setPlayerContainerRect(container.getBoundingClientRect());
     };
-
-    // Initial measurement
-    updateRect();
 
     // Update on resize
     const resizeObserver = new ResizeObserver(updateRect);
@@ -263,22 +272,26 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
       resizeObserver.disconnect();
       window.removeEventListener('scroll', updateRect, true);
     };
-  }, [playerSize]); // Re-run when player size changes
+  }, [playerSize]);
 
   // Handle click on background area to deselect items
   const backgroundRef = useRef<HTMLDivElement>(null);
   const handleBackgroundClick = useCallback((e: React.MouseEvent) => {
-    // Only deselect if clicking directly on the background containers (not on player/gizmo)
-    if (e.target === backgroundRef.current || e.target === e.currentTarget) {
-      useSelectionStore.getState().clearItemSelection();
-    }
+    // Don't clear selection if marquee just finished
+    if (isMarqueeJustFinished()) return;
+
+    // Don't clear if clicking on gizmo elements
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-gizmo]')) return;
+
+    useSelectionStore.getState().clearItemSelection();
   }, []);
 
   return (
     <div
       ref={backgroundRef}
       className="w-full h-full bg-gradient-to-br from-background to-secondary/20 relative"
-      style={{ overflow: needsOverflow ? 'auto' : 'hidden' }}
+      style={{ overflow: needsOverflow ? 'auto' : 'visible' }}
       onClick={handleBackgroundClick}
     >
       <div
@@ -289,11 +302,7 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
         <div className="relative">
           {/* Player container with overflow-hidden for video content */}
           <div
-            ref={(el) => {
-              // Assign both refs
-              (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-              (playerContainerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-            }}
+            ref={setPlayerContainerRefCallback}
             className="relative overflow-hidden shadow-2xl"
             style={{
               width: `${playerSize.width}px`,
@@ -356,6 +365,8 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
             playerSize={playerSize}
             projectSize={{ width: project.width, height: project.height }}
             zoom={zoom}
+            overlayPadding={100}
+            hitAreaRef={backgroundRef}
           />
         </div>
       </div>

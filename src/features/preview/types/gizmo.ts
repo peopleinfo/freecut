@@ -75,3 +75,34 @@ export interface CoordinateParams {
   /** Current zoom level (-1 for auto-fit, or percentage) */
   zoom: number;
 }
+
+/**
+ * Axis-aligned bounding box.
+ */
+export interface BoundingBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Group transform state for multi-item operations.
+ * Stores relative positions so transforms can be applied relative to group center.
+ */
+export interface GroupTransformState {
+  /** IDs of all items in the group */
+  itemIds: string[];
+  /** Combined axis-aligned bounding box of all items (in canvas coordinates) */
+  groupBounds: BoundingBox;
+  /** Center of the group bounding box */
+  groupCenter: Point;
+  /** Individual item transforms at interaction start */
+  itemTransforms: Map<string, Transform>;
+  /** Relative offsets of each item's center from the group center */
+  itemOffsets: Map<string, Point>;
+  /** Original rotation of each item (needed for group rotation) */
+  itemRotations: Map<string, number>;
+}

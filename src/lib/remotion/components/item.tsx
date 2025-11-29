@@ -143,9 +143,14 @@ const TransformWrapper: React.FC<{
   const previewTransform = useGizmoStore((s) => s.previewTransform);
   const propertiesPreview = useGizmoStore((s) => s.propertiesPreview);
   const itemPropertiesPreview = useGizmoStore((s) => s.itemPropertiesPreview);
+  const groupPreviewTransforms = useGizmoStore((s) => s.groupPreviewTransforms);
 
-  // Check if this item has an active gizmo preview transform
+  // Check if this item has an active single-item gizmo preview transform
   const isGizmoPreviewActive = activeGizmo?.itemId === item.id && previewTransform !== null;
+
+  // Check if this item has an active group preview transform
+  const groupPreviewForItem = groupPreviewTransforms?.get(item.id);
+  const isGroupPreviewActive = groupPreviewForItem !== undefined;
 
   // Check if this item has a properties panel preview
   const propertiesPreviewForItem = propertiesPreview?.[item.id];
@@ -156,9 +161,12 @@ const TransformWrapper: React.FC<{
   // Resolve base transform from item
   const baseResolved = resolveTransform(item, canvas, getSourceDimensions(item));
 
-  // Use gizmo preview if active, otherwise merge properties preview if available
+  // Priority: Group preview > Single gizmo preview > Properties preview > Base
   let resolved = baseResolved;
-  if (isGizmoPreviewActive) {
+  if (isGroupPreviewActive) {
+    // Use group preview transform for multi-item drag/scale/rotate
+    resolved = { ...groupPreviewForItem, cornerRadius: groupPreviewForItem.cornerRadius ?? 0 };
+  } else if (isGizmoPreviewActive) {
     resolved = { ...previewTransform, cornerRadius: previewTransform.cornerRadius ?? 0 };
   } else if (propertiesPreviewForItem) {
     // Merge properties preview on top of base resolved
