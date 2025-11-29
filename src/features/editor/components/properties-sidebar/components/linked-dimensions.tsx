@@ -87,7 +87,7 @@ export function LinkedDimensions({
   );
 
   return (
-    <div className={cn('flex items-center gap-1 min-w-0', className)}>
+    <div className={cn('grid grid-cols-[1fr_auto_1fr] gap-1 flex-1 min-w-0 items-center', className)}>
       <NumberInput
         value={width}
         onChange={handleWidthChange}
@@ -98,14 +98,13 @@ export function LinkedDimensions({
         max={maxWidth}
         step={1}
         disabled={disabled}
-        className="flex-1 min-w-0"
       />
 
       <Button
         variant="ghost"
         size="icon"
         className={cn(
-          'h-7 w-7 flex-shrink-0',
+          'h-7 w-7',
           aspectLocked && 'text-primary'
         )}
         onClick={onAspectLockToggle}
@@ -128,7 +127,6 @@ export function LinkedDimensions({
         max={maxHeight}
         step={1}
         disabled={disabled}
-        className="flex-1 min-w-0"
       />
     </div>
   );

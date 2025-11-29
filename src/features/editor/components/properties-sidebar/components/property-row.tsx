@@ -38,7 +38,7 @@ export function PropertyRow({
       ) : (
         labelContent
       )}
-      <div className="flex-1 min-w-0">{children}</div>
+      <div className="flex-1 min-w-0 flex items-center">{children}</div>
     </div>
   );
 }

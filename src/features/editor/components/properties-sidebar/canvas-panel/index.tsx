@@ -252,19 +252,19 @@ export function CanvasPanel() {
       {/* Duration Section */}
       <PropertySection title="Duration" icon={Clock} defaultOpen={true}>
         <PropertyRow label="Duration">
-          <span className="text-xs font-mono text-foreground">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {formatDuration(timelineDuration)}
           </span>
         </PropertyRow>
 
         <PropertyRow label="Frame Rate">
-          <span className="text-xs font-mono text-muted-foreground">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {currentProject.metadata.fps} fps
           </span>
         </PropertyRow>
 
         <PropertyRow label="Total Frames">
-          <span className="text-xs font-mono text-muted-foreground">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {timelineDuration}
           </span>
         </PropertyRow>

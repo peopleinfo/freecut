@@ -5,9 +5,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
-  AlignLeft,
+  AlignStartHorizontal,
   AlignCenterHorizontal,
-  AlignRight,
+  AlignEndHorizontal,
   AlignStartVertical,
   AlignCenterVertical,
   AlignEndVertical,
@@ -30,12 +30,12 @@ interface AlignmentButtonsProps {
 
 const horizontalAlignments: Array<{
   type: AlignmentType;
-  icon: typeof AlignLeft;
+  icon: typeof AlignStartHorizontal;
   label: string;
 }> = [
-  { type: 'left', icon: AlignLeft, label: 'Align Left' },
+  { type: 'left', icon: AlignStartHorizontal, label: 'Align Left' },
   { type: 'center-h', icon: AlignCenterHorizontal, label: 'Center Horizontally' },
-  { type: 'right', icon: AlignRight, label: 'Align Right' },
+  { type: 'right', icon: AlignEndHorizontal, label: 'Align Right' },
 ];
 
 const verticalAlignments: Array<{

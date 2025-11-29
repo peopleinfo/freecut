@@ -50,20 +50,20 @@ export function SourceSection({ items, fps }: SourceSectionProps) {
     return (
       <PropertySection title="Source" icon={Icon} defaultOpen={true}>
         <PropertyRow label="File">
-          <span className="text-xs text-foreground truncate" title={item.label}>
+          <span className="text-xs text-muted-foreground truncate" title={item.label}>
             {item.label}
           </span>
         </PropertyRow>
 
         <PropertyRow label="Duration">
-          <span className="text-xs font-mono text-muted-foreground">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {formatDuration(duration, fps)}
           </span>
         </PropertyRow>
 
         {item.type === 'video' || item.type === 'audio' ? (
           <PropertyRow label="Speed">
-            <span className="text-xs font-mono text-muted-foreground">
+            <span className="text-xs text-muted-foreground tabular-nums">
               {((item as { speed?: number }).speed ?? 1).toFixed(2)}x
             </span>
           </PropertyRow>
@@ -76,7 +76,7 @@ export function SourceSection({ items, fps }: SourceSectionProps) {
   return (
     <PropertySection title="Source" icon={Icon} defaultOpen={true}>
       <PropertyRow label="Selection">
-        <span className="text-xs text-foreground">
+        <span className="text-xs text-muted-foreground tabular-nums">
           {items.length} clips selected
         </span>
       </PropertyRow>
