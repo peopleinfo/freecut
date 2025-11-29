@@ -83,7 +83,7 @@ export function MediaSidebar() {
           <TooltipTrigger asChild>
             <button
               onClick={toggleLeftSidebar}
-              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-6 h-20 bg-secondary/50 hover:bg-secondary border border-border rounded-r-md flex items-center justify-center transition-all hover:w-7"
+              className="absolute left-0 top-3 z-10 w-6 h-20 bg-secondary/50 hover:bg-secondary border border-border rounded-r-md flex items-center justify-center transition-all hover:w-7"
             >
               <ChevronRight className="w-3 h-3 text-muted-foreground" />
             </button>

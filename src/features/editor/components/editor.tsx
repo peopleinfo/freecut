@@ -232,7 +232,7 @@ export function Editor({ projectId, project }: EditorProps) {
         <ResizablePanelGroup direction="vertical" className="flex-1">
           {/* Main Content Area */}
           <ResizablePanel defaultSize={70} minSize={50} maxSize={85}>
-            <div className="h-full flex overflow-hidden">
+            <div className="h-full flex overflow-hidden relative">
               {/* Left Sidebar - Media Library */}
               <MediaSidebar />
 
