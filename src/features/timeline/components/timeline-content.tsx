@@ -337,12 +337,15 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
     // Use actual content end, with minimum of 10 seconds for empty timelines
     const contentDuration = Math.max(furthestItemEnd, 10);
 
-    // Calculate width: content width + minimal buffer for scrollbar
+    // Calculate width: content width + buffer only when content exceeds viewport
     const effectiveContainerWidth = containerWidth > 0 ? containerWidth : 1920;
     const contentWidth = timeToPixels(contentDuration);
 
-    // Ensure at least viewport width, plus small buffer for edge cases
-    const width = Math.max(contentWidth, effectiveContainerWidth) + 50;
+    // Only add buffer when content is wider than viewport (for smooth scroll to end)
+    // When content fits, use exact viewport width to avoid unnecessary scrollbar
+    const width = contentWidth > effectiveContainerWidth
+      ? contentWidth + 50
+      : effectiveContainerWidth;
 
     return { actualDuration: contentDuration, timelineWidth: width };
   }, [items, fps, timeToPixels, containerWidth]);
