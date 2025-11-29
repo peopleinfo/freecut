@@ -365,7 +365,6 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
             playerSize={playerSize}
             projectSize={{ width: project.width, height: project.height }}
             zoom={zoom}
-            overlayPadding={100}
             hitAreaRef={backgroundRef}
           />
         </div>

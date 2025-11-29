@@ -8,7 +8,7 @@ import { GroupGizmo } from './group-gizmo';
 import { SelectableItem } from './selectable-item';
 import { SnapGuides } from './snap-guides';
 import { screenToCanvas, transformToScreenBounds } from '../utils/coordinate-transform';
-import { useMarqueeSelection, type Rect } from '@/hooks/use-marquee-selection';
+import { useMarqueeSelection, isMarqueeJustFinished, type Rect } from '@/hooks/use-marquee-selection';
 import { resolveTransform, getSourceDimensions } from '@/lib/remotion/utils/transform-resolver';
 import type { CoordinateParams, Transform } from '../types/gizmo';
 import type { TransformProperties } from '@/types/transform';
@@ -18,10 +18,10 @@ interface GizmoOverlayProps {
   playerSize: { width: number; height: number };
   projectSize: { width: number; height: number };
   zoom: number;
-  /** Padding around the player for marquee selection from outside */
-  overlayPadding?: number;
   /** Ref to the hit area element for marquee bounds checking */
   hitAreaRef?: React.RefObject<HTMLDivElement>;
+  /** Padding around player for marquee display when starting from outside */
+  overlayPadding?: number;
 }
 
 /**
@@ -34,11 +34,10 @@ export function GizmoOverlay({
   playerSize,
   projectSize,
   zoom,
-  overlayPadding = 0,
   hitAreaRef,
+  overlayPadding = 100,
 }: GizmoOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
-  const playerAreaRef = useRef<HTMLDivElement>(null);
 
   // Selection state
   const selectedItemIds = useSelectionStore((s) => s.selectedItemIds);
@@ -51,8 +50,6 @@ export function GizmoOverlay({
 
   // Ref to track if we just finished a drag (to prevent background click from deselecting)
   const justFinishedDragRef = useRef(false);
-  // Ref to track if we just finished a marquee selection
-  const justFinishedMarqueeRef = useRef(false);
 
   // Playback state - get current frame to determine visible items
   const currentFrame = usePlaybackStore((s) => s.currentFrame);
@@ -103,18 +100,10 @@ export function GizmoOverlay({
     };
   }, [containerRect, playerSize, projectSize, zoom]);
 
-  // Calculate player offset for marquee coordinate conversion
-  const playerOffset = useMemo(() => {
-    if (!containerRect) return { x: 0, y: 0 };
-    return {
-      x: (containerRect.width - playerSize.width) / 2,
-      y: (containerRect.height - playerSize.height) / 2,
-    };
-  }, [containerRect, playerSize]);
 
   // Create marquee items with bounding rects for collision detection
   const marqueeItems = useMemo(() => {
-    if (!coordParams) return [];
+    if (!coordParams || !containerRect) return [];
     return visibleItems.map((item) => ({
       id: item.id,
       getBoundingRect: (): Rect => {
@@ -134,16 +123,16 @@ export function GizmoOverlay({
         );
         // Convert to viewport coordinates for collision detection
         return {
-          left: containerRect!.left + playerOffset.x + screenBounds.left,
-          top: containerRect!.top + playerOffset.y + screenBounds.top,
-          right: containerRect!.left + playerOffset.x + screenBounds.left + screenBounds.width,
-          bottom: containerRect!.top + playerOffset.y + screenBounds.top + screenBounds.height,
+          left: containerRect.left + screenBounds.left,
+          top: containerRect.top + screenBounds.top,
+          right: containerRect.left + screenBounds.left + screenBounds.width,
+          bottom: containerRect.top + screenBounds.top + screenBounds.height,
           width: screenBounds.width,
           height: screenBounds.height,
         };
       },
     }));
-  }, [visibleItems, coordParams, projectSize, containerRect, playerOffset]);
+  }, [visibleItems, coordParams, projectSize, containerRect]);
 
   // Marquee selection hook
   // Use hitAreaRef for bounds checking (fills container), overlayRef for coordinate display
@@ -153,9 +142,7 @@ export function GizmoOverlay({
     items: marqueeItems,
     onSelectionChange: useCallback(
       (ids: string[]) => {
-        if (ids.length > 0) {
-          selectItems(ids);
-        }
+        selectItems(ids);
       },
       [selectItems]
     ),
@@ -163,20 +150,6 @@ export function GizmoOverlay({
     threshold: 5,
   });
 
-  // Track when marquee selection ends to prevent background click from deselecting
-  const wasMarqueeActiveRef = useRef(false);
-  useEffect(() => {
-    if (marqueeState.active) {
-      wasMarqueeActiveRef.current = true;
-    } else if (wasMarqueeActiveRef.current) {
-      // Marquee just ended - set flag to prevent deselection
-      wasMarqueeActiveRef.current = false;
-      justFinishedMarqueeRef.current = true;
-      requestAnimationFrame(() => {
-        justFinishedMarqueeRef.current = false;
-      });
-    }
-  }, [marqueeState.active]);
 
   // Handle transform start - nothing needed, gizmo store handles it
   const handleTransformStart = useCallback(() => {
@@ -241,7 +214,7 @@ export function GizmoOverlay({
   const handleBackgroundClick = useCallback(
     (e: React.MouseEvent) => {
       // Don't deselect if we just finished a drag or marquee operation
-      if (justFinishedDragRef.current || justFinishedMarqueeRef.current) {
+      if (justFinishedDragRef.current || isMarqueeJustFinished()) {
         return;
       }
       // Don't clear if clicking on gizmo elements
@@ -353,9 +326,8 @@ export function GizmoOverlay({
         />
       )}
 
-      {/* Player area - gizmos are offset by padding to align with player */}
+      {/* Player area - receives clicks for deselection and contains gizmos */}
       <div
-        ref={playerAreaRef}
         className="absolute"
         style={{
           top: overlayPadding,

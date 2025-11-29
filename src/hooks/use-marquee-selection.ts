@@ -155,8 +155,7 @@ export function useMarqueeSelection({
     onSelectionChangeRef.current = onSelectionChange;
   }, [onSelectionChange]);
 
-  // Update selection based on current marquee
-  // Once an item is selected, keep it selected until marquee ends
+  // Update selection based on current marquee intersection
   const updateSelection = useCallback(() => {
     if (!marqueeState.active || !containerRef.current) return;
 
@@ -172,7 +171,7 @@ export function useMarqueeSelection({
       marqueeState.currentY - container.scrollTop + containerRect.top
     );
 
-    // Find all items that intersect with marquee
+    // Find all items that currently intersect with marquee
     const intersectingIds = items
       .filter((item) => {
         const itemRect = item.getBoundingRect();
@@ -180,17 +179,17 @@ export function useMarqueeSelection({
       })
       .map((item) => item.id);
 
-    // Merge with previously selected items (don't deselect during drag)
+    // Only update if selection changed
     const prevIds = prevSelectedIdsRef.current;
-    const mergedIds = [...new Set([...prevIds, ...intersectingIds])];
+    const hasChanged =
+      intersectingIds.length !== prevIds.length ||
+      intersectingIds.some((id) => !prevIds.includes(id)) ||
+      prevIds.some((id) => !intersectingIds.includes(id));
 
-    // Only update if we have new items
-    const hasNewItems = mergedIds.length > prevIds.length;
-
-    if (hasNewItems) {
-      setSelectedIds(mergedIds);
-      prevSelectedIdsRef.current = mergedIds;
-      onSelectionChangeRef.current?.(mergedIds);
+    if (hasChanged) {
+      setSelectedIds(intersectingIds);
+      prevSelectedIdsRef.current = intersectingIds;
+      onSelectionChangeRef.current?.(intersectingIds);
     }
   }, [marqueeState, items, containerRef]);
 
@@ -340,8 +339,10 @@ export function useMarqueeSelection({
 
   // Register global mouse event listeners
   // Listen at document level to support containers with pointer-events: none
+  // Note: Don't check containerRef.current here - handlers check it themselves
+  // This ensures listeners are registered even if refs aren't set yet on first render
   useEffect(() => {
-    if (!enabled || !containerRef.current) return;
+    if (!enabled) return;
 
     // Use capture phase to intercept before other handlers
     document.addEventListener('mousedown', handleMouseDown, true);
@@ -353,7 +354,7 @@ export function useMarqueeSelection({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp, true);
     };
-  }, [enabled, containerRef, handleMouseDown, handleMouseMove, handleMouseUp]);
+  }, [enabled, handleMouseDown, handleMouseMove, handleMouseUp]);
 
   return {
     marqueeState,
