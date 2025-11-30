@@ -749,23 +749,33 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
         }),
       };
 
-      // Generate thumbnail from playhead position (non-blocking)
-      // Only update if there's visual content at playhead
+      // Generate thumbnail from current Player frame (captures the actual rendered output)
       let thumbnail: string | undefined;
       try {
-        const fps = project.metadata?.fps || 30;
-        const playheadThumbnail = await generatePlayheadThumbnail(
-          state.items,
-          state.tracks,
-          currentFrame,
-          fps
-        );
-        if (playheadThumbnail) {
-          thumbnail = playheadThumbnail;
+        const captureFrame = usePlaybackStore.getState().captureFrame;
+        console.log('[SaveTimeline] captureFrame available:', !!captureFrame);
+        if (captureFrame) {
+          const capturedThumbnail = await captureFrame();
+          console.log('[SaveTimeline] Captured thumbnail:', capturedThumbnail ? `${capturedThumbnail.substring(0, 50)}...` : 'null');
+          if (capturedThumbnail) {
+            thumbnail = capturedThumbnail;
+          }
+        } else {
+          // Fallback to source-based thumbnail if Player isn't available
+          const fps = project.metadata?.fps || 30;
+          const playheadThumbnail = await generatePlayheadThumbnail(
+            state.items,
+            state.tracks,
+            currentFrame,
+            fps
+          );
+          if (playheadThumbnail) {
+            thumbnail = playheadThumbnail;
+          }
         }
       } catch (thumbError) {
         // Thumbnail generation failure shouldn't block save
-        console.warn('Failed to generate playhead thumbnail:', thumbError);
+        console.warn('Failed to generate thumbnail:', thumbError);
       }
 
       // Update project with timeline data and thumbnail (if generated)

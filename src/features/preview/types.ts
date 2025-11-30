@@ -6,6 +6,8 @@ export interface PlaybackState {
   volume: number;
   muted: boolean;
   zoom: number;
+  /** Function to capture the current Player frame as a data URL (set by VideoPreview) */
+  captureFrame: (() => Promise<string | null>) | null;
 }
 
 export interface PlaybackActions {
@@ -18,4 +20,6 @@ export interface PlaybackActions {
   setVolume: (volume: number) => void;
   toggleMute: () => void;
   setZoom: (zoom: number) => void;
+  /** Register a frame capture function (called by VideoPreview on mount) */
+  setCaptureFrame: (fn: (() => Promise<string | null>) | null) => void;
 }

@@ -7,6 +7,7 @@ import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
 import { MainComposition } from '@/lib/remotion/compositions/main-composition';
 import { useRemotionPlayer } from '../hooks/use-remotion-player';
 import { resolveMediaUrl, cleanupBlobUrls } from '../utils/media-resolver';
+import { capturePlayerFrame } from '../utils/player-capture';
 import { GizmoOverlay } from './gizmo-overlay';
 import { isMarqueeJustFinished } from '@/hooks/use-marquee-selection';
 
@@ -63,6 +64,17 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
 
   // Remotion Player integration (hook handles bidirectional sync)
   const { isBuffering } = useRemotionPlayer(playerRef);
+
+  // Register frame capture function for project thumbnail generation
+  const setCaptureFrame = usePlaybackStore((s) => s.setCaptureFrame);
+  useEffect(() => {
+    const captureFunction = () => capturePlayerFrame(playerRef);
+    setCaptureFrame(captureFunction);
+
+    return () => {
+      setCaptureFrame(null);
+    };
+  }, [setCaptureFrame]);
 
   // Cache for resolved blob URLs (mediaId -> blobUrl)
   const [resolvedUrls, setResolvedUrls] = useState<Map<string, string>>(new Map());

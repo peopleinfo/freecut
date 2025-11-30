@@ -23,11 +23,37 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
   // Buffering state for UI feedback
   const [isBuffering, setIsBuffering] = useState(false);
 
+  // Track when Player is ready (ref.current is set)
+  // This triggers effects to re-run after Player mounts
+  const [playerReady, setPlayerReady] = useState(false);
+
   // Refs for tracking state without causing re-renders
   const lastSyncedFrameRef = useRef<number>(0);
   const ignorePlayerUpdatesRef = useRef<boolean>(false);
   const wasPlayingRef = useRef(isPlaying);
   const pendingFrameRef = useRef<number | null>(null);
+
+  // Detect when Player becomes ready (handles F5 refresh timing)
+  useEffect(() => {
+    if (playerRef.current && !playerReady) {
+      setPlayerReady(true);
+    }
+    // Poll briefly in case ref is set after initial render
+    const checkReady = setInterval(() => {
+      if (playerRef.current && !playerReady) {
+        setPlayerReady(true);
+        clearInterval(checkReady);
+      }
+    }, 50);
+
+    // Clean up after 1 second (Player should definitely be ready by then)
+    const timeout = setTimeout(() => clearInterval(checkReady), 1000);
+
+    return () => {
+      clearInterval(checkReady);
+      clearTimeout(timeout);
+    };
+  }, [playerRef, playerReady]);
 
   /**
    * Timeline → Player: Sync play/pause state
@@ -57,9 +83,19 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
   /**
    * Timeline → Player: Sync frame position (scrubbing and seeking)
    * Uses store subscription instead of useEffect to avoid re-renders
+   * Depends on playerReady to handle F5 refresh timing
    */
   useEffect(() => {
-    if (!playerRef.current) return;
+    if (!playerReady || !playerRef.current) return;
+
+    // Initial sync: The subscription only fires on changes, so we need to sync
+    // the current frame immediately when the Player mounts (e.g., on project load)
+    const initialFrame = usePlaybackStore.getState().currentFrame;
+    if (initialFrame !== 0) {
+      lastSyncedFrameRef.current = initialFrame;
+      playerRef.current.seekTo(initialFrame);
+      console.log('[Remotion Sync] Initial sync to frame:', initialFrame);
+    }
 
     const unsubscribe = usePlaybackStore.subscribe((state, prevState) => {
       if (!playerRef.current) return;
@@ -115,7 +151,7 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
     });
 
     return unsubscribe;
-  }, [playerRef]);
+  }, [playerReady, playerRef]);
 
   /**
    * Player → Timeline: Listen to frameupdate events
