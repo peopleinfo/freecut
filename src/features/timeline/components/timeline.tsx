@@ -291,7 +291,7 @@ export function Timeline({ duration }: TimelineProps) {
 
           {/* Track labels - synced scroll (no scrollbar) */}
           <div className="flex-1 overflow-hidden relative">
-            <div ref={trackHeadersContainerRef} className="space-y-px relative">
+            <div ref={trackHeadersContainerRef} className="relative">
               {tracks.map((track) => (
                 <TrackHeader
                   key={track.id}
