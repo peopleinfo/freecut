@@ -22,6 +22,8 @@ interface TransformGizmoProps {
   coordParams: CoordinateParams;
   onTransformStart: () => void;
   onTransformEnd: (transform: Transform) => void;
+  /** Whether video is currently playing - gizmo shows at lower opacity during playback */
+  isPlaying?: boolean;
 }
 
 /**
@@ -33,6 +35,7 @@ export function TransformGizmo({
   coordParams,
   onTransformStart,
   onTransformEnd,
+  isPlaying = false,
 }: TransformGizmoProps) {
   // Gizmo store
   const activeGizmo = useGizmoStore((s) => s.activeGizmo);
@@ -259,7 +262,7 @@ export function TransformGizmo({
 
   return (
     <div
-      className="absolute pointer-events-none"
+      className="absolute pointer-events-none transition-opacity duration-150"
       style={{
         left: screenBounds.left,
         top: screenBounds.top,
@@ -267,6 +270,7 @@ export function TransformGizmo({
         height: screenBounds.height,
         transform: `rotate(${currentTransform.rotation}deg)`,
         transformOrigin: 'center center',
+        opacity: isPlaying ? 0 : 1,
       }}
     >
       {/* Selection border */}

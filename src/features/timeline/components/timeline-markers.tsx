@@ -405,8 +405,12 @@ export const TimelineMarkers = memo(function TimelineMarkers({ duration, width }
     e.stopPropagation(); // Prevent click from bubbling to container and clearing selection
     if (!containerRef.current) return;
 
-    // Clear marker selection when clicking on ruler
-    selectMarker(null);
+    // Clear marker selection when clicking on ruler (only if a marker is selected)
+    // Note: Don't use selectMarker(null) as it also clears item selection
+    const { selectedMarkerId } = useSelectionStore.getState();
+    if (selectedMarkerId) {
+      selectMarker(null);
+    }
 
     // Cache scroll container for edge-scrolling
     scrollContainerRef.current = containerRef.current.closest('.timeline-container') as HTMLDivElement | null;

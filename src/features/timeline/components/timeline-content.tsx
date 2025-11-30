@@ -95,6 +95,44 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
     });
   }, []);
 
+  // Clear selection when the playhead leaves the selected clip's time range
+  // Only clears if the playhead moves outside the selected item(s), not when crossing other clips' boundaries
+  useEffect(() => {
+    let prevFrame = usePlaybackStore.getState().currentFrame;
+
+    return usePlaybackStore.subscribe((state) => {
+      const currentFrame = state.currentFrame;
+      if (currentFrame === prevFrame) return;
+
+      const { selectedItemIds } = useSelectionStore.getState();
+      if (selectedItemIds.length === 0) {
+        prevFrame = currentFrame;
+        return;
+      }
+
+      // Get the selected items
+      const selectedItems = items.filter(item => selectedItemIds.includes(item.id));
+      if (selectedItems.length === 0) {
+        prevFrame = currentFrame;
+        return;
+      }
+
+      // Check if playhead is still within ANY of the selected items
+      const isWithinSelectedItems = selectedItems.some(item => {
+        const itemStart = item.from;
+        const itemEnd = item.from + item.durationInFrames;
+        return currentFrame >= itemStart && currentFrame < itemEnd;
+      });
+
+      // If playhead moved outside all selected items, clear selection
+      if (!isWithinSelectedItems) {
+        useSelectionStore.getState().clearItemSelection();
+      }
+
+      prevFrame = currentFrame;
+    });
+  }, [items]);
+
 
   const frameToPixelsRef = useRef(frameToPixels);
   frameToPixelsRef.current = frameToPixels;

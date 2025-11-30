@@ -33,6 +33,8 @@ interface GroupGizmoProps {
   onTransformEnd: (transforms: Map<string, Transform>) => void;
   /** Called when clicking (not dragging) on a specific item to select just that item */
   onItemClick?: (itemId: string) => void;
+  /** Whether video is currently playing - gizmo shows at lower opacity during playback */
+  isPlaying?: boolean;
 }
 
 type InteractionMode = 'idle' | 'translate' | 'scale' | 'rotate';
@@ -48,6 +50,7 @@ export function GroupGizmo({
   onTransformStart,
   onTransformEnd,
   onItemClick,
+  isPlaying = false,
 }: GroupGizmoProps) {
   // Local interaction state
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('idle');
@@ -442,12 +445,13 @@ export function GroupGizmo({
 
   return (
     <div
-      className="absolute pointer-events-none"
+      className="absolute pointer-events-none transition-opacity duration-150"
       style={{
         left: screenBounds.left,
         top: screenBounds.top,
         width: screenBounds.width,
         height: screenBounds.height,
+        opacity: isPlaying ? 0 : 1,
       }}
     >
       {/* Selection border */}

@@ -76,18 +76,44 @@ export function GizmoOverlay({
     }
   }, [isPlaying]);
 
-  // Subscribe to frame changes only when paused (for seeking/scrubbing)
+  // Subscribe to frame changes - always update when paused, or at clip boundaries during playback
   useEffect(() => {
-    if (isPlaying) return; // Don't subscribe during playback
+    // Build set of all clip edges (start and end frames) for boundary detection
+    const clipEdges = new Set<number>();
+    for (const item of items) {
+      clipEdges.add(item.from);
+      clipEdges.add(item.from + item.durationInFrames);
+    }
+
+    let prevFrame = usePlaybackStore.getState().currentFrame;
 
     return usePlaybackStore.subscribe((state, prevState) => {
-      if (state.currentFrame !== prevState.currentFrame) {
-        frozenFrameRef.current = state.currentFrame;
-        // Force re-render to update visible items
-        setForceUpdate((n) => n + 1);
+      const currentFrame = state.currentFrame;
+
+      if (!state.isPlaying) {
+        // When paused, always update on frame change
+        if (currentFrame !== prevState.currentFrame) {
+          frozenFrameRef.current = currentFrame;
+          setForceUpdate((n) => n + 1);
+        }
+      } else {
+        // During playback, only update when crossing a clip boundary
+        const minFrame = Math.min(prevFrame, currentFrame);
+        const maxFrame = Math.max(prevFrame, currentFrame);
+
+        for (const edge of clipEdges) {
+          if (edge > minFrame && edge <= maxFrame) {
+            // Crossed a clip boundary - update frozen frame
+            frozenFrameRef.current = currentFrame;
+            setForceUpdate((n) => n + 1);
+            break;
+          }
+        }
       }
+
+      prevFrame = currentFrame;
     });
-  }, [isPlaying]);
+  }, [items]);
 
   // Force update state to trigger re-render and useMemo recalculation when frame changes while paused
   const [frameUpdateKey, setForceUpdate] = useState(0);
@@ -520,6 +546,7 @@ export function GizmoOverlay({
             coordParams={coordParams}
             onTransformStart={handleTransformStart}
             onTransformEnd={(transform) => handleTransformEnd(selectedItems[0]!.id, transform)}
+            isPlaying={isPlaying}
           />
         ) : selectedItems.length > 1 ? (
           <GroupGizmo
@@ -528,6 +555,7 @@ export function GizmoOverlay({
             onTransformStart={handleTransformStart}
             onTransformEnd={handleGroupTransformEnd}
             onItemClick={(itemId) => selectItems([itemId])}
+            isPlaying={isPlaying}
           />
         ) : null}
 
