@@ -34,6 +34,8 @@ export interface ItemPropertiesPreview {
   direction?: 'up' | 'down' | 'left' | 'right';
   points?: number;
   innerRadius?: number;
+  // Mask properties
+  maskFeather?: number;
 }
 
 interface GizmoStoreState {

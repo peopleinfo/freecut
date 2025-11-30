@@ -32,6 +32,8 @@ export interface Transform {
   opacity: number;
   /** Corner radius for rounded corners (optional, preserved during transform) */
   cornerRadius?: number;
+  /** Whether aspect ratio is locked (affects shape rendering behavior) */
+  aspectRatioLocked?: boolean;
 }
 
 /**

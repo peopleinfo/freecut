@@ -98,6 +98,11 @@ export type ShapeItem = BaseTimelineItem & {
   direction?: 'up' | 'down' | 'left' | 'right';  // Triangle only
   points?: number;              // Star (5 default), Polygon (6 default)
   innerRadius?: number;         // Star only (ratio 0-1 of outer)
+  // Mask properties
+  isMask?: boolean;             // When true, shape acts as mask for lower tracks
+  maskType?: 'clip' | 'alpha';  // clip = hard edges, alpha = soft edges
+  maskFeather?: number;         // Feather amount for alpha masks (0-50px)
+  maskInvert?: boolean;         // Invert mask (show outside, hide inside)
 };
 
 // Union type for all timeline items

@@ -170,6 +170,11 @@ export function ShapeSection({ items }: ShapeSectionProps) {
       direction: shapeItems.every(i => (i.direction ?? 'up') === (first.direction ?? 'up')) ? (first.direction ?? 'up') : undefined,
       points: shapeItems.every(i => (i.points ?? 5) === (first.points ?? 5)) ? (first.points ?? 5) : 'mixed' as const,
       innerRadius: shapeItems.every(i => (i.innerRadius ?? 0.5) === (first.innerRadius ?? 0.5)) ? (first.innerRadius ?? 0.5) : 'mixed' as const,
+      // Mask properties
+      isMask: shapeItems.every(i => (i.isMask ?? false) === (first.isMask ?? false)) ? (first.isMask ?? false) : 'mixed' as const,
+      maskType: shapeItems.every(i => (i.maskType ?? 'clip') === (first.maskType ?? 'clip')) ? (first.maskType ?? 'clip') : undefined,
+      maskFeather: shapeItems.every(i => (i.maskFeather ?? 0) === (first.maskFeather ?? 0)) ? (first.maskFeather ?? 0) : 'mixed' as const,
+      maskInvert: shapeItems.every(i => (i.maskInvert ?? false) === (first.maskInvert ?? false)) ? (first.maskInvert ?? false) : 'mixed' as const,
     };
   }, [shapeItems]);
 
@@ -335,6 +340,56 @@ export function ShapeSection({ items }: ShapeSectionProps) {
     [updateShapeItems, clearItemPropertiesPreview]
   );
 
+  // Mask toggle handler
+  const handleIsMaskChange = useCallback(
+    (checked: boolean) => {
+      updateShapeItems({
+        isMask: checked,
+        // Set defaults when enabling mask
+        maskType: checked ? 'clip' : undefined,
+        maskFeather: checked ? 0 : undefined,
+        maskInvert: checked ? false : undefined,
+      });
+    },
+    [updateShapeItems]
+  );
+
+  // Mask type handler
+  const handleMaskTypeChange = useCallback(
+    (value: string) => {
+      updateShapeItems({ maskType: value as 'clip' | 'alpha' });
+    },
+    [updateShapeItems]
+  );
+
+  // Mask feather handlers with live preview
+  const handleMaskFeatherLiveChange = useCallback(
+    (value: number) => {
+      const previews: Record<string, { maskFeather: number }> = {};
+      itemIds.forEach((id) => {
+        previews[id] = { maskFeather: value };
+      });
+      setItemPropertiesPreview(previews);
+    },
+    [itemIds, setItemPropertiesPreview]
+  );
+
+  const handleMaskFeatherChange = useCallback(
+    (value: number) => {
+      updateShapeItems({ maskFeather: value });
+      queueMicrotask(() => clearItemPropertiesPreview());
+    },
+    [updateShapeItems, clearItemPropertiesPreview]
+  );
+
+  // Mask invert handler
+  const handleMaskInvertChange = useCallback(
+    (checked: boolean) => {
+      updateShapeItems({ maskInvert: checked });
+    },
+    [updateShapeItems]
+  );
+
   if (shapeItems.length === 0 || !sharedValues) {
     return null;
   }
@@ -456,6 +511,72 @@ export function ShapeSection({ items }: ShapeSectionProps) {
             step={0.05}
           />
         </PropertyRow>
+      )}
+
+      {/* Mask Section Divider */}
+      <div className="border-t border-border my-3" />
+
+      {/* Use as Mask Toggle */}
+      <PropertyRow label="Use as Mask">
+        <Button
+          variant={sharedValues.isMask === true ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => handleIsMaskChange(sharedValues.isMask !== true)}
+          disabled={sharedValues.isMask === 'mixed'}
+        >
+          {sharedValues.isMask === 'mixed' ? 'Mixed' : sharedValues.isMask ? 'On' : 'Off'}
+        </Button>
+      </PropertyRow>
+
+      {/* Mask settings - only show when isMask is true */}
+      {(sharedValues.isMask === true || sharedValues.isMask === 'mixed') && (
+        <>
+          {/* Mask Type */}
+          <PropertyRow label="Mask Type">
+            <Select
+              value={sharedValues.maskType}
+              onValueChange={handleMaskTypeChange}
+              disabled={sharedValues.isMask !== true}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder={sharedValues.maskType === undefined ? 'Mixed' : 'Select type'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="clip" className="text-xs">Clip (Hard edges)</SelectItem>
+                <SelectItem value="alpha" className="text-xs">Alpha (Soft edges)</SelectItem>
+              </SelectContent>
+            </Select>
+          </PropertyRow>
+
+          {/* Feather - only show for alpha mask type */}
+          {sharedValues.maskType === 'alpha' && (
+            <PropertyRow label="Feather">
+              <NumberInput
+                value={sharedValues.maskFeather}
+                onChange={handleMaskFeatherChange}
+                onLiveChange={handleMaskFeatherLiveChange}
+                min={0}
+                max={50}
+                step={1}
+                unit="px"
+              />
+            </PropertyRow>
+          )}
+
+          {/* Invert Mask */}
+          <PropertyRow label="Invert">
+            <Button
+              variant={sharedValues.maskInvert === true ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => handleMaskInvertChange(sharedValues.maskInvert !== true)}
+              disabled={sharedValues.isMask !== true || sharedValues.maskInvert === 'mixed'}
+            >
+              {sharedValues.maskInvert === 'mixed' ? 'Mixed' : sharedValues.maskInvert ? 'On' : 'Off'}
+            </Button>
+          </PropertyRow>
+        </>
       )}
     </PropertySection>
   );

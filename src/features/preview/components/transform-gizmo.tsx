@@ -306,11 +306,16 @@ export function TransformGizmo({
       onDoubleClick={(e) => e.stopPropagation()}
     >
       {/* Selection border - high z-index to ensure it's above all SelectableItems */}
+      {/* Mask shapes use cyan color, regular shapes use orange */}
       <div
         className="absolute cursor-move"
         style={{
           inset: -2,
-          border: `2px dashed ${isInteracting ? '#ea580c' : '#f97316'}`,
+          border: `2px dashed ${
+            item.type === 'shape' && item.isMask
+              ? (isInteracting ? '#0891b2' : '#06b6d4') // Cyan for masks
+              : (isInteracting ? '#ea580c' : '#f97316') // Orange for regular
+          }`,
           boxSizing: 'border-box',
           zIndex: 101,
         }}

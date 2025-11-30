@@ -5,6 +5,7 @@ import { Rect, Circle, Triangle, Ellipse, Star, Polygon } from '@remotion/shapes
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import type { TimelineItem, VideoItem, TextItem, ShapeItem } from '@/types/timeline';
+import type { TransformProperties } from '@/types/transform';
 import { DebugOverlay } from './debug-overlay';
 import { PitchCorrectedAudio } from './pitch-corrected-audio';
 import { GifPlayer } from './gif-player';
@@ -14,6 +15,13 @@ import {
   toTransformStyle,
 } from '../utils/transform-resolver';
 import { loadFont, FONT_WEIGHT_MAP } from '../utils/fonts';
+import { getShapePath, rotatePath } from '../utils/shape-path';
+
+/** Mask information passed from composition to items */
+export interface MaskInfo {
+  shape: ShapeItem;
+  transform: TransformProperties;
+}
 
 /**
  * Hook to calculate video audio volume with fades and preview support.
@@ -479,9 +487,162 @@ const ShapeContent: React.FC<{ item: ShapeItem }> = ({ item }) => {
 // Set to true to show debug overlay on video items during rendering
 const DEBUG_VIDEO_OVERLAY = false;
 
+/**
+ * MaskWrapper applies clipping to content using CSS clip-path.
+ * This approach is more compatible with Remotion's server-side rendering than SVG foreignObject.
+ */
+const MaskWrapper: React.FC<{
+  masks: MaskInfo[];
+  children: React.ReactNode;
+}> = ({ masks, children }) => {
+  const { width: canvasWidth, height: canvasHeight } = useVideoConfig();
+
+  if (!masks || masks.length === 0) {
+    return <>{children}</>;
+  }
+
+  // All masks use the first mask's type settings
+  const firstMask = masks[0]!;
+  const maskType = firstMask.shape.maskType ?? 'clip';
+  const maskFeather = firstMask.shape.maskFeather ?? 0;
+  const maskInvert = firstMask.shape.maskInvert ?? false;
+
+  // Generate paths for all masks with rotation baked in
+  const maskPaths = masks.map(({ shape, transform }) => {
+    const resolvedTransform = {
+      x: transform.x ?? 0,
+      y: transform.y ?? 0,
+      width: transform.width ?? 200,
+      height: transform.height ?? 200,
+      rotation: transform.rotation ?? 0,
+      opacity: transform.opacity ?? 1,
+    };
+
+    let path = getShapePath(shape, resolvedTransform, {
+      canvasWidth,
+      canvasHeight,
+    });
+
+    // Bake rotation into path coordinates for CSS clip-path compatibility
+    if (resolvedTransform.rotation !== 0) {
+      const centerX = canvasWidth / 2 + resolvedTransform.x;
+      const centerY = canvasHeight / 2 + resolvedTransform.y;
+      path = rotatePath(path, resolvedTransform.rotation, centerX, centerY);
+    }
+
+    return path;
+  });
+
+  // Combine all mask paths into one (for multiple masks)
+  const combinedPath = maskPaths.join(' ');
+
+  // For clip mode, use CSS clip-path which works reliably in Remotion
+  if (maskType === 'clip' && !maskInvert && maskFeather === 0) {
+    // Simple clip mode - use CSS clip-path directly
+    return (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          clipPath: `path('${combinedPath}')`,
+        }}
+      >
+        {children}
+      </div>
+    );
+  }
+
+  // For inverted clip, alpha mask, or feathering, we need SVG
+
+  if (maskType === 'clip' && maskInvert) {
+    // Inverted clip: show everything EXCEPT the mask area
+    // Use evenodd fill rule with a full-canvas rect + the mask paths
+    const invertedPath = `M 0 0 L ${canvasWidth} 0 L ${canvasWidth} ${canvasHeight} L 0 ${canvasHeight} Z ${combinedPath}`;
+    return (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          clipPath: `path(evenodd, '${invertedPath}')`,
+        }}
+      >
+        {children}
+      </div>
+    );
+  }
+
+  // Alpha mask or feathering: use inline SVG mask with CSS reference
+  // Generate unique ID for this mask instance
+  const maskId = `alpha-mask-${masks.map(m => m.shape.id).join('-')}`;
+  const filterId = `blur-${maskId}`;
+
+  return (
+    <>
+      {/* Hidden SVG containing mask definition */}
+      <svg
+        style={{
+          position: 'absolute',
+          width: 0,
+          height: 0,
+          overflow: 'hidden',
+          pointerEvents: 'none',
+        }}
+        aria-hidden="true"
+      >
+        <defs>
+          {maskFeather > 0 && (
+            <filter id={filterId} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation={maskFeather} />
+            </filter>
+          )}
+          <mask
+            id={maskId}
+            maskUnits="userSpaceOnUse"
+            x="0"
+            y="0"
+            width={canvasWidth}
+            height={canvasHeight}
+          >
+            {/* Background: black=hidden, white=visible */}
+            <rect
+              x="0"
+              y="0"
+              width={canvasWidth}
+              height={canvasHeight}
+              fill={maskInvert ? 'white' : 'black'}
+            />
+            {/* Mask shapes */}
+            {maskPaths.map((pathD, i) => (
+              <path
+                key={i}
+                d={pathD}
+                fill={maskInvert ? 'black' : 'white'}
+                filter={maskFeather > 0 ? `url(#${filterId})` : undefined}
+              />
+            ))}
+          </mask>
+        </defs>
+      </svg>
+      {/* Content with mask applied */}
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          mask: `url(#${maskId})`,
+          WebkitMask: `url(#${maskId})`,
+        }}
+      >
+        {children}
+      </div>
+    </>
+  );
+};
+
 export interface ItemProps {
   item: TimelineItem;
   muted?: boolean;
+  /** Active masks that should clip this item's content */
+  masks?: MaskInfo[];
 }
 
 /**
@@ -609,9 +770,16 @@ const TransformWrapper: React.FC<{
  * - Respects mute state for audio/video items (reads directly from store for reactivity)
  * - Supports trimStart/trimEnd for media trimming (uses trimStart as trimBefore)
  */
-export const Item: React.FC<ItemProps> = ({ item, muted = false }) => {
+export const Item: React.FC<ItemProps> = ({ item, muted = false, masks = [] }) => {
   // Use muted prop directly - MainComposition already passes track.muted
   // Avoiding store subscription here prevents re-render issues with @remotion/media Audio
+
+  // Helper to wrap visual content with mask if masks are present
+  const wrapWithMask = (content: React.ReactNode): React.ReactNode => {
+    if (masks.length === 0) return content;
+    return <MaskWrapper masks={masks}>{content}</MaskWrapper>;
+  };
+
   if (item.type === 'video') {
     // Guard against missing src (media resolution failed)
     if (!item.src) {
@@ -722,7 +890,7 @@ export const Item: React.FC<ItemProps> = ({ item, muted = false }) => {
 
     // Always use TransformWrapper for consistent rendering between preview and export
     // resolveTransform handles defaults (fit-to-canvas) when no explicit transform is set
-    return <TransformWrapper item={item}>{videoContent}</TransformWrapper>;
+    return wrapWithMask(<TransformWrapper item={item}>{videoContent}</TransformWrapper>);
   }
 
   if (item.type === 'audio') {
@@ -783,7 +951,7 @@ export const Item: React.FC<ItemProps> = ({ item, muted = false }) => {
       );
 
       // Always use TransformWrapper for consistent rendering
-      return <TransformWrapper item={item}>{gifContent}</TransformWrapper>;
+      return wrapWithMask(<TransformWrapper item={item}>{gifContent}</TransformWrapper>);
     }
 
     // Regular static images
@@ -800,18 +968,18 @@ export const Item: React.FC<ItemProps> = ({ item, muted = false }) => {
     );
 
     // Always use TransformWrapper for consistent rendering between preview and export
-    return <TransformWrapper item={item}>{imageContent}</TransformWrapper>;
+    return wrapWithMask(<TransformWrapper item={item}>{imageContent}</TransformWrapper>);
   }
 
   if (item.type === 'text') {
     // Always use TransformWrapper for consistent rendering between preview and export
-    return <TransformWrapper item={item}><TextContent item={item} /></TransformWrapper>;
+    return wrapWithMask(<TransformWrapper item={item}><TextContent item={item} /></TransformWrapper>);
   }
 
   if (item.type === 'shape') {
     // Always use TransformWrapper for consistent rendering between preview and export
     // ShapeContent renders the appropriate Remotion shape based on shapeType
-    return (
+    return wrapWithMask(
       <TransformWrapper item={item}>
         <ShapeContent item={item} />
       </TransformWrapper>

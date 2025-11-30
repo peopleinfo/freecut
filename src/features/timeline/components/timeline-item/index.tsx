@@ -607,6 +607,13 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         </div>
       )}
 
+      {/* Mask indicator for shape items */}
+      {item.type === 'shape' && item.isMask && (
+        <div className="absolute top-1 left-1 px-1 py-0.5 text-[10px] font-bold bg-cyan-500/80 text-white rounded">
+          M
+        </div>
+      )}
+
       {/* Speed badge - show when speed is not 1x (use tolerance for floating point) */}
       {Math.abs(currentSpeed - 1) > 0.005 && !isStretching && (
         <div className="absolute top-1 right-1 px-1 py-0.5 text-[10px] font-bold bg-black/60 text-white rounded font-mono">
@@ -759,19 +766,27 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   );
 }, (prevProps, nextProps) => {
   // Custom equality check - only re-render when relevant props change
+  const prevItem = prevProps.item;
+  const nextItem = nextProps.item;
+
+  // Check shape-specific mask property
+  const prevIsMask = prevItem.type === 'shape' ? prevItem.isMask : undefined;
+  const nextIsMask = nextItem.type === 'shape' ? nextItem.isMask : undefined;
+
   return (
-    prevProps.item.id === nextProps.item.id &&
-    prevProps.item.from === nextProps.item.from &&
-    prevProps.item.durationInFrames === nextProps.item.durationInFrames &&
-    prevProps.item.trackId === nextProps.item.trackId &&
-    prevProps.item.type === nextProps.item.type &&
-    prevProps.item.label === nextProps.item.label &&
-    prevProps.item.mediaId === nextProps.item.mediaId &&
-    prevProps.item.sourceStart === nextProps.item.sourceStart &&
-    prevProps.item.sourceEnd === nextProps.item.sourceEnd &&
-    prevProps.item.sourceDuration === nextProps.item.sourceDuration &&
-    prevProps.item.trimStart === nextProps.item.trimStart &&
-    prevProps.item.speed === nextProps.item.speed &&
+    prevItem.id === nextItem.id &&
+    prevItem.from === nextItem.from &&
+    prevItem.durationInFrames === nextItem.durationInFrames &&
+    prevItem.trackId === nextItem.trackId &&
+    prevItem.type === nextItem.type &&
+    prevItem.label === nextItem.label &&
+    prevItem.mediaId === nextItem.mediaId &&
+    prevItem.sourceStart === nextItem.sourceStart &&
+    prevItem.sourceEnd === nextItem.sourceEnd &&
+    prevItem.sourceDuration === nextItem.sourceDuration &&
+    prevItem.trimStart === nextItem.trimStart &&
+    prevItem.speed === nextItem.speed &&
+    prevIsMask === nextIsMask &&
     prevProps.timelineDuration === nextProps.timelineDuration &&
     prevProps.trackLocked === nextProps.trackLocked
   );
