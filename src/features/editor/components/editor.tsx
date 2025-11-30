@@ -75,6 +75,10 @@ export function Editor({ projectId, project }: EditorProps) {
       updatedAt: Date.now(),
     });
 
+    // Clear undo/redo history when loading a new project or refreshing
+    // History is session-based; the saved state becomes the new ground truth
+    useTimelineStore.temporal.getState().clear();
+
     if (project.timeline) {
       // Load timeline from project data (router already loaded it)
       const tracksWithItems = project.timeline.tracks.map(track => ({
