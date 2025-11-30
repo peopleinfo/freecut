@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { GizmoState, GizmoHandle, Transform, Point } from '../types/gizmo';
+import type { ItemEffect } from '@/types/effects';
 import { calculateTransform } from '../utils/transform-calculations';
 import { applySnapping, applyScaleSnapping, type SnapLine } from '../utils/snap-utils';
 
@@ -57,6 +58,8 @@ interface GizmoStoreState {
   canvasBackgroundPreview: string | null;
   /** Group preview transforms during multi-item drag (itemId -> transform) */
   groupPreviewTransforms: Map<string, Transform> | null;
+  /** Effects preview during slider drag (itemId -> effects array) */
+  effectsPreview: Record<string, ItemEffect[]> | null;
 }
 
 interface GizmoStoreActions {
@@ -80,7 +83,7 @@ interface GizmoStoreActions {
     handle: GizmoHandle,
     startPoint: Point,
     transform: Transform,
-    itemType?: 'video' | 'audio' | 'image' | 'text' | 'shape',
+    itemType?: 'video' | 'audio' | 'image' | 'text' | 'shape' | 'adjustment',
     aspectRatioLocked?: boolean,
     strokeWidth?: number
   ) => void;
@@ -125,6 +128,12 @@ interface GizmoStoreActions {
 
   /** Set group preview transforms during multi-item drag */
   setGroupPreviewTransforms: (transforms: Map<string, Transform> | null) => void;
+
+  /** Set effects preview for multiple items */
+  setEffectsPreview: (previews: Record<string, ItemEffect[]>) => void;
+
+  /** Clear effects preview */
+  clearEffectsPreview: () => void;
 }
 
 export const useGizmoStore = create<GizmoStoreState & GizmoStoreActions>(
@@ -139,6 +148,7 @@ export const useGizmoStore = create<GizmoStoreState & GizmoStoreActions>(
     itemPropertiesPreview: null,
     canvasBackgroundPreview: null,
     groupPreviewTransforms: null,
+    effectsPreview: null,
 
     // Actions
     setCanvasSize: (width, height) =>
@@ -292,5 +302,11 @@ export const useGizmoStore = create<GizmoStoreState & GizmoStoreActions>(
 
     setGroupPreviewTransforms: (transforms) =>
       set({ groupPreviewTransforms: transforms }),
+
+    setEffectsPreview: (previews) =>
+      set({ effectsPreview: previews }),
+
+    clearEffectsPreview: () =>
+      set({ effectsPreview: null }),
   })
 );

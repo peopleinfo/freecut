@@ -4,7 +4,11 @@
       "Bash(xargs ls:*)",
       "Bash(cd:*)",
       "Skill(frontend-design:frontend-design)",
-      "Bash(git grep:*)"
+      "Bash(git grep:*)",
+      "WebFetch(domain:amagi.dev)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

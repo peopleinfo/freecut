@@ -1,5 +1,6 @@
 import type { TimelineTrack, TimelineItem, ProjectMarker } from '@/types/timeline';
 import type { TransformProperties } from '@/types/transform';
+import type { VisualEffect } from '@/types/effects';
 
 export interface TimelineState {
   tracks: TimelineTrack[];
@@ -42,6 +43,11 @@ export interface TimelineActions {
   resetItemTransform: (id: string) => void;
   updateItemsTransform: (ids: string[], transform: Partial<TransformProperties>) => void;
   updateItemsTransformMap: (transformsMap: Map<string, Partial<TransformProperties>>) => void;
+  // Effect actions
+  addEffect: (itemId: string, effect: VisualEffect) => void;
+  updateEffect: (itemId: string, effectId: string, updates: Partial<{ effect: VisualEffect; enabled: boolean }>) => void;
+  removeEffect: (itemId: string, effectId: string) => void;
+  toggleEffect: (itemId: string, effectId: string) => void;
   saveTimeline: (projectId: string) => Promise<void>;
   loadTimeline: (projectId: string) => Promise<void>;
   clearTimeline: () => void;

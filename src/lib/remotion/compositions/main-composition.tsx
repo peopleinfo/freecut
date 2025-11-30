@@ -1,13 +1,14 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Sequence, useVideoConfig, useCurrentFrame } from 'remotion';
 import type { RemotionInputProps } from '@/types/export';
-import type { TextItem, ShapeItem } from '@/types/timeline';
+import type { TextItem, ShapeItem, AdjustmentItem } from '@/types/timeline';
 import { Item } from '../components/item';
 import { generateStableKey } from '../utils/generate-stable-key';
 import { loadFonts } from '../utils/fonts';
 import { resolveTransform } from '../utils/transform-resolver';
 import { getShapePath, rotatePath } from '../utils/shape-path';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
+import { AdjustmentWrapper, type AdjustmentLayerWithTrackOrder } from '../components/adjustment-wrapper';
 
 /** Mask shape with its track order for scope calculation */
 interface MaskWithTrackOrder {
@@ -246,13 +247,27 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
     return masks;
   }, [visibleTracks]);
 
+  // Collect adjustment layers with their track orders
+  const allAdjustmentLayers: AdjustmentLayerWithTrackOrder[] = useMemo(() => {
+    const layers: AdjustmentLayerWithTrackOrder[] = [];
+    visibleTracks.forEach((track) => {
+      track.items.forEach((item) => {
+        if (item.type === 'adjustment') {
+          layers.push({ layer: item as AdjustmentItem, trackOrder: track.order ?? 0 });
+        }
+      });
+    });
+    return layers;
+  }, [visibleTracks]);
+
   const nonMediaByTrack = visibleTracks.map((track) => ({
     ...track,
     items: track.items.filter(
       (item) =>
         item.type !== 'video' &&
         item.type !== 'audio' &&
-        !(item.type === 'shape' && item.isMask)
+        !(item.type === 'shape' && item.isMask) &&
+        item.type !== 'adjustment' // Filter out adjustment items
     ),
   }));
 
@@ -315,6 +330,7 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
   );
 
   const hasMasks = allMasks.length > 0;
+  const hasAdjustmentLayers = allAdjustmentLayers.length > 0;
 
   return (
     <AbsoluteFill>
@@ -330,26 +346,10 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
       {/* BACKGROUND LAYER */}
       <AbsoluteFill style={{ backgroundColor, zIndex: -1 }} />
 
-      {/* UNMASKED MEDIA LAYER */}
-      {unmaskedMediaItems.map((item) => {
-        const premountFrames = Math.round(fps * 2);
-        return (
-          <Sequence
-            key={generateStableKey(item)}
-            from={item.from}
-            durationInFrames={item.durationInFrames}
-            premountFor={premountFrames}
-          >
-            <AbsoluteFill style={{ zIndex: item.zIndex }}>
-              <Item item={item} muted={item.muted} masks={[]} />
-            </AbsoluteFill>
-          </Sequence>
-        );
-      })}
-
-      {/* MASKED MEDIA LAYER - grouped together, mask applied to group */}
-      <StableMaskedGroup hasMasks={hasMasks}>
-        {maskedMediaItems.map((item) => {
+      {/* ADJUSTMENT WRAPPER - applies effects from adjustment layers to all content */}
+      <AdjustmentWrapper adjustmentLayers={hasAdjustmentLayers ? allAdjustmentLayers : []}>
+        {/* UNMASKED MEDIA LAYER */}
+        {unmaskedMediaItems.map((item) => {
           const premountFrames = Math.round(fps * 2);
           return (
             <Sequence
@@ -364,32 +364,33 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
             </Sequence>
           );
         })}
-      </StableMaskedGroup>
 
-      {/* CLEARING LAYER */}
-      {!hasActiveVideo && (
-        <AbsoluteFill style={{ backgroundColor, zIndex: 1000 }} />
-      )}
+        {/* MASKED MEDIA LAYER - grouped together, mask applied to group */}
+        <StableMaskedGroup hasMasks={hasMasks}>
+          {maskedMediaItems.map((item) => {
+            const premountFrames = Math.round(fps * 2);
+            return (
+              <Sequence
+                key={generateStableKey(item)}
+                from={item.from}
+                durationInFrames={item.durationInFrames}
+                premountFor={premountFrames}
+              >
+                <AbsoluteFill style={{ zIndex: item.zIndex }}>
+                  <Item item={item} muted={item.muted} masks={[]} />
+                </AbsoluteFill>
+              </Sequence>
+            );
+          })}
+        </StableMaskedGroup>
 
-      {/* UNMASKED NON-MEDIA LAYERS */}
-      {unmaskedNonMediaTracks
-        .filter((track) => track.items.length > 0)
-        .map((track) => {
-          const trackOrder = track.order ?? 0;
-          return (
-            <AbsoluteFill key={track.id} style={{ zIndex: 1001 + (maxOrder - trackOrder) }}>
-              {track.items.map((item) => (
-                <Sequence key={item.id} from={item.from} durationInFrames={item.durationInFrames}>
-                  <Item item={item} muted={false} masks={[]} />
-                </Sequence>
-              ))}
-            </AbsoluteFill>
-          );
-        })}
+        {/* CLEARING LAYER */}
+        {!hasActiveVideo && (
+          <AbsoluteFill style={{ backgroundColor, zIndex: 1000 }} />
+        )}
 
-      {/* MASKED NON-MEDIA LAYERS - grouped together */}
-      <StableMaskedGroup hasMasks={hasMasks}>
-        {maskedNonMediaTracks
+        {/* UNMASKED NON-MEDIA LAYERS */}
+        {unmaskedNonMediaTracks
           .filter((track) => track.items.length > 0)
           .map((track) => {
             const trackOrder = track.order ?? 0;
@@ -403,7 +404,25 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
               </AbsoluteFill>
             );
           })}
-      </StableMaskedGroup>
+
+        {/* MASKED NON-MEDIA LAYERS - grouped together */}
+        <StableMaskedGroup hasMasks={hasMasks}>
+          {maskedNonMediaTracks
+            .filter((track) => track.items.length > 0)
+            .map((track) => {
+              const trackOrder = track.order ?? 0;
+              return (
+                <AbsoluteFill key={track.id} style={{ zIndex: 1001 + (maxOrder - trackOrder) }}>
+                  {track.items.map((item) => (
+                    <Sequence key={item.id} from={item.from} durationInFrames={item.durationInFrames}>
+                      <Item item={item} muted={false} masks={[]} />
+                    </Sequence>
+                  ))}
+                </AbsoluteFill>
+              );
+            })}
+        </StableMaskedGroup>
+      </AdjustmentWrapper>
     </AbsoluteFill>
   );
 };

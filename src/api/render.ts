@@ -63,3 +63,12 @@ export async function uploadMediaFiles(
 ): Promise<void> {
   await apiClient.uploadMedia(jobId, files);
 }
+
+/**
+ * Invalidate the server's cached Remotion bundle.
+ * Call this when Remotion composition code changes during development.
+ * The bundle will be rebuilt on the next render.
+ */
+export async function invalidateBundle(): Promise<void> {
+  await apiClient.post('/render/invalidate-bundle', {});
+}

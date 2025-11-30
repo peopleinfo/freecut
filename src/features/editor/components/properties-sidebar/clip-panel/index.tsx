@@ -12,6 +12,7 @@ import { VideoSection } from './video-section';
 import { AudioSection } from './audio-section';
 import { TextSection } from './text-section';
 import { ShapeSection } from './shape-section';
+import { EffectsSection } from '@/features/effects/components/effects-section';
 
 /**
  * Clip properties panel - shown when one or more clips are selected.
@@ -74,6 +75,18 @@ export function ClipPanel() {
     [selectedItems]
   );
 
+  // Check if selection includes adjustment items
+  const hasAdjustmentItems = useMemo(
+    () => selectedItems.some((item) => item.type === 'adjustment'),
+    [selectedItems]
+  );
+
+  // Check if selection is only adjustment items (no layout/fill controls needed)
+  const isOnlyAdjustmentItems = useMemo(
+    () => selectedItems.length > 0 && selectedItems.every((item) => item.type === 'adjustment'),
+    [selectedItems]
+  );
+
   // Check if selection is only text/shape items (no aspect ratio lock by default)
   const isOnlyTextOrShape = useMemo(
     () => selectedItems.length > 0 && selectedItems.every(
@@ -125,11 +138,11 @@ export function ClipPanel() {
 
       <Separator />
 
-      {/* Layout - only for visual items */}
-      {hasVisualItems && (
+      {/* Layout - only for visual items that have canvas position (not adjustment layers) */}
+      {hasVisualItems && !isOnlyAdjustmentItems && (
         <>
           <LayoutSection
-            items={selectedItems.filter((item) => item.type !== 'audio')}
+            items={selectedItems.filter((item) => item.type !== 'audio' && item.type !== 'adjustment')}
             canvas={canvas}
             onTransformChange={handleTransformChange}
             aspectLocked={aspectLocked}
@@ -139,13 +152,29 @@ export function ClipPanel() {
         </>
       )}
 
-      {/* Fill - only for visual items */}
-      {hasVisualItems && (
+      {/* Fill - only for visual items that have canvas position (not adjustment layers) */}
+      {hasVisualItems && !isOnlyAdjustmentItems && (
         <>
           <FillSection
-            items={selectedItems.filter((item) => item.type !== 'audio')}
+            items={selectedItems.filter((item) => item.type !== 'audio' && item.type !== 'adjustment')}
             canvas={canvas}
             onTransformChange={handleTransformChange}
+          />
+          <Separator />
+        </>
+      )}
+
+      {/* Effects - for visual items and adjustment layers */}
+      {hasVisualItems && (
+        <>
+          {/* Explanatory text for adjustment layers */}
+          {hasAdjustmentItems && (
+            <div className="px-1 py-2 text-xs text-muted-foreground bg-purple-500/10 rounded border border-purple-500/20 mb-2">
+              Effects on adjustment layers apply to all items on tracks above.
+            </div>
+          )}
+          <EffectsSection
+            items={selectedItems.filter((item) => item.type !== 'audio')}
           />
           <Separator />
         </>

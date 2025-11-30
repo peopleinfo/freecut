@@ -26,6 +26,17 @@ export class RenderService {
   }
 
   /**
+   * Invalidate the cached bundle (forces rebuild on next render)
+   * Call this when Remotion composition code changes.
+   */
+  invalidateBundle(): void {
+    if (this.bundleLocation) {
+      console.log('[RenderService] Invalidating cached bundle');
+      this.bundleLocation = null;
+    }
+  }
+
+  /**
    * Bundle the Remotion project (call once on startup)
    */
   async bundleProject(): Promise<string> {

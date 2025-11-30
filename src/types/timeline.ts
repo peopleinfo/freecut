@@ -1,4 +1,5 @@
 import type { TransformProperties } from './transform';
+import type { ItemEffect } from './effects';
 
 // Base type for all timeline items (following Remotion pattern)
 type BaseTimelineItem = {
@@ -25,6 +26,8 @@ type BaseTimelineItem = {
   // Video properties (for video items)
   fadeIn?: number; // Video fade in duration in seconds (default: 0)
   fadeOut?: number; // Video fade out duration in seconds (default: 0)
+  // Visual effects (CSS filters, glitch effects)
+  effects?: ItemEffect[];
 };
 
 // Discriminated union types for different item types
@@ -105,8 +108,18 @@ export type ShapeItem = BaseTimelineItem & {
   maskInvert?: boolean;         // Invert mask (show outside, hide inside)
 };
 
+// Adjustment layer - applies effects to all items on tracks ABOVE this track
+export type AdjustmentItem = BaseTimelineItem & {
+  type: 'adjustment';
+  // Uses existing effects?: ItemEffect[] from BaseTimelineItem
+  // Effects apply to all items on tracks ABOVE this track (higher track order)
+
+  // Optional: intensity control for all effects
+  effectOpacity?: number; // 0-1, defaults to 1
+};
+
 // Union type for all timeline items
-export type TimelineItem = VideoItem | AudioItem | TextItem | ImageItem | ShapeItem;
+export type TimelineItem = VideoItem | AudioItem | TextItem | ImageItem | ShapeItem | AdjustmentItem;
 
 export interface TimelineTrack {
   id: string;

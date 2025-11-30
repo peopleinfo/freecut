@@ -262,6 +262,27 @@ router.get('/media/:jobId/:mediaId', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/render/invalidate-bundle
+ * Invalidate the cached Remotion bundle (forces rebuild on next render)
+ * Call this when Remotion composition code changes during development.
+ */
+router.post('/render/invalidate-bundle', (_req: Request, res: Response) => {
+  try {
+    renderService.invalidateBundle();
+    res.json({
+      success: true,
+      message: 'Bundle invalidated. Will rebuild on next render.',
+    });
+  } catch (error: any) {
+    console.error('[API] Error invalidating bundle:', error);
+    res.status(500).json({
+      success: false,
+      error: error?.message || 'Failed to invalidate bundle',
+    });
+  }
+});
+
+/**
  * GET /api/render/:jobId/download
  * Download rendered video
  */

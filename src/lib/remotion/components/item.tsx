@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { AbsoluteFill, OffthreadVideo, useVideoConfig, useCurrentFrame, interpolate, useRemotionEnvironment } from 'remotion';
 import { Video } from '@remotion/media';
 import { Rect, Circle, Triangle, Ellipse, Star, Polygon, Heart } from '@remotion/shapes';
@@ -6,6 +6,7 @@ import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import type { TimelineItem, VideoItem, TextItem, ShapeItem } from '@/types/timeline';
 import type { TransformProperties } from '@/types/transform';
+import type { ItemEffect, GlitchEffect } from '@/types/effects';
 import { DebugOverlay } from './debug-overlay';
 import { PitchCorrectedAudio } from './pitch-corrected-audio';
 import { GifPlayer } from './gif-player';
@@ -16,6 +17,8 @@ import {
 } from '../utils/transform-resolver';
 import { loadFont, FONT_WEIGHT_MAP } from '../utils/fonts';
 import { getShapePath, rotatePath } from '../utils/shape-path';
+import { effectsToCSSFilter, getGlitchEffects } from '@/features/effects/utils/effect-to-css';
+import { getRGBSplitStyles, getScanlinesStyle, getGlitchFilterString } from '@/features/effects/utils/glitch-algorithms';
 
 /** Mask information passed from composition to items */
 export interface MaskInfo {
@@ -804,6 +807,164 @@ const TransformWrapper: React.FC<{
 };
 
 /**
+ * EffectWrapper applies CSS filter effects and glitch animations to content.
+ * Reads effects from item and generates appropriate styles per frame.
+ * Works in both browser preview and Remotion server-side export.
+ */
+const EffectWrapper: React.FC<{
+  item: TimelineItem;
+  children: React.ReactNode;
+}> = ({ item, children }) => {
+  const frame = useCurrentFrame();
+
+  // Read effect preview from gizmo store (for live slider updates)
+  const effectsPreview = useGizmoStore((s) => s.effectsPreview);
+  const previewEffects = effectsPreview?.[item.id];
+
+  // Use preview effects if available, otherwise use item's stored effects
+  const effects: ItemEffect[] = previewEffects ?? item.effects ?? [];
+
+  // Build CSS filter string from CSS filter effects
+  // All hooks must be called unconditionally (before any early returns)
+  const cssFilterString = useMemo(() => {
+    if (effects.length === 0) return '';
+    return effectsToCSSFilter(effects);
+  }, [effects]);
+
+  // Get glitch effects for special rendering
+  const glitchEffects = useMemo(() => {
+    if (effects.length === 0) return [];
+    return getGlitchEffects(effects) as Array<GlitchEffect & { id: string }>;
+  }, [effects]);
+
+  // Calculate glitch-based filters (color glitch adds hue-rotate)
+  const glitchFilterString = useMemo(() => {
+    if (glitchEffects.length === 0) return '';
+    return getGlitchFilterString(glitchEffects, frame);
+  }, [glitchEffects, frame]);
+
+  // If no effects, render children directly
+  if (effects.length === 0) {
+    return <>{children}</>;
+  }
+
+  // Combine all CSS filters
+  const combinedFilter = [cssFilterString, glitchFilterString].filter(Boolean).join(' ');
+
+  // Check for RGB split effect
+  const rgbSplitEffect = glitchEffects.find((e) => e.variant === 'rgb-split');
+
+  // Check for scanlines effect
+  const scanlinesEffect = glitchEffects.find((e) => e.variant === 'scanlines');
+
+  // RGB split requires special multi-layer rendering
+  if (rgbSplitEffect) {
+    const { redOffset, blueOffset, active } = getRGBSplitStyles(
+      rgbSplitEffect.intensity,
+      frame,
+      rgbSplitEffect.speed,
+      rgbSplitEffect.seed
+    );
+
+    if (active) {
+      return (
+        <div
+          style={{
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            filter: combinedFilter || undefined,
+          }}
+        >
+          {/* Red channel - offset right */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              transform: `translateX(${redOffset}px)`,
+              mixBlendMode: 'screen',
+              opacity: 0.8,
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                filter: 'saturate(0) brightness(1.2)',
+                mixBlendMode: 'multiply',
+              }}
+            >
+              <div style={{ width: '100%', height: '100%', backgroundColor: 'red', mixBlendMode: 'multiply' }}>
+                {children}
+              </div>
+            </div>
+          </div>
+          {/* Blue channel - offset left */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              transform: `translateX(${blueOffset}px)`,
+              mixBlendMode: 'screen',
+              opacity: 0.8,
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                filter: 'saturate(0) brightness(1.2)',
+                mixBlendMode: 'multiply',
+              }}
+            >
+              <div style={{ width: '100%', height: '100%', backgroundColor: 'cyan', mixBlendMode: 'multiply' }}>
+                {children}
+              </div>
+            </div>
+          </div>
+          {/* Base layer (green channel stays centered) */}
+          <div style={{ position: 'relative', width: '100%', height: '100%' }}>{children}</div>
+          {/* Scanlines overlay if present */}
+          {scanlinesEffect && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                ...getScanlinesStyle(scanlinesEffect.intensity),
+              }}
+            />
+          )}
+        </div>
+      );
+    }
+  }
+
+  // Standard rendering with CSS filters + optional scanlines
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        position: 'relative',
+        filter: combinedFilter || undefined,
+      }}
+    >
+      {children}
+      {/* Scanlines overlay */}
+      {scanlinesEffect && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            ...getScanlinesStyle(scanlinesEffect.intensity),
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+/**
  * Remotion Item Component
  *
  * Renders different item types following Remotion best practices:
@@ -935,7 +1096,11 @@ export const Item: React.FC<ItemProps> = ({ item, muted = false, masks = [] }) =
 
     // Always use TransformWrapper for consistent rendering between preview and export
     // resolveTransform handles defaults (fit-to-canvas) when no explicit transform is set
-    return wrapWithMask(<TransformWrapper item={item}>{videoContent}</TransformWrapper>);
+    return wrapWithMask(
+      <TransformWrapper item={item}>
+        <EffectWrapper item={item}>{videoContent}</EffectWrapper>
+      </TransformWrapper>
+    );
   }
 
   if (item.type === 'audio') {
@@ -996,7 +1161,11 @@ export const Item: React.FC<ItemProps> = ({ item, muted = false, masks = [] }) =
       );
 
       // Always use TransformWrapper for consistent rendering
-      return wrapWithMask(<TransformWrapper item={item}>{gifContent}</TransformWrapper>);
+      return wrapWithMask(
+        <TransformWrapper item={item}>
+          <EffectWrapper item={item}>{gifContent}</EffectWrapper>
+        </TransformWrapper>
+      );
     }
 
     // Regular static images
@@ -1013,12 +1182,22 @@ export const Item: React.FC<ItemProps> = ({ item, muted = false, masks = [] }) =
     );
 
     // Always use TransformWrapper for consistent rendering between preview and export
-    return wrapWithMask(<TransformWrapper item={item}>{imageContent}</TransformWrapper>);
+    return wrapWithMask(
+      <TransformWrapper item={item}>
+        <EffectWrapper item={item}>{imageContent}</EffectWrapper>
+      </TransformWrapper>
+    );
   }
 
   if (item.type === 'text') {
     // Always use TransformWrapper for consistent rendering between preview and export
-    return wrapWithMask(<TransformWrapper item={item}><TextContent item={item} /></TransformWrapper>);
+    return wrapWithMask(
+      <TransformWrapper item={item}>
+        <EffectWrapper item={item}>
+          <TextContent item={item} />
+        </EffectWrapper>
+      </TransformWrapper>
+    );
   }
 
   if (item.type === 'shape') {
@@ -1026,7 +1205,9 @@ export const Item: React.FC<ItemProps> = ({ item, muted = false, masks = [] }) =
     // ShapeContent renders the appropriate Remotion shape based on shapeType
     return wrapWithMask(
       <TransformWrapper item={item}>
-        <ShapeContent item={item} />
+        <EffectWrapper item={item}>
+          <ShapeContent item={item} />
+        </EffectWrapper>
       </TransformWrapper>
     );
   }

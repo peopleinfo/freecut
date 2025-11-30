@@ -9,6 +9,7 @@ import { useRemotionPlayer } from '../hooks/use-remotion-player';
 import { resolveMediaUrl, cleanupBlobUrls } from '../utils/media-resolver';
 import { capturePlayerFrame } from '../utils/player-capture';
 import { GizmoOverlay } from './gizmo-overlay';
+import type { RemotionInputProps } from '@/types/export';
 import { isMarqueeJustFinished } from '@/hooks/use-marquee-selection';
 
 interface VideoPreviewProps {
@@ -215,9 +216,9 @@ export function VideoPreview({ project, containerSize }: VideoPreviewProps) {
   // Memoize inputProps to prevent Player from re-rendering
   // Note: previewTransform is no longer passed here - TransformWrapper reads directly from store
   // Use preview color from gizmo store if actively picking, otherwise use project color
-  const inputProps = useMemo(() => ({
+  const inputProps: RemotionInputProps = useMemo(() => ({
     fps,
-    tracks: resolvedTracks,
+    tracks: resolvedTracks as RemotionInputProps['tracks'],
     backgroundColor: canvasBackgroundPreview ?? project.backgroundColor,
   }), [fps, resolvedTracks, canvasBackgroundPreview, project.backgroundColor]);
 

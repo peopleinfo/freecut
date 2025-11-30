@@ -20,7 +20,7 @@ import { useSelectionStore } from '../stores/selection-store';
 import { useProjectStore } from '@/features/projects/stores/project-store';
 import { MediaLibrary } from '@/features/media-library/components/media-library';
 import { findNearestAvailableSpace } from '@/features/timeline/utils/collision-utils';
-import type { TextItem, ShapeItem, ShapeType } from '@/types/timeline';
+import type { TextItem, ShapeItem, ShapeType, AdjustmentItem } from '@/types/timeline';
 
 export function MediaSidebar() {
   // Use granular selectors - Zustand v5 best practice
@@ -173,6 +173,52 @@ export function MediaSidebar() {
     // Select the new item
     selectItems([shapeItem.id]);
   }, [tracks, items, fps, currentProject, addItem, selectItems, activeTrackId]);
+
+  // Add adjustment layer to timeline at the best available position
+  const handleAddAdjustmentLayer = useCallback(() => {
+    // Use active track if available and not locked, otherwise find first available
+    let targetTrack = activeTrackId
+      ? tracks.find((t) => t.id === activeTrackId && t.visible !== false && !t.locked)
+      : null;
+
+    // Fallback to first available visible/unlocked track
+    if (!targetTrack) {
+      targetTrack = tracks.find((t) => t.visible !== false && !t.locked);
+    }
+
+    if (!targetTrack) {
+      console.warn('No available track for adjustment layer');
+      return;
+    }
+
+    // Default duration: 5 seconds
+    const durationInFrames = fps * 5;
+
+    // Find the best position: start at playhead, find nearest available space
+    const proposedPosition = usePlaybackStore.getState().currentFrame;
+    const finalPosition = findNearestAvailableSpace(
+      proposedPosition,
+      durationInFrames,
+      targetTrack.id,
+      items
+    ) ?? proposedPosition;
+
+    // Create a new adjustment layer
+    const adjustmentItem: AdjustmentItem = {
+      id: crypto.randomUUID(),
+      type: 'adjustment',
+      trackId: targetTrack.id,
+      from: finalPosition,
+      durationInFrames,
+      label: 'Adjustment Layer',
+      effects: [], // Start with no effects, user adds via properties panel
+      effectOpacity: 1,
+    };
+
+    addItem(adjustmentItem);
+    // Select the new item
+    selectItems([adjustmentItem.id]);
+  }, [tracks, items, fps, addItem, selectItems, activeTrackId]);
 
   // Category items for the vertical nav
   const categories = [
@@ -358,9 +404,23 @@ export function MediaSidebar() {
 
           {/* Effects Tab */}
           <div className={`flex-1 overflow-y-auto p-3 ${activeTab === 'effects' ? 'block' : 'hidden'}`}>
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              <Layers className="w-10 h-10 mx-auto mb-2 opacity-50" />
-              <p className="text-xs">Effects coming soon</p>
+            <div className="space-y-3">
+              <button
+                onClick={handleAddAdjustmentLayer}
+                className="w-full flex items-center gap-3 p-3 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-colors group"
+              >
+                <div className="w-9 h-9 rounded-md bg-purple-500/20 border border-purple-500/50 flex items-center justify-center group-hover:bg-purple-500/30 flex-shrink-0">
+                  <Layers className="w-4 h-4 text-purple-400" />
+                </div>
+                <div className="text-left">
+                  <div className="text-sm text-muted-foreground group-hover:text-foreground">
+                    Adjustment Layer
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/70">
+                    Apply effects to tracks above
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>

@@ -234,8 +234,8 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
 
   // Items that can extend infinitely (no source duration limit)
   // - Images/GIFs: can loop
-  // - Text/Shapes: no source media, just duration
-  const canExtendInfinitely = item.type === 'image' || item.type === 'text' || item.type === 'shape';
+  // - Text/Shapes/Adjustments: no source media, just duration
+  const canExtendInfinitely = item.type === 'image' || item.type === 'text' || item.type === 'shape' || item.type === 'adjustment';
 
   // Clamp visual feedback to prevent showing invalid states
   let trimVisualLeft = left;
@@ -307,6 +307,8 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         return 'bg-timeline-text/30 border-timeline-text';
       case 'shape':
         return 'bg-timeline-shape/30 border-timeline-shape';
+      case 'adjustment':
+        return 'bg-purple-500/30 border-purple-400';
       default:
         return 'bg-timeline-video/30 border-timeline-video';
     }
@@ -600,8 +602,20 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         </div>
       )}
 
+      {/* Adjustment layer - show effects summary */}
+      {item.type === 'adjustment' && (
+        <div className="absolute inset-0 flex flex-col px-2 py-1 overflow-hidden">
+          <div className="text-[10px] text-muted-foreground truncate">Adjustment Layer</div>
+          <div className="text-xs font-medium truncate flex-1">
+            {item.effects?.filter(e => e.enabled).length
+              ? `${item.effects.filter(e => e.enabled).length} effect${item.effects.filter(e => e.enabled).length > 1 ? 's' : ''}`
+              : 'No effects'}
+          </div>
+        </div>
+      )}
+
       {/* Item label - for image and shape items */}
-      {item.type !== 'video' && item.type !== 'audio' && item.type !== 'text' && (
+      {item.type !== 'video' && item.type !== 'audio' && item.type !== 'text' && item.type !== 'adjustment' && (
         <div className="px-2 py-1 text-xs font-medium truncate">
           {item.label}
         </div>

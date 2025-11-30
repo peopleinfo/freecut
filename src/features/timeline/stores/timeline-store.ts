@@ -4,6 +4,7 @@ import type { TimelineState, TimelineActions } from '../types';
 import { getProject, updateProject } from '@/lib/storage/indexeddb';
 import type { ProjectTimeline } from '@/types/project';
 import type { TimelineItem } from '@/types/timeline';
+import type { ItemEffect } from '@/types/effects';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useZoomStore } from './zoom-store';
 import { generatePlayheadThumbnail } from '@/features/projects/utils/thumbnail-generator';
@@ -45,7 +46,7 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
   }),
   addItem: (item) => set((state) => ({ items: [...state.items, item as any], isDirty: true })),
   updateItem: (id, updates) => set((state) => ({
-    items: state.items.map((i) => (i.id === id ? { ...i, ...updates } : i)),
+    items: state.items.map((i) => (i.id === id ? { ...i, ...updates } as typeof i : i)),
     isDirty: true,
   })),
   removeItems: (ids) => set((state) => ({
@@ -172,8 +173,8 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
     items: state.items.map((item) => {
       if (item.id !== id) return item;
 
-      // Non-media items (text, shape) use simple trimming - just adjust position and duration
-      const isNonMediaItem = item.type === 'text' || item.type === 'shape';
+      // Non-media items (text, shape, adjustment) use simple trimming - just adjust position and duration
+      const isNonMediaItem = item.type === 'text' || item.type === 'shape' || item.type === 'adjustment';
       if (isNonMediaItem) {
         let actualTrimAmount = trimAmount;
 
@@ -191,7 +192,7 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
           ...item,
           from: Math.round(item.from + actualTrimAmount),
           durationInFrames: Math.max(1, Math.round(item.durationInFrames - actualTrimAmount)),
-        };
+        } as typeof item;
       }
 
       // Media items use source-based trimming
@@ -254,7 +255,7 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
         (updates as any).offset = newTrimStart;
       }
 
-      return { ...item, ...updates };
+      return { ...item, ...updates } as typeof item;
     }),
     isDirty: true,
   })),
@@ -264,8 +265,8 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
     items: state.items.map((item) => {
       if (item.id !== id) return item;
 
-      // Non-media items (text, shape) use simple trimming - just adjust duration
-      const isNonMediaItem = item.type === 'text' || item.type === 'shape';
+      // Non-media items (text, shape, adjustment) use simple trimming - just adjust duration
+      const isNonMediaItem = item.type === 'text' || item.type === 'shape' || item.type === 'adjustment';
       if (isNonMediaItem) {
         let actualTrimAmount = trimAmount;
 
@@ -278,7 +279,7 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
         return {
           ...item,
           durationInFrames: Math.max(1, Math.round(item.durationInFrames - actualTrimAmount)),
-        };
+        } as typeof item;
       }
 
       // Media items use source-based trimming
@@ -336,7 +337,7 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
         // Explicitly preserve speed and sourceDuration (important for rate-stretched clips)
         speed: item.speed,
         sourceDuration: item.sourceDuration,
-      };
+      } as typeof item;
     }),
     isDirty: true,
   })),
@@ -648,6 +649,60 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
     isDirty: true,
   })),
 
+  // Effect actions
+  addEffect: (itemId, effect) => set((state) => ({
+    items: state.items.map((item) => {
+      if (item.id !== itemId) return item;
+      const newEffect: ItemEffect = {
+        id: crypto.randomUUID(),
+        effect,
+        enabled: true,
+      };
+      return {
+        ...item,
+        effects: [...(item.effects ?? []), newEffect],
+      };
+    }),
+    isDirty: true,
+  })),
+
+  updateEffect: (itemId, effectId, updates) => set((state) => ({
+    items: state.items.map((item) => {
+      if (item.id !== itemId) return item;
+      return {
+        ...item,
+        effects: (item.effects ?? []).map((e) =>
+          e.id === effectId ? { ...e, ...updates } : e
+        ),
+      };
+    }),
+    isDirty: true,
+  })),
+
+  removeEffect: (itemId, effectId) => set((state) => ({
+    items: state.items.map((item) => {
+      if (item.id !== itemId) return item;
+      return {
+        ...item,
+        effects: (item.effects ?? []).filter((e) => e.id !== effectId),
+      };
+    }),
+    isDirty: true,
+  })),
+
+  toggleEffect: (itemId, effectId) => set((state) => ({
+    items: state.items.map((item) => {
+      if (item.id !== itemId) return item;
+      return {
+        ...item,
+        effects: (item.effects ?? []).map((e) =>
+          e.id === effectId ? { ...e, enabled: !e.enabled } : e
+        ),
+      };
+    }),
+    isDirty: true,
+  })),
+
   // Save timeline to project in IndexedDB
   saveTimeline: async (projectId) => {
     const state = useTimelineStore.getState();
@@ -700,6 +755,8 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
             // Save video fade properties
             ...(item.fadeIn !== undefined && { fadeIn: item.fadeIn }),
             ...(item.fadeOut !== undefined && { fadeOut: item.fadeOut }),
+            // Save visual effects
+            ...(item.effects && item.effects.length > 0 && { effects: item.effects }),
           };
 
           // Add type-specific properties
@@ -762,6 +819,11 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
               ...(item.maskType && { maskType: item.maskType }),
               ...(item.maskFeather !== undefined && { maskFeather: item.maskFeather }),
               ...(item.maskInvert !== undefined && { maskInvert: item.maskInvert }),
+            };
+          } else if (item.type === 'adjustment') {
+            return {
+              ...baseItem,
+              ...(item.effectOpacity !== undefined && { effectOpacity: item.effectOpacity }),
             };
           }
           return baseItem as any;
