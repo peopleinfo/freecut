@@ -286,9 +286,18 @@ export function applyScaleSnapping(
     }
   }
 
-  // If no snap found, return original transform
+  // If no snap found, return rounded transform
   if (!bestSnap) {
-    return { transform, snapLines: [] };
+    return {
+      transform: {
+        ...transform,
+        x: Math.round(transform.x),
+        y: Math.round(transform.y),
+        width: Math.round(transform.width),
+        height: Math.round(transform.height),
+      },
+      snapLines: [],
+    };
   }
 
   // Apply snap while maintaining aspect ratio (uniform scale)
@@ -354,13 +363,30 @@ export function applyScaleSnapping(
     }
   }
 
-  // Round to integers to avoid subpixel values
+  // Round to integers
+  let finalWidth = Math.round(Math.max(20, newWidth));
+  let finalHeight = Math.round(Math.max(20, newHeight));
+  let finalX = Math.round(newX);
+  let finalY = Math.round(newY);
+
+  // Final check: force exact canvas dimensions if very close
+  // This catches edge cases from floating point calculations
+  const finalTolerance = 5;
+  if (Math.abs(finalWidth - canvasWidth) <= finalTolerance) {
+    finalWidth = canvasWidth;
+    finalX = 0;
+  }
+  if (Math.abs(finalHeight - canvasHeight) <= finalTolerance) {
+    finalHeight = canvasHeight;
+    finalY = 0;
+  }
+
   const snappedTransform: Transform = {
     ...transform,
-    x: Math.round(newX),
-    y: Math.round(newY),
-    width: Math.round(Math.max(20, newWidth)),
-    height: Math.round(Math.max(20, newHeight)),
+    x: finalX,
+    y: finalY,
+    width: finalWidth,
+    height: finalHeight,
   };
 
   return {
