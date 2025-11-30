@@ -1,4 +1,5 @@
 import { useMemo, useCallback, useRef, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSelectionStore } from '@/features/editor/stores/selection-store';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
@@ -150,8 +151,8 @@ export function GizmoOverlay({
 
     return items
       .filter((item) => {
-        // Only visual items (not audio)
-        if (item.type === 'audio') return false;
+        // Only visual items (not audio or adjustment layers)
+        if (item.type === 'audio' || item.type === 'adjustment') return false;
         // Check if item's track is visible
         if (!trackVisible.get(item.trackId)) return false;
         // Check if item's track is locked (locked items can't be selected)
@@ -567,38 +568,39 @@ export function GizmoOverlay({
         <SnapGuides snapLines={snapLines} coordParams={coordParams} />
       </div>
 
-      {/* Context menu for selecting from overlapping items */}
-      {contextMenu && (
-        <div
-          className="fixed z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[160px]"
-          style={{
-            left: contextMenu.x,
-            top: contextMenu.y,
-            pointerEvents: 'auto',
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="px-2 py-1.5 text-xs text-muted-foreground border-b border-border mb-1">
-            Select Layer
-          </div>
-          {contextMenu.items.map((item, index) => {
-            const track = tracks.find((t) => t.id === item.trackId);
-            const trackName = track?.name ?? `Track ${index + 1}`;
-            const itemName = item.name || `${item.type} clip`;
+      {/* Context menu for selecting from overlapping items - rendered via portal to ensure it's above all other elements */}
+      {contextMenu &&
+        createPortal(
+          <div
+            className="fixed z-[9999] bg-popover border border-border rounded-md shadow-lg py-1 min-w-[160px]"
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-2 py-1.5 text-xs text-muted-foreground border-b border-border mb-1">
+              Select Layer
+            </div>
+            {contextMenu.items.map((item, index) => {
+              const track = tracks.find((t) => t.id === item.trackId);
+              const trackName = track?.name ?? `Track ${index + 1}`;
+              const itemName = item.name || `${item.type} clip`;
 
-            return (
-              <button
-                key={item.id}
-                className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-                onClick={() => handleContextMenuSelect(item.id)}
-              >
-                <span className="text-muted-foreground text-xs">{trackName}:</span>
-                <span className="truncate">{itemName}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+              return (
+                <button
+                  key={item.id}
+                  className="w-full px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                  onClick={() => handleContextMenuSelect(item.id)}
+                >
+                  <span className="text-muted-foreground text-xs">{trackName}:</span>
+                  <span className="truncate">{itemName}</span>
+                </button>
+              );
+            })}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
