@@ -16,6 +16,7 @@ import {
   PropertySection,
   PropertyRow,
   NumberInput,
+  SliderInput,
 } from '../components';
 
 // Shape type options
@@ -384,6 +385,10 @@ export function ShapeSection({ items }: ShapeSectionProps) {
     [updateShapeItems, clearItemPropertiesPreview]
   );
 
+  const handleResetMaskFeather = useCallback(() => {
+    updateShapeItems({ maskFeather: 10 });
+  }, [updateShapeItems]);
+
   // Mask invert handler
   const handleMaskInvertChange = useCallback(
     (checked: boolean) => {
@@ -554,15 +559,26 @@ export function ShapeSection({ items }: ShapeSectionProps) {
           {/* Feather - only show for alpha mask type */}
           {sharedValues.maskType === 'alpha' && (
             <PropertyRow label="Feather">
-              <NumberInput
-                value={sharedValues.maskFeather}
-                onChange={handleMaskFeatherChange}
-                onLiveChange={handleMaskFeatherLiveChange}
-                min={0}
-                max={100}
-                step={1}
-                unit="px"
-              />
+              <div className="flex items-center gap-1 flex-1">
+                <SliderInput
+                  value={sharedValues.maskFeather}
+                  onChange={handleMaskFeatherChange}
+                  onLiveChange={handleMaskFeatherLiveChange}
+                  min={0}
+                  max={100}
+                  step={1}
+                  unit="px"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 flex-shrink-0"
+                  onClick={handleResetMaskFeather}
+                  title="Reset to 10px"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </Button>
+              </div>
             </PropertyRow>
           )}
 

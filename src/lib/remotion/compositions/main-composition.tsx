@@ -48,6 +48,7 @@ const MaskDefinitions: React.FC<{
   const activeGizmo = useGizmoStore((s) => s.activeGizmo);
   const previewTransform = useGizmoStore((s) => s.previewTransform);
   const propertiesPreview = useGizmoStore((s) => s.propertiesPreview);
+  const itemPropertiesPreview = useGizmoStore((s) => s.itemPropertiesPreview);
   const groupPreviewTransforms = useGizmoStore((s) => s.groupPreviewTransforms);
 
   // Only render if there are potential masks (shapes that could be masks)
@@ -150,9 +151,12 @@ const MaskDefinitions: React.FC<{
   });
 
   // Compute per-mask feather values (only for alpha type, clip type = hard edges)
+  // Uses itemPropertiesPreview for real-time slider updates
   const maskFeatherValues = masks.map(({ mask }) => {
+    const preview = itemPropertiesPreview?.[mask.id];
     const type = mask.maskType ?? 'clip';
-    return type === 'alpha' ? (mask.maskFeather ?? 0) : 0;
+    const feather = preview?.maskFeather ?? mask.maskFeather ?? 0;
+    return type === 'alpha' ? feather : 0;
   });
 
   return (
