@@ -11,6 +11,7 @@ import { PreviewArea } from './preview-area';
 import { Timeline } from '@/features/timeline/components/timeline';
 import { ExportDialog } from '@/features/export/components/export-dialog';
 import { useEditorHotkeys } from '@/hooks/use-editor-hotkeys';
+import { useTimelineShortcuts } from '@/features/timeline/hooks/use-timeline-shortcuts';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useZoomStore } from '@/features/timeline/stores/zoom-store';
@@ -207,6 +208,8 @@ export function Editor({ projectId, project }: EditorProps) {
     onExport: handleExport,
   });
 
+  // Enable timeline shortcuts (space, cut tool, rate tool, etc.)
+  useTimelineShortcuts();
 
   // TODO: Get actual timeline duration from project/timeline store
   const timelineDuration = 30; // 30 seconds placeholder
