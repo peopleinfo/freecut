@@ -389,6 +389,12 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
       trimEnd: lastItem.trimEnd,
     };
 
+    // Recalculate offset for video/audio items (Remotion compatibility)
+    // Must match the calculation in splitItem for consistency
+    if (firstItem.type === 'video' || firstItem.type === 'audio') {
+      (mergedItem as any).offset = (mergedItem.sourceStart || 0) + (mergedItem.trimStart || 0);
+    }
+
     const idsToRemove = new Set(itemIds);
     return {
       items: state.items

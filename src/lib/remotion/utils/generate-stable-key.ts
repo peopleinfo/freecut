@@ -1,14 +1,14 @@
 import type { TimelineItem } from '@/types/timeline';
 
 /**
- * Generates a stable key for timeline items that survives split operations.
+ * Generates a stable key for timeline items that includes source timing.
+ * Key changes on split/join to ensure Remotion Sequence updates correctly.
  *
- * For media items (video/audio/image): key = mediaId + originId + sourceStart
- * - Left piece of split keeps same key (no remount)
- * - Right piece gets predictable key based on new sourceStart
- * - Independent clips have different originIds (no collision)
- *
- * For non-media items (text/shape): falls back to item.id
+ * For media items: key = mediaId + originId + sourceStart + sourceEnd + speed
+ * - Split: both pieces get new keys (sourceStart or sourceEnd changes)
+ * - Join: merged clip gets new key (sourceEnd changes)
+ * - Move/drag: key stays same (only `from` changes, not in key)
+ * - Speed change: new key (playback rate affects seeking)
  */
 export function generateStableKey(item: TimelineItem): string {
   if (
@@ -16,10 +16,10 @@ export function generateStableKey(item: TimelineItem): string {
     (item.type === 'video' || item.type === 'audio' || item.type === 'image')
   ) {
     const sourceStart = item.sourceStart ?? 0;
+    const sourceEnd = item.sourceEnd ?? 0;
     const origin = item.originId ?? item.id;
-    // Include speed in key to force remount when playback rate changes
     const speed = item.speed ?? 1;
-    return `${item.mediaId}-${origin}-${sourceStart}-${speed}`;
+    return `${item.mediaId}-${origin}-${sourceStart}-${sourceEnd}-${speed}`;
   }
   return item.id;
 }
