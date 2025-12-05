@@ -338,6 +338,7 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
           ...item,
           zIndex: maxOrder - (track.order ?? 0),
           muted: track.muted,
+          trackOrder: track.order ?? 0,
         }))
     ),
     [visibleTracks, maxOrder]
@@ -394,6 +395,46 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
     ),
   }));
 
+  // Find the HIGHEST track order among adjustment layers
+  // Higher track order = lower zIndex = visually behind
+  // Adjustment layers affect items BEHIND them (higher track order = lower zIndex)
+  const highestAdjustmentTrackOrder = useMemo(() => {
+    if (allAdjustmentLayers.length === 0) return null;
+    return Math.max(...allAdjustmentLayers.map((a) => a.trackOrder));
+  }, [allAdjustmentLayers]);
+
+  // Split non-media items into two groups based on visual stacking:
+  // - Higher track order = lower zIndex = visually BEHIND adjustment = AFFECTED
+  // - Lower/equal track order = higher zIndex = visually IN FRONT = NOT affected
+  const { belowAdjustmentTracks, aboveAdjustmentTracks } = useMemo(() => {
+    if (highestAdjustmentTrackOrder === null) {
+      // No adjustment layers - all items are "above" (unaffected)
+      return { belowAdjustmentTracks: [], aboveAdjustmentTracks: nonMediaByTrack };
+    }
+
+    // Items with higher track order are visually BEHIND (lower zIndex) = affected
+    const below = nonMediaByTrack.filter((track) => (track.order ?? 0) > highestAdjustmentTrackOrder);
+    // Items with lower/equal track order are visually IN FRONT = not affected
+    const above = nonMediaByTrack.filter((track) => (track.order ?? 0) <= highestAdjustmentTrackOrder);
+
+    return { belowAdjustmentTracks: below, aboveAdjustmentTracks: above };
+  }, [nonMediaByTrack, highestAdjustmentTrackOrder]);
+
+  // Split video items by adjustment layer scope
+  const { belowAdjustmentVideos, aboveAdjustmentVideos } = useMemo(() => {
+    if (highestAdjustmentTrackOrder === null) {
+      // No adjustment layers - all videos are "above" (unaffected)
+      return { belowAdjustmentVideos: [], aboveAdjustmentVideos: videoItems };
+    }
+
+    // Videos with higher track order are visually BEHIND = affected
+    const below = videoItems.filter((item) => item.trackOrder > highestAdjustmentTrackOrder);
+    // Videos with lower/equal track order are visually IN FRONT = not affected
+    const above = videoItems.filter((item) => item.trackOrder <= highestAdjustmentTrackOrder);
+
+    return { belowAdjustmentVideos: below, aboveAdjustmentVideos: above };
+  }, [videoItems, highestAdjustmentTrackOrder]);
+
   // NOTE: We no longer split items between masked/unmasked groups.
   // Previously, deleting a shape caused items to move between groups → remounts.
   // Now ALL content goes through a single StableMaskedGroup wrapper.
@@ -449,12 +490,13 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
       ))}
 
       {/* ADJUSTMENT WRAPPER - applies effects from adjustment layers to visual content */}
+      {/* Only wraps items on tracks BELOW the adjustment layer(s) */}
       <AdjustmentWrapper adjustmentLayers={hasAdjustmentLayers ? allAdjustmentLayers : []}>
-        {/* VIDEO LAYER - uses stable keys based on originId to prevent remounting on split */}
+        {/* VIDEO LAYER BELOW ADJUSTMENT - affected by adjustment layer effects */}
         {/* StableMaskedGroup always renders same div; mask effect controlled via SVG opacity */}
         <StableMaskedGroup hasMasks={hasActiveMasks}>
           <StableVideoSequence
-            items={videoItems}
+            items={belowAdjustmentVideos}
             premountFor={Math.round(fps * 2)}
             renderItem={renderVideoItem}
           />
@@ -463,9 +505,9 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
         {/* CLEARING LAYER - uses its own useCurrentFrame() to isolate per-frame re-renders */}
         <ClearingLayer videoItems={videoItems} backgroundColor={backgroundColor} />
 
-        {/* ALL NON-MEDIA LAYERS - single consistent DOM structure */}
+        {/* NON-MEDIA LAYERS BELOW ADJUSTMENT - affected by adjustment layer effects */}
         <StableMaskedGroup hasMasks={hasActiveMasks}>
-          {nonMediaByTrack
+          {belowAdjustmentTracks
             .filter((track) => track.items.length > 0)
             .map((track) => {
               const trackOrder = track.order ?? 0;
@@ -481,6 +523,33 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
             })}
         </StableMaskedGroup>
       </AdjustmentWrapper>
+
+      {/* VIDEO LAYER ABOVE/AT ADJUSTMENT - NOT affected by adjustment layer effects */}
+      <StableMaskedGroup hasMasks={hasActiveMasks}>
+        <StableVideoSequence
+          items={aboveAdjustmentVideos}
+          premountFor={Math.round(fps * 2)}
+          renderItem={renderVideoItem}
+        />
+      </StableMaskedGroup>
+
+      {/* NON-MEDIA LAYERS ABOVE/AT ADJUSTMENT - NOT affected by adjustment layer effects */}
+      <StableMaskedGroup hasMasks={hasActiveMasks}>
+        {aboveAdjustmentTracks
+          .filter((track) => track.items.length > 0)
+          .map((track) => {
+            const trackOrder = track.order ?? 0;
+            return (
+              <AbsoluteFill key={track.id} style={{ zIndex: 1001 + (maxOrder - trackOrder) }}>
+                {track.items.map((item) => (
+                  <Sequence key={item.id} from={item.from} durationInFrames={item.durationInFrames}>
+                    <Item item={item} muted={false} masks={[]} />
+                  </Sequence>
+                ))}
+              </AbsoluteFill>
+            );
+          })}
+      </StableMaskedGroup>
     </AbsoluteFill>
   );
 };
