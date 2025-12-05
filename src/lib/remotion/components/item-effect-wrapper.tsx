@@ -17,6 +17,8 @@ export interface ItemEffectWrapperProps {
   itemTrackOrder: number;
   /** All adjustment layers (from visible tracks) */
   adjustmentLayers: AdjustmentLayerWithTrackOrder[];
+  /** The `from` value of the nearest parent Sequence (for converting local to global frame) */
+  sequenceFrom: number;
   /** Children to render */
   children: React.ReactNode;
 }
@@ -44,11 +46,17 @@ interface ItemEffectWrapperInternalProps extends ItemEffectWrapperProps {
 const ItemEffectWrapperInternal = React.memo<ItemEffectWrapperInternalProps>(({
   itemTrackOrder,
   adjustmentLayers,
+  sequenceFrom,
   children,
   frame,
 }) => {
   // Read effects preview from gizmo store for real-time slider updates
   const effectsPreview = useGizmoStore((s) => s.effectsPreview);
+
+  // Convert local frame (relative to parent Sequence) to global frame
+  // This is necessary because useCurrentFrame() returns local frame, but
+  // adjustment layer from/durationInFrames are in global frames
+  const globalFrame = frame + sequenceFrom;
 
   // Find adjustment layers that affect this item (adjustment trackOrder < item trackOrder)
   // AND are active at the current frame
@@ -57,12 +65,12 @@ const ItemEffectWrapperInternal = React.memo<ItemEffectWrapperInternalProps>(({
 
     // Filter to layers that:
     // 1. Are visually ABOVE this item (adjustment trackOrder < item trackOrder)
-    // 2. Are active at current frame
+    // 2. Are active at current frame (using global frame for comparison)
     const affectingLayers = adjustmentLayers.filter(({ layer, trackOrder }) => {
       // Item must be BEHIND the adjustment (higher track order = lower zIndex)
       if (itemTrackOrder <= trackOrder) return false;
-      // Adjustment must be active at current frame
-      return frame >= layer.from && frame < layer.from + layer.durationInFrames;
+      // Adjustment must be active at current frame (global frame comparison)
+      return globalFrame >= layer.from && globalFrame < layer.from + layer.durationInFrames;
     });
 
     if (affectingLayers.length === 0) return [];
@@ -75,7 +83,7 @@ const ItemEffectWrapperInternal = React.memo<ItemEffectWrapperInternalProps>(({
         const effects = effectsPreview?.[layer.id] ?? layer.effects ?? [];
         return effects.filter(e => e.enabled);
       });
-  }, [adjustmentLayers, itemTrackOrder, frame, effectsPreview]);
+  }, [adjustmentLayers, itemTrackOrder, globalFrame, effectsPreview]);
 
   // Build CSS filter string from CSS filter effects
   const cssFilterString = useMemo(() => {
@@ -92,8 +100,8 @@ const ItemEffectWrapperInternal = React.memo<ItemEffectWrapperInternalProps>(({
   // Calculate glitch-based filters (color glitch adds hue-rotate, RGB split via SVG)
   const glitchFilterString = useMemo(() => {
     if (glitchEffects.length === 0) return '';
-    return getGlitchFilterString(glitchEffects, frame);
-  }, [glitchEffects, frame]);
+    return getGlitchFilterString(glitchEffects, globalFrame);
+  }, [glitchEffects, globalFrame]);
 
   // Combine all CSS filters
   const combinedFilter = [cssFilterString, glitchFilterString].filter(Boolean).join(' ');

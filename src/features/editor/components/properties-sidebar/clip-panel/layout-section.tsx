@@ -39,32 +39,6 @@ type TransformValues = {
 };
 
 /**
- * Get a value from items, returning 'mixed' if they differ.
- * When gizmo is active for the item, use the preview transform values.
- */
-function getMixedValue(
-  items: TimelineItem[],
-  canvas: CanvasSettings,
-  getter: (resolved: TransformValues) => number,
-  gizmoPreview?: { itemId: string; transform: TransformValues } | null
-): MixedValue {
-  if (items.length === 0) return 0;
-
-  const values = items.map((item) => {
-    // If gizmo is active for this item, use the preview transform
-    if (gizmoPreview && gizmoPreview.itemId === item.id) {
-      return getter(gizmoPreview.transform);
-    }
-    const sourceDimensions = getSourceDimensions(item);
-    const resolved = resolveTransform(item, canvas, sourceDimensions);
-    return getter(resolved);
-  });
-
-  const firstValue = values[0]!; // Safe: items.length > 0 checked above
-  return values.every((v) => Math.abs(v - firstValue) < 0.1) ? firstValue : 'mixed';
-}
-
-/**
  * Layout section - position, dimensions, rotation, alignment.
  */
 export function LayoutSection({
@@ -93,12 +67,38 @@ export function LayoutSection({
     };
   }, [activeGizmo, previewTransform, itemIds]);
 
-  // Get current values (resolved or mixed, with gizmo preview override)
-  const x = getMixedValue(items, canvas, (r) => r.x, gizmoPreview);
-  const y = getMixedValue(items, canvas, (r) => r.y, gizmoPreview);
-  const width = getMixedValue(items, canvas, (r) => r.width, gizmoPreview);
-  const height = getMixedValue(items, canvas, (r) => r.height, gizmoPreview);
-  const rotation = getMixedValue(items, canvas, (r) => r.rotation, gizmoPreview);
+  // Memoize all transform values at once to avoid 5 separate iterations
+  // This resolves transforms once per render instead of 5 times
+  const { x, y, width, height, rotation } = useMemo(() => {
+    if (items.length === 0) {
+      return { x: 0, y: 0, width: 0, height: 0, rotation: 0 };
+    }
+
+    // Resolve transforms once for all items
+    const resolvedValues = items.map((item) => {
+      // If gizmo is active for this item, use the preview transform
+      if (gizmoPreview && gizmoPreview.itemId === item.id) {
+        return gizmoPreview.transform;
+      }
+      const sourceDimensions = getSourceDimensions(item);
+      return resolveTransform(item, canvas, sourceDimensions);
+    });
+
+    // Helper to get mixed or single value
+    const getValue = (getter: (resolved: TransformValues) => number): MixedValue => {
+      const values = resolvedValues.map(getter);
+      const firstValue = values[0]!;
+      return values.every((v) => Math.abs(v - firstValue) < 0.1) ? firstValue : 'mixed';
+    };
+
+    return {
+      x: getValue((r) => r.x),
+      y: getValue((r) => r.y),
+      width: getValue((r) => r.width),
+      height: getValue((r) => r.height),
+      rotation: getValue((r) => r.rotation),
+    };
+  }, [items, canvas, gizmoPreview]);
 
   // Store current aspect ratio for linked dimensions
   const currentAspectRatio = useMemo(() => {

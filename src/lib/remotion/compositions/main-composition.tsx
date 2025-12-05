@@ -499,22 +499,29 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
   // useCallback ensures the function reference stays stable between renders
   // Uses CSS visibility for hidden tracks to avoid DOM changes
   // Now uses ItemEffectWrapper for per-item adjustment effects (no DOM restructuring)
-  const renderVideoItem = useCallback((item: typeof videoItems[number]) => (
-    <AbsoluteFill
-      style={{
-        zIndex: item.zIndex,
-        // Use visibility: hidden for invisible tracks - keeps DOM stable, no re-render
-        visibility: item.trackVisible ? 'visible' : 'hidden',
-      }}
-    >
-      <ItemEffectWrapper
-        itemTrackOrder={item.trackOrder}
-        adjustmentLayers={visibleAdjustmentLayers}
+  const renderVideoItem = useCallback((item: typeof videoItems[number] & { _sequenceFrameOffset?: number }) => {
+    // Calculate the parent Sequence's `from` value for local-to-global frame conversion
+    // For shared Sequences (split clips), _sequenceFrameOffset is the offset from group.minFrom to item.from
+    // sequenceFrom = item.from - offset = group.minFrom
+    const sequenceFrom = item.from - (item._sequenceFrameOffset ?? 0);
+    return (
+      <AbsoluteFill
+        style={{
+          zIndex: item.zIndex,
+          // Use visibility: hidden for invisible tracks - keeps DOM stable, no re-render
+          visibility: item.trackVisible ? 'visible' : 'hidden',
+        }}
       >
-        <Item item={item} muted={item.muted || !item.trackVisible} masks={[]} />
-      </ItemEffectWrapper>
-    </AbsoluteFill>
-  ), [visibleAdjustmentLayers]);
+        <ItemEffectWrapper
+          itemTrackOrder={item.trackOrder}
+          adjustmentLayers={visibleAdjustmentLayers}
+          sequenceFrom={sequenceFrom}
+        >
+          <Item item={item} muted={item.muted || !item.trackVisible} masks={[]} />
+        </ItemEffectWrapper>
+      </AbsoluteFill>
+    );
+  }, [visibleAdjustmentLayers]);
 
   return (
     <AbsoluteFill>
@@ -582,6 +589,7 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, backgrou
                       <ItemEffectWrapper
                         itemTrackOrder={trackOrder}
                         adjustmentLayers={visibleAdjustmentLayers}
+                        sequenceFrom={item.from}
                       >
                         <Item item={item} muted={false} masks={[]} />
                       </ItemEffectWrapper>
