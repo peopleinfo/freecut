@@ -275,10 +275,42 @@ export const HalftoneWrapper: React.FC<HalftoneWrapperProps> = ({
     renderHalftone(sourceCanvas, outputCanvas, resolvedOptions);
   }, [resolvedOptions, width, height]);
 
-  // Keep options ref updated without triggering re-renders
+  // Keep options ref updated and re-capture frame when options change (for live preview)
   useEffect(() => {
     lastOptionsRef.current = resolvedOptions;
-  }, [resolvedOptions]);
+
+    // Re-capture current frame when options change (for live preview in properties panel)
+    // Only do this for worker-based video rendering
+    if (!enabled || !useWorker || !workerReady) return;
+
+    const video = videoElementRef.current;
+    const halftoneWorker = effectsWorkerManager.halftone;
+    const ctx = canvas2dCtxRef.current;
+
+    if (!video || !halftoneWorker.getIsReady() || video.readyState < 2) return;
+
+    // Don't capture if already processing (prevents frame pileup)
+    if (halftoneWorker.isProcessing()) return;
+
+    createImageBitmap(video)
+      .then((bitmap) => {
+        halftoneWorker.processFrame(bitmap, {
+          dotSize: resolvedOptions.dotSize,
+          spacing: resolvedOptions.spacing,
+          angle: resolvedOptions.angle,
+          intensity: resolvedOptions.intensity,
+          backgroundColor: resolvedOptions.backgroundColor,
+          dotColor: resolvedOptions.dotColor,
+        }, (resultBitmap) => {
+          if (ctx) {
+            ctx.drawImage(resultBitmap, 0, 0);
+            setWorkerRendering(true);
+          }
+          resultBitmap.close();
+        });
+      })
+      .catch(() => {});
+  }, [resolvedOptions, enabled, useWorker, workerReady]);
 
   // Send video frames to singleton worker using requestVideoFrameCallback
   // This decouples frame capture from React's render cycle completely
