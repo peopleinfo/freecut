@@ -87,6 +87,17 @@ export function ClipPanel() {
     [selectedItems]
   );
 
+  // Memoized filtered arrays for child components - prevents new array creation each render
+  const layoutFillItems = useMemo(
+    () => selectedItems.filter((item) => item.type !== 'audio' && item.type !== 'adjustment'),
+    [selectedItems]
+  );
+
+  const visualItems = useMemo(
+    () => selectedItems.filter((item) => item.type !== 'audio'),
+    [selectedItems]
+  );
+
   // Check if selection is only text/shape items (no aspect ratio lock by default)
   const isOnlyTextOrShape = useMemo(
     () => selectedItems.length > 0 && selectedItems.every(
@@ -142,7 +153,7 @@ export function ClipPanel() {
       {hasVisualItems && !isOnlyAdjustmentItems && (
         <>
           <LayoutSection
-            items={selectedItems.filter((item) => item.type !== 'audio' && item.type !== 'adjustment')}
+            items={layoutFillItems}
             canvas={canvas}
             onTransformChange={handleTransformChange}
             aspectLocked={aspectLocked}
@@ -156,7 +167,7 @@ export function ClipPanel() {
       {hasVisualItems && !isOnlyAdjustmentItems && (
         <>
           <FillSection
-            items={selectedItems.filter((item) => item.type !== 'audio' && item.type !== 'adjustment')}
+            items={layoutFillItems}
             canvas={canvas}
             onTransformChange={handleTransformChange}
           />
@@ -174,7 +185,7 @@ export function ClipPanel() {
             </div>
           )}
           <EffectsSection
-            items={selectedItems.filter((item) => item.type !== 'audio')}
+            items={visualItems}
           />
           <Separator />
         </>

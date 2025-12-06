@@ -35,13 +35,12 @@ export function TrackHeader({
   // Use track drag hook
   const { isDragging, dragOffset, handleDragStart } = useTrackDrag(track);
 
-  // Get global drag state to check if this track is part of multi-drag
-  const dragState = useSelectionStore((s) => s.dragState);
-
-  // Check if this track is being dragged (anchor or part of multi-select)
-  const isPartOfDrag = dragState?.isDragging &&
-    dragState.draggedTrackIds?.includes(track.id) &&
-    !isDragging; // Not the anchor track
+  // Check if this track is part of multi-drag (not anchor) using granular selector
+  // Returns boolean only - avoids re-renders from dragState.offset changes
+  const isPartOfDrag = useSelectionStore((s) =>
+    s.dragState?.isDragging &&
+    (s.dragState.draggedTrackIds?.includes(track.id) ?? false)
+  ) && !isDragging; // Not the anchor track
 
   const isBeingDragged = isDragging || isPartOfDrag;
 

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, memo } from 'react';
 import { Droplet, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TimelineItem } from '@/types/timeline';
@@ -44,8 +44,9 @@ function getMixedValue(
 
 /**
  * Fill section - opacity and corner radius.
+ * Memoized to prevent re-renders when props haven't changed.
  */
-export function FillSection({
+export const FillSection = memo(function FillSection({
   items,
   canvas,
   onTransformChange,
@@ -180,4 +181,4 @@ export function FillSection({
       </PropertyRow>
     </PropertySection>
   );
-}
+});

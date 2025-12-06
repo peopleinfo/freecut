@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, memo } from 'react';
 import { Move, RotateCcw } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
@@ -40,8 +40,9 @@ type TransformValues = {
 
 /**
  * Layout section - position, dimensions, rotation, alignment.
+ * Memoized to prevent re-renders when props haven't changed.
  */
-export function LayoutSection({
+export const LayoutSection = memo(function LayoutSection({
   items,
   canvas,
   onTransformChange,
@@ -462,4 +463,4 @@ export function LayoutSection({
       </PropertyRow>
     </PropertySection>
   );
-}
+});

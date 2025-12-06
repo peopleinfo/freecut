@@ -102,14 +102,16 @@ const EffectColorPicker = memo(function EffectColorPicker({
 });
 
 interface EffectsSectionProps {
+  /** Visual items (already filtered to exclude audio) */
   items: TimelineItem[];
 }
 
 /**
  * Effects section - CSS filters and glitch effects for visual items.
  * Only shown when selection includes video, image, text, or shape clips.
+ * Memoized to prevent re-renders when items prop hasn't changed.
  */
-export function EffectsSection({ items }: EffectsSectionProps) {
+export const EffectsSection = memo(function EffectsSection({ items }: EffectsSectionProps) {
   const addEffect = useTimelineStore((s) => s.addEffect);
   const addEffects = useTimelineStore((s) => s.addEffects);
   const updateEffect = useTimelineStore((s) => s.updateEffect);
@@ -120,11 +122,8 @@ export function EffectsSection({ items }: EffectsSectionProps) {
   const setEffectsPreview = useGizmoStore((s) => s.setEffectsPreview);
   const clearEffectsPreview = useGizmoStore((s) => s.clearEffectsPreview);
 
-  // Filter to visual items only (exclude audio)
-  const visualItems = useMemo(
-    () => items.filter((item) => item.type !== 'audio'),
-    [items]
-  );
+  // Items are already filtered by parent - use directly
+  const visualItems = items;
 
   // Memoize item IDs for stable callback dependencies
   const itemIds = useMemo(() => visualItems.map((item) => item.id), [visualItems]);
@@ -809,4 +808,4 @@ export function EffectsSection({ items }: EffectsSectionProps) {
       )}
     </PropertySection>
   );
-}
+});

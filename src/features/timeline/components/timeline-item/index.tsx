@@ -92,39 +92,105 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   // Rate stretch functionality - disabled if track is locked
   const { isStretching, stretchHandle, handleStretchStart, getVisualFeedback } = useRateStretch(item, timelineDuration, trackLocked);
 
-  // Combined drag state selector - single subscription for both values to prevent
-  // cascading re-renders on drag end. Returns stable primitive values.
-  const dragParticipation = useSelectionStore(
-    useCallback(
-      (s) => {
-        const isParticipating = s.dragState?.isDragging && s.dragState.draggedItemIds.includes(item.id);
-        const isAlt = isParticipating && s.dragState?.isAltDrag;
-        // Return encoded value: 0 = not participating, 1 = participating (not alt), 2 = participating + alt
-        // This ensures stable primitive comparison instead of object reference
-        return isParticipating ? (isAlt ? 2 : 1) : 0;
-      },
-      [item.id]
-    )
-  );
-  const isPartOfMultiDrag = dragParticipation > 0;
-  const isAltDrag = dragParticipation === 2;
-
-  // Track global drag state via ref subscription to avoid re-renders on ALL clips
-  // when ANY drag starts/stops - this is a major performance optimization
-  const isAnyDragActiveRef = useRef(false);
-  useEffect(() => {
-    return useSelectionStore.subscribe((state) => {
-      isAnyDragActiveRef.current = !!state.dragState?.isDragging;
-    });
-  }, []);
-
-  // Check if this item is part of a multi-drag (but not the anchor)
-  const isPartOfDrag = isPartOfMultiDrag && !isDragging;
-
   // Ref for transform style (updated via RAF for smooth dragging without re-renders)
   const transformRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null); // Ghost element for alt-drag followers
   const wasDraggingRef = useRef(false);
+
+  // Track drag participation via ref subscription - NO RE-RENDERS on drag state changes
+  // This is critical for performance: when dragging 10 items, we don't want 10 re-renders on release
+  const isAnyDragActiveRef = useRef(false);
+  const dragParticipationRef = useRef(0); // 0 = not participating, 1 = participating, 2 = participating + alt
+  const rafIdRef = useRef<number | null>(null);
+
+  // Single subscription for all drag state tracking - manages RAF loop directly
+  useEffect(() => {
+    const updateTransform = () => {
+      if (!transformRef.current) return;
+
+      const participation = dragParticipationRef.current;
+      const isPartOfDrag = participation > 0 && !isDragging;
+      const isAltDrag = participation === 2;
+
+      if (isPartOfDrag) {
+        const offset = dragOffsetRef.current;
+
+        if (isAltDrag) {
+          // Alt-drag: keep item in place, move ghost
+          transformRef.current.style.transform = '';
+          transformRef.current.style.opacity = '';
+          transformRef.current.style.transition = 'none';
+          transformRef.current.style.pointerEvents = 'none';
+
+          if (ghostRef.current) {
+            ghostRef.current.style.transform = `translate(${offset.x}px, ${offset.y}px)`;
+            ghostRef.current.style.display = 'block';
+          }
+        } else {
+          // Normal drag: move item
+          transformRef.current.style.transform = `translate(${offset.x}px, ${offset.y}px)`;
+          transformRef.current.style.opacity = String(DRAG_OPACITY);
+          transformRef.current.style.transition = 'none';
+          transformRef.current.style.pointerEvents = 'none';
+          transformRef.current.style.zIndex = '50';
+
+          if (ghostRef.current) {
+            ghostRef.current.style.display = 'none';
+          }
+        }
+        rafIdRef.current = requestAnimationFrame(updateTransform);
+      }
+    };
+
+    const cleanupDragStyles = () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      if (transformRef.current) {
+        transformRef.current.style.transition = 'none';
+        transformRef.current.style.transform = '';
+        transformRef.current.style.opacity = '';
+        transformRef.current.style.pointerEvents = '';
+        transformRef.current.style.zIndex = '';
+      }
+      if (ghostRef.current) {
+        ghostRef.current.style.display = 'none';
+      }
+    };
+
+    const unsubscribe = useSelectionStore.subscribe((state) => {
+      isAnyDragActiveRef.current = !!state.dragState?.isDragging;
+
+      const isParticipating = state.dragState?.isDragging && state.dragState.draggedItemIds.includes(item.id);
+      const isAlt = isParticipating && state.dragState?.isAltDrag;
+      const newParticipation = isParticipating ? (isAlt ? 2 : 1) : 0;
+      const oldParticipation = dragParticipationRef.current;
+
+      dragParticipationRef.current = newParticipation;
+
+      // Start RAF loop when becoming a drag participant (not anchor)
+      if (oldParticipation === 0 && newParticipation > 0 && !isDragging) {
+        rafIdRef.current = requestAnimationFrame(updateTransform);
+      }
+
+      // Cleanup when drag ends
+      if (oldParticipation > 0 && newParticipation === 0) {
+        cleanupDragStyles();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      cleanupDragStyles();
+    };
+  }, [item.id, isDragging]);
+
+  // Computed values from refs for rendering (read-only, don't trigger re-renders)
+  // These are only accurate during render, not for effects
+  const isPartOfMultiDrag = dragParticipationRef.current > 0;
+  const isAltDrag = dragParticipationRef.current === 2;
+  const isPartOfDrag = isPartOfMultiDrag && !isDragging;
 
   // Visibility detection for lazy filmstrip loading
   const isClipVisible = useClipVisibility(transformRef);
@@ -132,7 +198,6 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   // Disable transition when anchor item drag ends to avoid animation
   useEffect(() => {
     if (wasDraggingRef.current && !isDragging && transformRef.current) {
-      // Drag just ended - disable transition temporarily
       transformRef.current.style.transition = 'none';
       requestAnimationFrame(() => {
         if (transformRef.current) {
@@ -142,69 +207,6 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     }
     wasDraggingRef.current = isDragging;
   }, [isDragging]);
-
-  // Use RAF to update transform for items being dragged along (not the anchor)
-  // During alt-drag, items stay in place (no transform applied) but ghost follows cursor
-  useEffect(() => {
-    if (!isPartOfDrag || !transformRef.current) return;
-
-    let rafId: number;
-    const updateTransform = () => {
-      if (transformRef.current && isPartOfDrag) {
-        const offset = dragOffsetRef.current;
-
-        // During alt-drag, keep items in place (no transform/opacity change)
-        if (isAltDrag) {
-          transformRef.current.style.transform = '';
-          transformRef.current.style.opacity = '';
-          transformRef.current.style.transition = 'none';
-          transformRef.current.style.pointerEvents = 'none';
-
-          // Update ghost position for alt-drag (ghost is a sibling, needs absolute positioning)
-          if (ghostRef.current) {
-            ghostRef.current.style.transform = `translate(${offset.x}px, ${offset.y}px)`;
-            ghostRef.current.style.display = 'block';
-          }
-        } else {
-          transformRef.current.style.transform = `translate(${offset.x}px, ${offset.y}px)`;
-          transformRef.current.style.opacity = String(DRAG_OPACITY);
-          transformRef.current.style.transition = 'none';
-          transformRef.current.style.pointerEvents = 'none';
-          // Elevate follower clips above other clips during drag
-          transformRef.current.style.zIndex = '50';
-
-          // Hide ghost during normal drag
-          if (ghostRef.current) {
-            ghostRef.current.style.display = 'none';
-          }
-        }
-        rafId = requestAnimationFrame(updateTransform);
-      }
-    };
-
-    rafId = requestAnimationFrame(updateTransform);
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      // Reset styles when drag ends
-      if (transformRef.current) {
-        transformRef.current.style.transition = 'none';
-        transformRef.current.style.transform = '';
-        transformRef.current.style.opacity = '';
-        transformRef.current.style.pointerEvents = '';
-        transformRef.current.style.zIndex = '';
-        // Re-enable transitions after position updates (next frame)
-        requestAnimationFrame(() => {
-          if (transformRef.current) {
-            transformRef.current.style.transition = '';
-          }
-        });
-      }
-      // Hide ghost
-      if (ghostRef.current) {
-        ghostRef.current.style.display = 'none';
-      }
-    };
-  }, [isPartOfDrag, isAltDrag]);
 
   // Determine if this item is being dragged (anchor or follower)
   const isBeingDragged = isDragging || isPartOfDrag;

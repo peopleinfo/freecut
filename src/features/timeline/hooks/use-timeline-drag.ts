@@ -45,7 +45,7 @@ export function useTimelineDrag(
   const moveItems = useTimelineStore((s) => s.moveItems);
   const duplicateItems = useTimelineStore((s) => s.duplicateItems);
   const tracks = useTimelineStore((s) => s.tracks);
-  const items = useTimelineStore((s) => s.items);
+  const allItems = useTimelineStore((s) => s.items);
 
   // Selection store - use granular selectors to prevent re-renders
   // NOTE: dragState subscription removed - activeSnapTarget is read directly in timeline-content.tsx
@@ -79,17 +79,13 @@ export function useTimelineDrag(
     excludeFromSnap
   );
 
-  // Get all items for collision detection
-  const allItems = useTimelineStore((s) => s.items);
-
   // Create stable refs to avoid stale closures in event listeners
   const pixelsToFrameRef = useRef(pixelsToFrame);
   const moveItemRef = useRef(moveItem);
   const moveItemsRef = useRef(moveItems);
   const duplicateItemsRef = useRef(duplicateItems);
   const tracksRef = useRef(tracks);
-  const itemsRef = useRef(items);
-  const allItemsRef = useRef(allItems);
+  const itemsRef = useRef(allItems);
   const selectedItemIdsRef = useRef(selectedItemIds);
   // Update refs synchronously (not in useEffect) so they're always current
   const magneticSnapTargetsRef = useRef(magneticSnapTargets);
@@ -106,10 +102,9 @@ export function useTimelineDrag(
     moveItemsRef.current = moveItems;
     duplicateItemsRef.current = duplicateItems;
     tracksRef.current = tracks;
-    itemsRef.current = items;
-    allItemsRef.current = allItems;
+    itemsRef.current = allItems;
     selectedItemIdsRef.current = selectedItemIds;
-  }, [pixelsToFrame, moveItem, moveItems, duplicateItems, tracks, items, allItems, selectedItemIds]);
+  }, [pixelsToFrame, moveItem, moveItems, duplicateItems, tracks, allItems, selectedItemIds]);
 
   /**
    * Calculate which track the mouse is over based on Y position
@@ -497,8 +492,8 @@ export function useTimelineDrag(
         const draggedItemIds = movedItems.map((m) => m.id);
         // For alt-drag (duplicate), include all items in collision check since originals stay in place
         const itemsExcludingDragged = isAltDrag
-          ? allItemsRef.current
-          : allItemsRef.current.filter((i) => !draggedItemIds.includes(i.id));
+          ? itemsRef.current
+          : itemsRef.current.filter((i) => !draggedItemIds.includes(i.id));
 
         let maxSnapForward = 0; // How many frames we need to move the whole group forward
 
@@ -512,16 +507,16 @@ export function useTimelineDrag(
 
           if (finalPosition === null) {
             console.warn(isAltDrag ? 'Cannot duplicate items: no available space' : 'Cannot move items: no available space');
-            // Clean up and cancel
-            setIsDragging(false);
-            setDragOffset({ x: 0, y: 0 });
-            setDragState(null);
+            // Clean up and cancel - defer drag state to avoid render cascade
             dragOffsetRef.current = { x: 0, y: 0 };
             prevSnapTargetRef.current = null;
             dragStateRef.current = null;
             isAltDragRef.current = false;
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
+            setIsDragging(false);
+            setDragOffset({ x: 0, y: 0 });
+            queueMicrotask(() => setDragState(null));
             return;
           }
 
@@ -567,8 +562,8 @@ export function useTimelineDrag(
         // Find nearest available space (snaps forward if collision)
         // For alt-drag, include the original item in collision check since it stays in place
         const itemsExcludingDragged = isAltDrag
-          ? allItemsRef.current
-          : allItemsRef.current.filter((i) => i.id !== item.id);
+          ? itemsRef.current
+          : itemsRef.current.filter((i) => i.id !== item.id);
         const finalFrame = findNearestAvailableSpace(
           proposedFrame,
           item.durationInFrames,
@@ -594,16 +589,25 @@ export function useTimelineDrag(
         }
       }
 
-      // Clean up
-      setIsDragging(false);
-      setDragOffset({ x: 0, y: 0 });
-      setDragState(null); // Clear drag state (including activeSnapTarget)
-      dragOffsetRef.current = { x: 0, y: 0 }; // Reset shared ref
+      // Clean up - defer drag state clearing to avoid multiple render cycles
+      // The move operation already triggered a re-render; clearing drag state
+      // should happen after that render completes
+      dragOffsetRef.current = { x: 0, y: 0 }; // Reset shared ref immediately
       prevSnapTargetRef.current = null; // Reset snap target tracking
       dragStateRef.current = null;
       isAltDragRef.current = false; // Reset alt drag state
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+
+      // Batch React state updates (React 18 batches these automatically)
+      setIsDragging(false);
+      setDragOffset({ x: 0, y: 0 });
+
+      // Defer selection store cleanup to next microtask to avoid
+      // synchronous re-render cascade after move operation
+      queueMicrotask(() => {
+        setDragState(null);
+      });
     };
 
     if (dragStateRef.current) {
