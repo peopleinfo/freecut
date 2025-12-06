@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import type { SnapTarget } from '../types/drag';
 import { useTimelineStore } from '../stores/timeline-store';
 import { useZoomStore } from '../stores/zoom-store';
@@ -10,6 +10,12 @@ import {
   calculateAdaptiveSnapThreshold,
 } from '../utils/snap-utils';
 import { BASE_SNAP_THRESHOLD_PIXELS } from '../constants';
+
+// Helper to get items on-demand without subscribing
+// This is CRITICAL: useSnapCalculator is used by every TimelineItem via
+// use-timeline-drag, use-timeline-trim, and use-rate-stretch hooks.
+// Subscribing to items would cause ALL items to re-render when ANY item moves!
+const getItemsOnDemand = () => useTimelineStore.getState().items;
 
 /**
  * Advanced snap calculator hook
@@ -33,8 +39,7 @@ export function useSnapCalculator(
     return Array.isArray(excludeItemIds) ? excludeItemIds : [excludeItemIds];
   }, [excludeItemIds]);
   // Get state with granular selectors
-  // NOTE: Don't subscribe to currentFrame - read from store when needed to prevent re-renders
-  const items = useTimelineStore((s) => s.items);
+  // NOTE: Don't subscribe to items or currentFrame - read from store when needed to prevent re-renders
   const fps = useTimelineStore((s) => s.fps);
   const snapEnabled = useTimelineStore((s) => s.snapEnabled);
   const zoomLevel = useZoomStore((s) => s.level);
@@ -53,11 +58,11 @@ export function useSnapCalculator(
   }, [zoomLevel, pixelsPerSecond, fps]);
 
   /**
-   * Generate all snap targets (grid + magnetic)
-   * Memoized for performance - only recalculates when items/zoom changes
-   * NOTE: Playhead snap target is added dynamically in calculateSnap to avoid re-renders
+   * Generate snap targets on-demand (NOT memoized on items to avoid re-renders)
+   * Called when calculateSnap is invoked, using current items from store
    */
-  const snapTargets = useMemo(() => {
+  const generateSnapTargets = useCallback(() => {
+    const items = getItemsOnDemand();
     const targets: SnapTarget[] = [];
 
     // 1. Grid snap points (timeline markers)
@@ -85,11 +90,8 @@ export function useSnapCalculator(
         });
       });
 
-    // NOTE: Playhead snap target is added dynamically in calculateSnap
-    // to avoid re-renders on every frame update
-
     return targets;
-  }, [items, excludeIds, timelineDuration, fps, zoomLevel]);
+  }, [excludeIds, timelineDuration, fps, zoomLevel]);
 
   /**
    * Calculate snap for a given position
@@ -99,7 +101,7 @@ export function useSnapCalculator(
    * @param targetStartFrame - The proposed start frame of the item
    * @param itemDurationInFrames - Duration of the item in frames
    */
-  const calculateSnap = (targetStartFrame: number, itemDurationInFrames: number) => {
+  const calculateSnap = useCallback((targetStartFrame: number, itemDurationInFrames: number) => {
     if (!snapEnabled) {
       return {
         snappedFrame: targetStartFrame,
@@ -111,10 +113,10 @@ export function useSnapCalculator(
     // Calculate end frame
     const targetEndFrame = targetStartFrame + itemDurationInFrames;
 
-    // Add playhead snap target dynamically (read from store to avoid subscriptions)
+    // Generate snap targets on-demand and add playhead
     const currentFrame = usePlaybackStore.getState().currentFrame;
     const allTargets: SnapTarget[] = [
-      ...snapTargets,
+      ...generateSnapTargets(),
       { frame: currentFrame, type: 'playhead' as const },
     ];
 
@@ -166,30 +168,26 @@ export function useSnapCalculator(
       snapTarget: null,
       didSnap: false,
     };
-  };
+  }, [snapEnabled, generateSnapTargets, snapThresholdFrames]);
 
   /**
    * Get magnetic snap targets only (item edges, for visual guidelines)
-   * NOTE: Playhead is added dynamically when needed to avoid re-renders
+   * Generated on-demand to avoid subscribing to items
    */
-  const magneticSnapTargets = useMemo(() => {
-    return snapTargets.filter(
+  const getMagneticSnapTargets = useCallback(() => {
+    return generateSnapTargets().filter(
       (t) => t.type === 'item-start' || t.type === 'item-end'
     );
-  }, [snapTargets]);
+  }, [generateSnapTargets]);
 
-  /**
-   * Get grid snap targets only
-   */
-  const gridSnapTargets = useMemo(() => {
-    return snapTargets.filter((t) => t.type === 'grid');
-  }, [snapTargets]);
+  // For compatibility with existing code that expects a memoized array,
+  // we generate it once. This won't update when items move, but that's
+  // intentional to avoid re-renders. Fresh targets are used in calculateSnap.
+  const magneticSnapTargets = useMemo(() => getMagneticSnapTargets(), [getMagneticSnapTargets]);
 
   return {
     calculateSnap,
-    snapTargets,
     magneticSnapTargets,
-    gridSnapTargets,
     snapThresholdFrames,
     snapEnabled,
   };

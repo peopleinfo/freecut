@@ -40,12 +40,14 @@ export function useTimelineDrag(
   // Track previous snap target to avoid unnecessary store updates
   const prevSnapTargetRef = useRef<{ frame: number; type: string } | null>(null);
 
-  // Get store actions and state with granular selectors
+  // Get store actions with granular selectors
   const moveItem = useTimelineStore((s) => s.moveItem);
   const moveItems = useTimelineStore((s) => s.moveItems);
   const duplicateItems = useTimelineStore((s) => s.duplicateItems);
   const tracks = useTimelineStore((s) => s.tracks);
-  const allItems = useTimelineStore((s) => s.items);
+  // NOTE: Don't subscribe to items here! Every TimelineItem has this hook,
+  // subscribing to items would cause ALL items to re-render when ANY item changes.
+  // Instead, read items on-demand in callbacks using getState().
 
   // Selection store - use granular selectors to prevent re-renders
   // NOTE: dragState subscription removed - activeSnapTarget is read directly in timeline-content.tsx
@@ -85,8 +87,10 @@ export function useTimelineDrag(
   const moveItemsRef = useRef(moveItems);
   const duplicateItemsRef = useRef(duplicateItems);
   const tracksRef = useRef(tracks);
-  const itemsRef = useRef(allItems);
   const selectedItemIdsRef = useRef(selectedItemIds);
+
+  // Helper to get items on-demand (avoids subscription that would cause all items to re-render)
+  const getItems = useCallback(() => useTimelineStore.getState().items, []);
   // Update refs synchronously (not in useEffect) so they're always current
   const magneticSnapTargetsRef = useRef(magneticSnapTargets);
   magneticSnapTargetsRef.current = magneticSnapTargets;
@@ -102,9 +106,8 @@ export function useTimelineDrag(
     moveItemsRef.current = moveItems;
     duplicateItemsRef.current = duplicateItems;
     tracksRef.current = tracks;
-    itemsRef.current = allItems;
     selectedItemIdsRef.current = selectedItemIds;
-  }, [pixelsToFrame, moveItem, moveItems, duplicateItems, tracks, allItems, selectedItemIds]);
+  }, [pixelsToFrame, moveItem, moveItems, duplicateItems, tracks, selectedItemIds]);
 
   /**
    * Calculate which track the mouse is over based on Y position
@@ -215,7 +218,7 @@ export function useTimelineDrag(
 
       // Determine which items to drag
       const itemsToDrag = isInSelection ? currentSelectedIds : [item.id];
-      const allItems = itemsRef.current;
+      const allItems = getItems();
 
       // Store initial state for all dragged items
       const draggedItems = itemsToDrag
@@ -353,7 +356,7 @@ export function useTimelineDrag(
         let groupEndFrame = -Infinity;
 
         for (const draggedItem of draggedItems) {
-          const sourceItem = itemsRef.current.find((i) => i.id === draggedItem.id);
+          const sourceItem = getItems().find((i) => i.id === draggedItem.id);
           if (!sourceItem) continue;
 
           const proposedStart = draggedItem.initialFrame + deltaFrames;
@@ -368,7 +371,7 @@ export function useTimelineDrag(
       } else {
         // Single item drag - use anchor item
         snapStartFrame = Math.max(0, dragStateRef.current.startFrame + deltaFrames);
-        const draggedItem = itemsRef.current.find((i) => i.id === dragStateRef.current?.itemId);
+        const draggedItem = getItems().find((i) => i.id === dragStateRef.current?.itemId);
         snapDuration = draggedItem?.durationInFrames || 0;
       }
 
@@ -416,7 +419,7 @@ export function useTimelineDrag(
         let groupEndFrame = -Infinity;
 
         for (const draggedItem of dragState.draggedItems) {
-          const sourceItem = itemsRef.current.find((i) => i.id === draggedItem.id);
+          const sourceItem = getItems().find((i) => i.id === draggedItem.id);
           if (!sourceItem) continue;
 
           const proposedStart = draggedItem.initialFrame + deltaFrames;
@@ -452,7 +455,7 @@ export function useTimelineDrag(
 
         // Multi-item drag: calculate new positions for all items
         const movedItems = dragState.draggedItems.map((draggedItem) => {
-          const sourceItem = itemsRef.current.find((i) => i.id === draggedItem.id);
+          const sourceItem = getItems().find((i) => i.id === draggedItem.id);
           if (!sourceItem) return null;
 
           // Calculate new frame (maintain relative offset from anchor)
@@ -492,8 +495,8 @@ export function useTimelineDrag(
         const draggedItemIds = movedItems.map((m) => m.id);
         // For alt-drag (duplicate), include all items in collision check since originals stay in place
         const itemsExcludingDragged = isAltDrag
-          ? itemsRef.current
-          : itemsRef.current.filter((i) => !draggedItemIds.includes(i.id));
+          ? getItems()
+          : getItems().filter((i) => !draggedItemIds.includes(i.id));
 
         let maxSnapForward = 0; // How many frames we need to move the whole group forward
 
@@ -542,7 +545,7 @@ export function useTimelineDrag(
           const allUpdates = movedItems.map((m) => ({
             id: m.id,
             from: m.newFrom + maxSnapForward,
-            trackId: m.newTrackId !== itemsRef.current.find((i) => i.id === m.id)?.trackId
+            trackId: m.newTrackId !== getItems().find((i) => i.id === m.id)?.trackId
               ? m.newTrackId
               : undefined,
           }));
@@ -562,8 +565,8 @@ export function useTimelineDrag(
         // Find nearest available space (snaps forward if collision)
         // For alt-drag, include the original item in collision check since it stays in place
         const itemsExcludingDragged = isAltDrag
-          ? itemsRef.current
-          : itemsRef.current.filter((i) => i.id !== item.id);
+          ? getItems()
+          : getItems().filter((i) => i.id !== item.id);
         const finalFrame = findNearestAvailableSpace(
           proposedFrame,
           item.durationInFrames,

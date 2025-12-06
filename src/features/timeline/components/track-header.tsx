@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Eye, Lock, GripVertical, Volume2, VolumeX, Radio } from 'lucide-react';
 import type { TimelineTrack } from '@/types/timeline';
@@ -17,12 +17,25 @@ export interface TrackHeaderProps {
 }
 
 /**
+ * Custom equality for TrackHeader memo - ignores callback props which are recreated each render
+ */
+function areTrackHeaderPropsEqual(prev: TrackHeaderProps, next: TrackHeaderProps): boolean {
+  return (
+    prev.track === next.track &&
+    prev.isActive === next.isActive &&
+    prev.isSelected === next.isSelected
+  );
+  // Callbacks (onToggleLock, etc.) are ignored - they're recreated each render but functionality is same
+}
+
+/**
  * Track Header Component
  *
  * Displays track name, controls, and handles selection.
  * Shows active state with background color.
+ * Memoized to prevent re-renders when props haven't changed.
  */
-export function TrackHeader({
+export const TrackHeader = memo(function TrackHeader({
   track,
   isActive,
   isSelected,
@@ -182,4 +195,4 @@ export function TrackHeader({
       </div>
     </div>
   );
-}
+}, areTrackHeaderPropsEqual);
