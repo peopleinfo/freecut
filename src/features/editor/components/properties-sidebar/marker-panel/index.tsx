@@ -189,6 +189,7 @@ export function MarkerPanel() {
             onChange={handleFrameChange}
             min={0}
             step={1}
+            className="flex-1 min-w-0"
           />
         </PropertyRow>
 
@@ -205,13 +206,13 @@ export function MarkerPanel() {
             value={selectedMarker.label || ''}
             onChange={handleLabelChange}
             placeholder="Enter label..."
-            className="h-7 text-xs"
+            className="h-7 text-xs flex-1 min-w-0"
           />
         </PropertyRow>
 
         {/* Color */}
         <PropertyRow label="Color">
-          <div className="flex items-center gap-1 flex-1">
+          <div className="flex items-center gap-1 w-full">
             <MarkerColorPicker
               color={selectedMarker.color}
               onChange={handleColorChange}

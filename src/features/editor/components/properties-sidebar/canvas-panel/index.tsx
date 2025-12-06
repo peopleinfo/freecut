@@ -229,7 +229,7 @@ export function CanvasPanel() {
 
         {/* Background Color */}
         <PropertyRow label="Background">
-          <div className="flex items-center gap-1 flex-1">
+          <div className="flex items-center gap-1 w-full">
             <ColorPicker
               initialColor={storedBackgroundColor}
               onColorChange={handleBackgroundColorChange}

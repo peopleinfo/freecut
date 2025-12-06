@@ -99,7 +99,7 @@ const ShapeColorPicker = memo(function ShapeColorPicker({
 
   return (
     <PropertyRow label={label}>
-      <div ref={containerRef} className="relative flex items-center gap-1 flex-1">
+      <div ref={containerRef} className="relative flex items-center gap-1 w-full">
         <button
           type="button"
           onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -408,7 +408,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
           value={sharedValues.shapeType}
           onValueChange={handleShapeTypeChange}
         >
-          <SelectTrigger className="h-7 text-xs">
+          <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
             <SelectValue placeholder={sharedValues.shapeType === undefined ? 'Mixed' : 'Select shape'} />
           </SelectTrigger>
           <SelectContent>
@@ -441,6 +441,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
           max={50}
           step={1}
           unit="px"
+          className="flex-1 min-w-0"
         />
       </PropertyRow>
 
@@ -467,6 +468,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
             max={100}
             step={1}
             unit="px"
+            className="flex-1 min-w-0"
           />
         </PropertyRow>
       )}
@@ -501,6 +503,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
             min={3}
             max={12}
             step={1}
+            className="flex-1 min-w-0"
           />
         </PropertyRow>
       )}
@@ -515,6 +518,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
             min={0.1}
             max={0.9}
             step={0.05}
+            className="flex-1 min-w-0"
           />
         </PropertyRow>
       )}
@@ -527,7 +531,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
         <Button
           variant={sharedValues.isMask === true ? 'secondary' : 'ghost'}
           size="sm"
-          className="h-7 text-xs"
+          className="h-7 text-xs flex-1 min-w-0"
           onClick={() => handleIsMaskChange(sharedValues.isMask !== true)}
           disabled={sharedValues.isMask === 'mixed'}
         >
@@ -545,7 +549,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
               onValueChange={handleMaskTypeChange}
               disabled={sharedValues.isMask !== true}
             >
-              <SelectTrigger className="h-7 text-xs">
+              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
                 <SelectValue placeholder={sharedValues.maskType === undefined ? 'Mixed' : 'Select type'} />
               </SelectTrigger>
               <SelectContent>
@@ -558,7 +562,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
           {/* Feather - only show for alpha mask type */}
           {sharedValues.maskType === 'alpha' && (
             <PropertyRow label="Feather">
-              <div className="flex items-center gap-1 flex-1">
+              <div className="flex items-center gap-1 w-full">
                 <NumberInput
                   value={sharedValues.maskFeather}
                   onChange={handleMaskFeatherChange}
@@ -567,6 +571,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
                   max={100}
                   step={1}
                   unit="px"
+                  className="flex-1 min-w-0"
                 />
                 <Button
                   variant="ghost"
@@ -586,7 +591,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
             <Button
               variant={sharedValues.maskInvert === true ? 'secondary' : 'ghost'}
               size="sm"
-              className="h-7 text-xs"
+              className="h-7 text-xs flex-1 min-w-0"
               onClick={() => handleMaskInvertChange(sharedValues.maskInvert !== true)}
               disabled={sharedValues.isMask !== true || sharedValues.maskInvert === 'mixed'}
             >

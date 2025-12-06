@@ -134,7 +134,7 @@ export const FillSection = memo(function FillSection({
     <PropertySection title="Fill" icon={Droplet} defaultOpen={true}>
       {/* Opacity */}
       <PropertyRow label="Opacity">
-        <div className="flex items-center gap-1 flex-1">
+        <div className="flex items-center gap-1 w-full">
           <NumberInput
             value={opacity}
             onChange={handleOpacityChange}
@@ -143,6 +143,7 @@ export const FillSection = memo(function FillSection({
             max={100}
             step={1}
             unit="%"
+            className="flex-1 min-w-0"
           />
           <Button
             variant="ghost"
@@ -158,7 +159,7 @@ export const FillSection = memo(function FillSection({
 
       {/* Corner Radius */}
       <PropertyRow label="Radius">
-        <div className="flex items-center gap-1 flex-1">
+        <div className="flex items-center gap-1 w-full">
           <NumberInput
             value={cornerRadius}
             onChange={handleCornerRadiusChange}
@@ -167,6 +168,7 @@ export const FillSection = memo(function FillSection({
             max={1000}
             step={1}
             unit="px"
+            className="flex-1 min-w-0"
           />
           <Button
             variant="ghost"

@@ -653,20 +653,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
           const isDefault = cssEffect.value === config.default;
           return (
             <PropertyRow key={effect.id} label={config.label}>
-              <div className="flex items-center gap-1 min-w-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 flex-shrink-0"
-                  onClick={() => handleToggle(effect.id)}
-                  title={effect.enabled ? 'Disable effect' : 'Enable effect'}
-                >
-                  {effect.enabled ? (
-                    <Eye className="w-3 h-3" />
-                  ) : (
-                    <EyeOff className="w-3 h-3 text-muted-foreground" />
-                  )}
-                </Button>
+              <div className="flex items-center gap-1 min-w-0 w-full">
                 <NumberInput
                   value={cssEffect.value}
                   onChange={(v) => handleEffectChange(effect.id, v)}
@@ -692,6 +679,19 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 flex-shrink-0"
+                  onClick={() => handleToggle(effect.id)}
+                  title={effect.enabled ? 'Disable effect' : 'Enable effect'}
+                >
+                  {effect.enabled ? (
+                    <Eye className="w-3 h-3" />
+                  ) : (
+                    <EyeOff className="w-3 h-3 text-muted-foreground" />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 flex-shrink-0"
                   onClick={() => handleRemove(effect.id)}
                   title="Remove effect"
                 >
@@ -708,20 +708,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
           const isDefault = glitchEffect.intensity === 0.5;
           return (
             <PropertyRow key={effect.id} label={config.label}>
-              <div className="flex items-center gap-1 min-w-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 flex-shrink-0"
-                  onClick={() => handleToggle(effect.id)}
-                  title={effect.enabled ? 'Disable effect' : 'Enable effect'}
-                >
-                  {effect.enabled ? (
-                    <Eye className="w-3 h-3" />
-                  ) : (
-                    <EyeOff className="w-3 h-3 text-muted-foreground" />
-                  )}
-                </Button>
+              <div className="flex items-center gap-1 min-w-0 w-full">
                 <NumberInput
                   value={Math.round(glitchEffect.intensity * 100)}
                   onChange={(v) => handleGlitchIntensityChange(effect.id, v)}
@@ -742,6 +729,19 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
                   disabled={isDefault}
                 >
                   <RotateCcw className="w-3 h-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 flex-shrink-0"
+                  onClick={() => handleToggle(effect.id)}
+                  title={effect.enabled ? 'Disable effect' : 'Enable effect'}
+                >
+                  {effect.enabled ? (
+                    <Eye className="w-3 h-3" />
+                  ) : (
+                    <EyeOff className="w-3 h-3 text-muted-foreground" />
+                  )}
                 </Button>
                 <Button
                   variant="ghost"
@@ -797,7 +797,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Pattern Type */}
               <PropertyRow label={HALFTONE_CONFIG.patternType.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -835,7 +835,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Size (renamed from Dot Size for clarity with other patterns) */}
               <PropertyRow label={HALFTONE_CONFIG.dotSize.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <NumberInput
                     value={halftone.dotSize}
                     onChange={(v) => handleHalftoneChange(effect.id, 'dotSize', v)}
@@ -862,7 +862,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Spacing */}
               <PropertyRow label={HALFTONE_CONFIG.spacing.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <NumberInput
                     value={halftone.spacing}
                     onChange={(v) => handleHalftoneChange(effect.id, 'spacing', v)}
@@ -889,7 +889,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Angle */}
               <PropertyRow label={HALFTONE_CONFIG.angle.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <NumberInput
                     value={halftone.angle}
                     onChange={(v) => handleHalftoneChange(effect.id, 'angle', v)}
@@ -916,7 +916,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Intensity */}
               <PropertyRow label={HALFTONE_CONFIG.intensity.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <NumberInput
                     value={Math.round(halftone.intensity * 100)}
                     onChange={(v) => handleHalftoneIntensityChange(effect.id, v)}
@@ -943,7 +943,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Softness */}
               <PropertyRow label={HALFTONE_CONFIG.softness.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <NumberInput
                     value={Math.round(softness * 100)}
                     onChange={(v) => handleHalftoneChange(effect.id, 'softness', v / 100)}
@@ -970,7 +970,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Blend Mode */}
               <PropertyRow label={HALFTONE_CONFIG.blendMode.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -1008,7 +1008,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Inverted toggle */}
               <PropertyRow label={HALFTONE_CONFIG.inverted.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <Button
                     variant={inverted ? 'default' : 'outline'}
                     size="sm"
@@ -1033,7 +1033,8 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Dot Color */}
               <PropertyRow label="Color">
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
+                  <div className="flex-1" />
                   <EffectColorPicker
                     label=""
                     color={halftone.dotColor}
@@ -1056,7 +1057,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Fade Angle (-1 = off, 0-360 = direction) */}
               <PropertyRow label={HALFTONE_CONFIG.fadeAngle.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <NumberInput
                     value={fadeAngle}
                     onChange={(v) => handleHalftoneChange(effect.id, 'fadeAngle', v)}
@@ -1085,7 +1086,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
               {/* Fade Amount - only show when fade is enabled (fadeAngle >= 0) */}
               {fadeAngle >= 0 && (
                 <PropertyRow label={HALFTONE_CONFIG.fadeAmount.label}>
-                  <div className="flex items-center gap-1 min-w-0">
+                  <div className="flex items-center gap-1 min-w-0 w-full">
                     <NumberInput
                       value={Math.round(fadeAmount * 100)}
                       onChange={(v) => handleHalftoneChange(effect.id, 'fadeAmount', v / 100)}
@@ -1148,7 +1149,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Intensity */}
               <PropertyRow label={VIGNETTE_CONFIG.intensity.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <NumberInput
                     value={Math.round(vignette.intensity * 100)}
                     onChange={(v) => handleVignettePercentChange(effect.id, 'intensity', v)}
@@ -1175,7 +1176,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Size */}
               <PropertyRow label={VIGNETTE_CONFIG.size.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <NumberInput
                     value={Math.round(vignette.size * 100)}
                     onChange={(v) => handleVignettePercentChange(effect.id, 'size', v)}
@@ -1202,7 +1203,7 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Softness */}
               <PropertyRow label={VIGNETTE_CONFIG.softness.label}>
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
                   <NumberInput
                     value={Math.round(vignette.softness * 100)}
                     onChange={(v) => handleVignettePercentChange(effect.id, 'softness', v)}
@@ -1229,7 +1230,8 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
 
               {/* Color */}
               <PropertyRow label="Color">
-                <div className="flex items-center gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 w-full">
+                  <div className="flex-1" />
                   <EffectColorPicker
                     label=""
                     color={vignette.color}

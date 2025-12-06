@@ -184,7 +184,7 @@ export function VideoSection({ items }: VideoSectionProps) {
     <PropertySection title="Video" icon={Video} defaultOpen={true}>
       {/* Playback Rate - affects clip duration */}
       <PropertyRow label="Speed">
-        <div className="flex items-center gap-1 flex-1">
+        <div className="flex items-center gap-1 w-full">
           <NumberInput
             value={speed}
             onChange={handleSpeedChange}
@@ -192,6 +192,7 @@ export function VideoSection({ items }: VideoSectionProps) {
             max={MAX_SPEED}
             step={0.1}
             unit="x"
+            className="flex-1 min-w-0"
           />
           <Button
             variant="ghost"
@@ -207,7 +208,7 @@ export function VideoSection({ items }: VideoSectionProps) {
 
       {/* Video Fades */}
       <PropertyRow label="Fade In">
-        <div className="flex items-center gap-1 flex-1">
+        <div className="flex items-center gap-1 w-full">
           <NumberInput
             value={fadeIn}
             onChange={handleFadeInChange}
@@ -216,6 +217,7 @@ export function VideoSection({ items }: VideoSectionProps) {
             max={5}
             step={0.1}
             unit="s"
+            className="flex-1 min-w-0"
           />
           <Button
             variant="ghost"
@@ -230,7 +232,7 @@ export function VideoSection({ items }: VideoSectionProps) {
       </PropertyRow>
 
       <PropertyRow label="Fade Out">
-        <div className="flex items-center gap-1 flex-1">
+        <div className="flex items-center gap-1 w-full">
           <NumberInput
             value={fadeOut}
             onChange={handleFadeOutChange}
@@ -239,6 +241,7 @@ export function VideoSection({ items }: VideoSectionProps) {
             max={5}
             step={0.1}
             unit="s"
+            className="flex-1 min-w-0"
           />
           <Button
             variant="ghost"

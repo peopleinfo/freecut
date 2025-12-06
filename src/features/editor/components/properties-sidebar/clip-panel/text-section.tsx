@@ -102,7 +102,7 @@ const TextColorPicker = memo(function TextColorPicker({
 
   return (
     <PropertyRow label={label}>
-      <div ref={containerRef} className="relative flex items-center gap-1 flex-1">
+      <div ref={containerRef} className="relative flex items-center gap-1 w-full">
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
@@ -321,7 +321,7 @@ export function TextSection({ items }: TextSectionProps) {
           value={sharedValues.text ?? ''}
           onChange={handleTextChange}
           placeholder={sharedValues.text === undefined ? 'Mixed' : 'Enter text...'}
-          className="min-h-[60px] text-xs"
+          className="min-h-[60px] text-xs flex-1 min-w-0"
           rows={3}
         />
       </PropertyRow>
@@ -332,7 +332,7 @@ export function TextSection({ items }: TextSectionProps) {
           value={sharedValues.fontFamily}
           onValueChange={handleFontFamilyChange}
         >
-          <SelectTrigger className="h-7 text-xs">
+          <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
             <SelectValue placeholder={sharedValues.fontFamily === undefined ? 'Mixed' : 'Select font'} />
           </SelectTrigger>
           <SelectContent>
@@ -355,6 +355,7 @@ export function TextSection({ items }: TextSectionProps) {
           max={500}
           step={1}
           unit="px"
+          className="flex-1 min-w-0"
         />
       </PropertyRow>
 
@@ -364,7 +365,7 @@ export function TextSection({ items }: TextSectionProps) {
           value={sharedValues.fontWeight}
           onValueChange={handleFontWeightChange}
         >
-          <SelectTrigger className="h-7 text-xs">
+          <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
             <SelectValue placeholder={sharedValues.fontWeight === undefined ? 'Mixed' : 'Select weight'} />
           </SelectTrigger>
           <SelectContent>
@@ -458,6 +459,7 @@ export function TextSection({ items }: TextSectionProps) {
           max={100}
           step={1}
           unit="px"
+          className="flex-1 min-w-0"
         />
       </PropertyRow>
 
@@ -470,6 +472,7 @@ export function TextSection({ items }: TextSectionProps) {
           min={0.5}
           max={3}
           step={0.1}
+          className="flex-1 min-w-0"
         />
       </PropertyRow>
     </PropertySection>

@@ -172,7 +172,7 @@ export function AudioSection({ items }: AudioSectionProps) {
     <PropertySection title="Audio" icon={Volume2} defaultOpen={true}>
       {/* Volume in dB (-60 to +20, 0 dB = unity gain) */}
       <PropertyRow label="Volume">
-        <div className="flex items-center gap-1 flex-1">
+        <div className="flex items-center gap-1 w-full">
           <NumberInput
             value={volume}
             onChange={handleVolumeChange}
@@ -181,6 +181,7 @@ export function AudioSection({ items }: AudioSectionProps) {
             max={20}
             step={0.1}
             unit="dB"
+            className="flex-1 min-w-0"
           />
           <Button
             variant="ghost"
@@ -196,7 +197,7 @@ export function AudioSection({ items }: AudioSectionProps) {
 
       {/* Audio Fades */}
       <PropertyRow label="Fade In">
-        <div className="flex items-center gap-1 flex-1">
+        <div className="flex items-center gap-1 w-full">
           <NumberInput
             value={fadeIn}
             onChange={handleFadeInChange}
@@ -205,6 +206,7 @@ export function AudioSection({ items }: AudioSectionProps) {
             max={5}
             step={0.1}
             unit="s"
+            className="flex-1 min-w-0"
           />
           <Button
             variant="ghost"
@@ -219,7 +221,7 @@ export function AudioSection({ items }: AudioSectionProps) {
       </PropertyRow>
 
       <PropertyRow label="Fade Out">
-        <div className="flex items-center gap-1 flex-1">
+        <div className="flex items-center gap-1 w-full">
           <NumberInput
             value={fadeOut}
             onChange={handleFadeOutChange}
@@ -228,6 +230,7 @@ export function AudioSection({ items }: AudioSectionProps) {
             max={5}
             step={0.1}
             unit="s"
+            className="flex-1 min-w-0"
           />
           <Button
             variant="ghost"

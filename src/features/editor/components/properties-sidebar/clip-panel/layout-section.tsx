@@ -380,7 +380,7 @@ export const LayoutSection = memo(function LayoutSection({
 
       {/* Position */}
       <PropertyRow label="Position">
-        <div className="flex items-start gap-1">
+        <div className="flex items-start gap-1 w-full">
           <div className="grid grid-cols-2 gap-1 flex-1">
             <NumberInput
               value={x}
@@ -413,7 +413,7 @@ export const LayoutSection = memo(function LayoutSection({
 
       {/* Dimensions */}
       <PropertyRow label="Size">
-        <div className="flex items-start gap-1">
+        <div className="flex items-start gap-1 w-full">
           <LinkedDimensions
             width={width}
             height={height}
@@ -440,7 +440,7 @@ export const LayoutSection = memo(function LayoutSection({
 
       {/* Rotation */}
       <PropertyRow label="Rotation">
-        <div className="flex items-center gap-1 flex-1">
+        <div className="flex items-center gap-1 w-full">
           <NumberInput
             value={rotation}
             onChange={handleRotationChange}
@@ -449,6 +449,7 @@ export const LayoutSection = memo(function LayoutSection({
             max={180}
             step={1}
             unit="°"
+            className="flex-1 min-w-0"
           />
           <Button
             variant="ghost"
