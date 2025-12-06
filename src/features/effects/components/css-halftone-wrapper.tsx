@@ -38,7 +38,8 @@ export const CSSHalftoneWrapper: React.FC<CSSHalftoneWrapperProps> = ({
     softness: 0.2,
     blendMode: 'multiply',
     inverted: false,
-    backgroundColor: '#ffffff',
+    fadeAngle: -1,
+    fadeAmount: 0.5,
     dotColor: '#000000',
   };
 
@@ -53,6 +54,9 @@ export const CSSHalftoneWrapper: React.FC<CSSHalftoneWrapperProps> = ({
     return <>{children}</>;
   }
 
+  // Pattern element (rotates with angle)
+  const patternElement = <div style={styles.patternStyle} />;
+
   return (
     <div
       style={{
@@ -62,7 +66,14 @@ export const CSSHalftoneWrapper: React.FC<CSSHalftoneWrapperProps> = ({
       }}
     >
       {children}
-      <div style={styles.overlayStyle} />
+      {/* If fade is enabled, wrap pattern in fade wrapper with CSS mask */}
+      {styles.fadeWrapperStyle ? (
+        <div style={styles.fadeWrapperStyle}>
+          {patternElement}
+        </div>
+      ) : (
+        patternElement
+      )}
     </div>
   );
 };

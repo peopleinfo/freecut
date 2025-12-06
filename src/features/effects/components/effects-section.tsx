@@ -189,7 +189,8 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
         softness: HALFTONE_CONFIG.softness.default,
         blendMode: HALFTONE_CONFIG.blendMode.default,
         inverted: HALFTONE_CONFIG.inverted.default,
-        backgroundColor: '#ffffff',
+        fadeAngle: HALFTONE_CONFIG.fadeAngle.default,
+        fadeAmount: HALFTONE_CONFIG.fadeAmount.default,
         dotColor: '#000000',
       } as HalftoneEffect);
     });
@@ -465,11 +466,14 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
         case 'inverted':
           defaultValue = HALFTONE_CONFIG.inverted.default;
           break;
+        case 'fadeAngle':
+          defaultValue = HALFTONE_CONFIG.fadeAngle.default;
+          break;
+        case 'fadeAmount':
+          defaultValue = HALFTONE_CONFIG.fadeAmount.default;
+          break;
         case 'dotColor':
           defaultValue = '#000000';
-          break;
-        case 'backgroundColor':
-          defaultValue = '#ffffff';
           break;
         default:
           return;
@@ -759,6 +763,8 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
           const softness = halftone.softness ?? HALFTONE_CONFIG.softness.default;
           const blendMode = halftone.blendMode ?? 'multiply';
           const inverted = halftone.inverted ?? false;
+          const fadeAngle = halftone.fadeAngle ?? HALFTONE_CONFIG.fadeAngle.default;
+          const fadeAmount = halftone.fadeAmount ?? HALFTONE_CONFIG.fadeAmount.default;
           return (
             <div key={effect.id} className="border-b border-border/50 pb-2 mb-2">
               {/* Header row with toggle and delete */}
@@ -1025,11 +1031,11 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
                 </div>
               </PropertyRow>
 
-              {/* Colors */}
-              <PropertyRow label="Colors">
-                <div className="flex items-center gap-2">
+              {/* Dot Color */}
+              <PropertyRow label="Color">
+                <div className="flex items-center gap-1 min-w-0">
                   <EffectColorPicker
-                    label="Fg"
+                    label=""
                     color={halftone.dotColor}
                     onChange={(c) => handleHalftoneChange(effect.id, 'dotColor', c)}
                     onLiveChange={(c) => handleHalftoneLiveChange(effect.id, 'dotColor', c)}
@@ -1040,30 +1046,70 @@ export const EffectsSection = memo(function EffectsSection({ items }: EffectsSec
                     size="icon"
                     className={`h-6 w-6 flex-shrink-0 ${halftone.dotColor === '#000000' ? 'opacity-30' : ''}`}
                     onClick={() => handleResetHalftone(effect.id, 'dotColor')}
-                    title="Reset foreground color"
+                    title="Reset color"
                     disabled={halftone.dotColor === '#000000'}
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                  </Button>
-                  <EffectColorPicker
-                    label="Bg"
-                    color={halftone.backgroundColor}
-                    onChange={(c) => handleHalftoneChange(effect.id, 'backgroundColor', c)}
-                    onLiveChange={(c) => handleHalftoneLiveChange(effect.id, 'backgroundColor', c)}
-                    disabled={!effect.enabled}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={`h-6 w-6 flex-shrink-0 ${halftone.backgroundColor === '#ffffff' ? 'opacity-30' : ''}`}
-                    onClick={() => handleResetHalftone(effect.id, 'backgroundColor')}
-                    title="Reset background color"
-                    disabled={halftone.backgroundColor === '#ffffff'}
                   >
                     <RotateCcw className="w-3 h-3" />
                   </Button>
                 </div>
               </PropertyRow>
+
+              {/* Fade Angle (-1 = off, 0-360 = direction) */}
+              <PropertyRow label={HALFTONE_CONFIG.fadeAngle.label}>
+                <div className="flex items-center gap-1 min-w-0">
+                  <NumberInput
+                    value={fadeAngle}
+                    onChange={(v) => handleHalftoneChange(effect.id, 'fadeAngle', v)}
+                    onLiveChange={(v) => handleHalftoneLiveChange(effect.id, 'fadeAngle', v)}
+                    min={HALFTONE_CONFIG.fadeAngle.min}
+                    max={HALFTONE_CONFIG.fadeAngle.max}
+                    step={HALFTONE_CONFIG.fadeAngle.step}
+                    unit={fadeAngle >= 0 ? HALFTONE_CONFIG.fadeAngle.unit : ''}
+                    disabled={!effect.enabled}
+                    className="flex-1 min-w-0"
+                    formatValue={(v) => v < 0 ? 'Off' : `${v}`}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-6 w-6 flex-shrink-0 ${fadeAngle === HALFTONE_CONFIG.fadeAngle.default ? 'opacity-30' : ''}`}
+                    onClick={() => handleResetHalftone(effect.id, 'fadeAngle')}
+                    title="Reset to default"
+                    disabled={fadeAngle === HALFTONE_CONFIG.fadeAngle.default}
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </Button>
+                </div>
+              </PropertyRow>
+
+              {/* Fade Amount - only show when fade is enabled (fadeAngle >= 0) */}
+              {fadeAngle >= 0 && (
+                <PropertyRow label={HALFTONE_CONFIG.fadeAmount.label}>
+                  <div className="flex items-center gap-1 min-w-0">
+                    <NumberInput
+                      value={Math.round(fadeAmount * 100)}
+                      onChange={(v) => handleHalftoneChange(effect.id, 'fadeAmount', v / 100)}
+                      onLiveChange={(v) => handleHalftoneLiveChange(effect.id, 'fadeAmount', v / 100)}
+                      min={5}
+                      max={100}
+                      step={1}
+                      unit="%"
+                      disabled={!effect.enabled}
+                      className="flex-1 min-w-0"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`h-6 w-6 flex-shrink-0 ${fadeAmount === HALFTONE_CONFIG.fadeAmount.default ? 'opacity-30' : ''}`}
+                      onClick={() => handleResetHalftone(effect.id, 'fadeAmount')}
+                      title="Reset to default"
+                      disabled={fadeAmount === HALFTONE_CONFIG.fadeAmount.default}
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </PropertyRow>
+              )}
             </div>
           );
         }

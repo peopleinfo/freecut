@@ -321,7 +321,8 @@ export const MediaSidebar = memo(function MediaSidebar() {
         softness: HALFTONE_CONFIG.softness.default,
         blendMode: HALFTONE_CONFIG.blendMode.default,
         inverted: HALFTONE_CONFIG.inverted.default,
-        backgroundColor: '#ffffff',
+        fadeAngle: HALFTONE_CONFIG.fadeAngle.default,
+        fadeAmount: HALFTONE_CONFIG.fadeAmount.default,
         dotColor: '#000000',
       }],
       'Halftone'

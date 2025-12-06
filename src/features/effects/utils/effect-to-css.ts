@@ -221,15 +221,34 @@ function getPatternGradient(
 }
 
 /**
+ * Convert fade angle (0-360) to CSS gradient direction.
+ * 0° = right, 90° = down, 180° = left, 270° = up
+ * The gradient goes FROM visible TO invisible in the specified direction.
+ */
+function getFadeGradientAngle(angleInDegrees: number): string {
+  // CSS linear-gradient angle: 0deg = to top, 90deg = to right
+  // We want: 0° = fade toward right, 90° = fade toward down
+  // So we need to add 90° to convert from our convention to CSS convention
+  const cssAngle = (angleInDegrees + 90) % 360;
+  return `${cssAngle}deg`;
+}
+
+/**
  * Generate CSS styles for halftone effect.
  * Uses pure CSS technique: pattern gradients + mix-blend-mode + contrast filter.
  *
  * Supports multiple pattern types: dots, lines, rays, ripples.
- * Returns styles for both the container (with contrast filter) and the overlay (pattern).
+ * Supports gradient fade using CSS mask-image on a wrapper (fade doesn't rotate with pattern).
+ *
+ * Returns styles for:
+ * - containerStyle: outer container with contrast filter
+ * - fadeWrapperStyle: wrapper with CSS mask for fade (doesn't rotate)
+ * - patternStyle: the pattern overlay (rotates with angle)
  */
 export function getHalftoneStyles(effect: HalftoneEffect): {
   containerStyle: React.CSSProperties;
-  overlayStyle: React.CSSProperties;
+  fadeWrapperStyle?: React.CSSProperties;
+  patternStyle: React.CSSProperties;
 } {
   const {
     patternType = 'dots',
@@ -240,17 +259,20 @@ export function getHalftoneStyles(effect: HalftoneEffect): {
     softness = 0.2,
     blendMode = 'multiply',
     inverted = false,
-    backgroundColor,
+    fadeAngle = -1,
+    fadeAmount = 0.5,
     dotColor,
   } = effect;
 
-  // Swap colors if inverted
-  const fgColor = inverted ? backgroundColor : dotColor;
-  const bgColor = inverted ? dotColor : backgroundColor;
+  // Dot color is the pattern color, background is always transparent
+  // This ensures content on lower tracks shows through
+  const fgColor = inverted ? 'transparent' : dotColor;
+  const bgColor = inverted ? dotColor : 'transparent';
 
-  // Calculate contrast value from intensity (0-1 maps to 1-50)
-  // Higher intensity = more contrast = sharper halftone effect
-  const contrastValue = 1 + intensity * 49;
+  // With transparent background, we don't use the contrast filter trick
+  // (that only works with solid backgrounds to create binary halftone)
+  // Instead, intensity now controls the dot opacity for a cleaner overlay effect
+  const dotOpacity = intensity;
 
   // Generate pattern based on type
   const patternGradient = getPatternGradient(patternType, dotSize, softness, spacing, fgColor, bgColor);
@@ -259,14 +281,17 @@ export function getHalftoneStyles(effect: HalftoneEffect): {
   // For dots and lines, we need background-size for tiling
   const needsTiling = patternType === 'dots' || patternType === 'lines';
 
-  return {
+  const result: {
+    containerStyle: React.CSSProperties;
+    fadeWrapperStyle?: React.CSSProperties;
+    patternStyle: React.CSSProperties;
+  } = {
     containerStyle: {
       position: 'relative' as const,
-      filter: `contrast(${contrastValue})`,
-      backgroundColor: bgColor,
-      overflow: 'hidden',
+      // No contrast filter with transparent background - it doesn't work properly
+      // No backgroundColor - always transparent so lower content shows through
     },
-    overlayStyle: {
+    patternStyle: {
       position: 'absolute' as const,
       // Extend beyond container to handle rotation without gaps
       top: '-50%',
@@ -280,7 +305,41 @@ export function getHalftoneStyles(effect: HalftoneEffect): {
       }),
       transform: `rotate(${angle}deg)`,
       mixBlendMode: blendMode,
+      opacity: dotOpacity, // Intensity now controls pattern opacity
       pointerEvents: 'none' as const,
     },
   };
+
+  // Add fade wrapper with CSS mask if fade is enabled
+  // The mask is on the wrapper so it doesn't rotate with the pattern
+  // fadeAngle: -1 = disabled, 0-360 = direction in degrees
+  if (fadeAngle >= 0 && fadeAmount > 0) {
+    const gradientDir = getFadeGradientAngle(fadeAngle);
+    // Fade is dominant - only a small portion at the origin is fully solid
+    // fadeAmount controls how far across the fade extends (min 5% when enabled)
+    const clampedFadeAmount = Math.max(0.05, fadeAmount); // Minimum 5% fade when enabled
+    const solidPercent = 5; // Only 5% at origin is fully visible
+    const fadeEnd = Math.round(30 + clampedFadeAmount * 70); // Fade ends at 30-100% based on amount
+
+    // CSS mask: black = visible, transparent = hidden
+    // Small solid zone, then gradual fade across most of the area
+    const maskGradient = `linear-gradient(${gradientDir}, black 0%, black ${solidPercent}%, transparent ${fadeEnd}%)`;
+
+    result.fadeWrapperStyle = {
+      position: 'absolute' as const,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: '100%',
+      height: '100%',
+      overflow: 'hidden',
+      // Use mask to fade out the pattern
+      maskImage: maskGradient,
+      WebkitMaskImage: maskGradient,
+      pointerEvents: 'none' as const,
+    };
+  }
+
+  return result;
 }

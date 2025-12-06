@@ -914,6 +914,8 @@ const EffectWrapper: React.FC<{
     : combinedFilter;
 
   // Standard rendering with CSS filters (including RGB split via SVG filter) + optional scanlines + halftone
+  // NOTE: overflow:hidden is placed on a separate wrapper for the halftone pattern,
+  // not on the main container. This prevents clipping of transformed/moved children.
   const standardContent = (
     <div
       style={{
@@ -921,8 +923,8 @@ const EffectWrapper: React.FC<{
         height: '100%',
         position: 'relative',
         filter: finalFilter || undefined,
-        overflow: halftoneStyles ? 'hidden' : undefined,
-        backgroundColor: halftoneStyles?.containerStyle.backgroundColor,
+        // Don't apply overflow:hidden here - it clips transformed children!
+        // No backgroundColor - halftone always uses transparent background
       }}
     >
       {children}
@@ -932,13 +934,30 @@ const EffectWrapper: React.FC<{
           style={{
             position: 'absolute',
             inset: 0,
+            pointerEvents: 'none',
             ...getScanlinesStyle(scanlinesEffect.intensity),
           }}
         />
       )}
-      {/* CSS Halftone dot pattern overlay */}
+      {/* CSS Halftone dot pattern overlay - wrapped with overflow:hidden to contain the 200% pattern */}
+      {/* mixBlendMode is on the wrapper so it blends with content below (not inside the overflow context) */}
       {halftoneStyles && (
-        <div style={halftoneStyles.overlayStyle} />
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          overflow: 'hidden',
+          pointerEvents: 'none',
+          mixBlendMode: halftoneStyles.patternStyle.mixBlendMode,
+          opacity: halftoneStyles.patternStyle.opacity,
+        }}>
+          {halftoneStyles.fadeWrapperStyle ? (
+            <div style={halftoneStyles.fadeWrapperStyle}>
+              <div style={{ ...halftoneStyles.patternStyle, mixBlendMode: undefined, opacity: undefined }} />
+            </div>
+          ) : (
+            <div style={{ ...halftoneStyles.patternStyle, mixBlendMode: undefined, opacity: undefined }} />
+          )}
+        </div>
       )}
     </div>
   );

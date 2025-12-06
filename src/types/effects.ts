@@ -21,6 +21,9 @@ export type HalftonePatternType = 'dots' | 'lines' | 'rays' | 'ripples';
 // Halftone blend modes
 export type HalftoneBlendMode = 'multiply' | 'screen' | 'overlay' | 'soft-light';
 
+// Halftone fade directions for gradient blend (legacy - kept for backwards compatibility)
+export type HalftoneFadeDirection = 'none' | 'top' | 'bottom' | 'left' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
 // Overlay effect variants (CSS-based overlays)
 export type OverlayEffectVariant = 'vignette';
 
@@ -47,13 +50,14 @@ export interface HalftoneEffect {
   patternType: HalftonePatternType; // Pattern style: dots, lines, rays, ripples
   dotSize: number; // Base dot/line size in pixels (2-20)
   spacing: number; // Pattern spacing in pixels (4-40)
-  angle: number; // Grid rotation in degrees (0-360)
-  intensity: number; // Effect strength 0-1 (controls contrast)
+  angle: number; // Dot/pattern grid rotation in degrees (0-360)
+  intensity: number; // Effect strength 0-1 (controls opacity)
   softness: number; // Edge softness 0-1 (0 = sharp, 1 = fuzzy)
   blendMode: HalftoneBlendMode; // How pattern blends with content
   inverted: boolean; // Swap foreground/background
-  backgroundColor: string; // Background color hex
-  dotColor: string; // Foreground/dot color hex
+  fadeAngle: number; // Fade direction in degrees (0-360, 0=right, 90=down, 180=left, 270=up), -1=disabled
+  fadeAmount: number; // Fade strength 0-1 (0 = no fade, 1 = full fade)
+  dotColor: string; // Dot/pattern color hex (background is always transparent)
 }
 
 // Vignette effect configuration (CSS radial gradient overlay)
@@ -122,6 +126,19 @@ export const HALFTONE_BLEND_MODE_LABELS: Record<HalftoneBlendMode, string> = {
   'soft-light': 'Soft Light',
 };
 
+// Halftone fade direction labels
+export const HALFTONE_FADE_DIRECTION_LABELS: Record<HalftoneFadeDirection, string> = {
+  none: 'None',
+  top: 'Top',
+  bottom: 'Bottom',
+  left: 'Left',
+  right: 'Right',
+  'top-left': 'Top Left',
+  'top-right': 'Top Right',
+  'bottom-left': 'Bottom Left',
+  'bottom-right': 'Bottom Right',
+};
+
 // Halftone effect configuration metadata
 export const HALFTONE_CONFIG = {
   patternType: { label: 'Pattern', default: 'dots' as HalftonePatternType },
@@ -132,6 +149,8 @@ export const HALFTONE_CONFIG = {
   softness: { label: 'Softness', min: 0, max: 1, default: 0.2, step: 0.01, unit: '' },
   blendMode: { label: 'Blend', default: 'multiply' as HalftoneBlendMode },
   inverted: { label: 'Inverted', default: false },
+  fadeAngle: { label: 'Fade', min: -1, max: 360, default: -1, step: 1, unit: '°' }, // -1 = disabled
+  fadeAmount: { label: 'Fade Amount', min: 0.05, max: 1, default: 0.5, step: 0.01, unit: '' },
 };
 
 // Canvas effect configuration metadata

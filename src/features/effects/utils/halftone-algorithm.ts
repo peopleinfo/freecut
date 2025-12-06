@@ -154,7 +154,8 @@ export function createDefaultHalftoneEffect(): HalftoneEffect {
     softness: 0.2,
     blendMode: 'multiply',
     inverted: false,
-    backgroundColor: '#ffffff',
+    fadeAngle: -1,
+    fadeAmount: 0.5,
     dotColor: '#000000',
   };
 }

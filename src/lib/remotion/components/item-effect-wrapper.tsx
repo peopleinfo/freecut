@@ -122,6 +122,7 @@ const ItemEffectWrapperInternal = React.memo<ItemEffectWrapperInternalProps>(({
   }, [activeEffects]);
 
   // Get CSS halftone styles (pure CSS approach - no WebGL flickering)
+  // Background is always transparent so lower tracks show through
   const halftoneStyles = useMemo(() => {
     if (!halftoneEffect) return null;
     return getHalftoneStyles(halftoneEffect);
@@ -135,6 +136,11 @@ const ItemEffectWrapperInternal = React.memo<ItemEffectWrapperInternalProps>(({
   // IMPORTANT: Always render the same div structure to prevent DOM changes
   // when effects activate/deactivate. Use empty filter instead of conditional wrapper.
   // Halftone is now CSS-based (no WebGL flickering on pause).
+  // NOTE: overflow:hidden is placed on a separate wrapper for the halftone pattern,
+  // not on the main container. This prevents clipping of transformed/moved children.
+  // NOTE: For adjustment layers, we do NOT apply halftone backgroundColor here!
+  // The background would block videos on tracks below. The halftone pattern overlay
+  // is sufficient - it blends with the content underneath.
   return (
     <div
       style={{
@@ -142,8 +148,8 @@ const ItemEffectWrapperInternal = React.memo<ItemEffectWrapperInternalProps>(({
         height: '100%',
         position: 'relative',
         filter: finalFilter || undefined,
-        overflow: halftoneStyles ? 'hidden' : undefined,
-        backgroundColor: halftoneStyles?.containerStyle.backgroundColor,
+        // Don't apply overflow:hidden here - it clips transformed children!
+        // Don't apply backgroundColor here - it blocks lower tracks!
       }}
     >
       {children}
@@ -158,9 +164,25 @@ const ItemEffectWrapperInternal = React.memo<ItemEffectWrapperInternalProps>(({
           }}
         />
       )}
-      {/* CSS Halftone dot pattern overlay */}
+      {/* CSS Halftone dot pattern overlay - wrapped with overflow:hidden to contain the 200% pattern */}
+      {/* mixBlendMode is on the wrapper so it blends with content below (not inside the overflow context) */}
       {halftoneStyles && (
-        <div style={halftoneStyles.overlayStyle} />
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          overflow: 'hidden',
+          pointerEvents: 'none',
+          mixBlendMode: halftoneStyles.patternStyle.mixBlendMode,
+          opacity: halftoneStyles.patternStyle.opacity,
+        }}>
+          {halftoneStyles.fadeWrapperStyle ? (
+            <div style={halftoneStyles.fadeWrapperStyle}>
+              <div style={{ ...halftoneStyles.patternStyle, mixBlendMode: undefined, opacity: undefined }} />
+            </div>
+          ) : (
+            <div style={{ ...halftoneStyles.patternStyle, mixBlendMode: undefined, opacity: undefined }} />
+          )}
+        </div>
       )}
       {/* Vignette overlay - renders on top of all other effects */}
       {vignetteEffect && (
