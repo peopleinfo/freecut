@@ -1,4 +1,5 @@
 import type { TimelineTrack, TimelineItem } from '@/types/timeline';
+import type { Transition } from '@/types/transition';
 import type { RemotionInputProps } from '@/types/export';
 
 /**
@@ -18,6 +19,7 @@ import type { RemotionInputProps } from '@/types/export';
 export function convertTimelineToRemotion(
   tracks: TimelineTrack[],
   items: TimelineItem[],
+  transitions: Transition[],
   fps: number,
   width: number,
   height: number,
@@ -117,11 +119,18 @@ export function convertTimelineToRemotion(
   // This matches the preview behavior in video-preview.tsx
   const sortedTracks = tracksWithItems.sort((a, b) => b.order - a.order);
 
+  // Filter transitions to only include those involving clips that are in the export
+  const processedItemIds = new Set(processedItems.map(item => item.id));
+  const processedTransitions = transitions.filter(
+    t => processedItemIds.has(t.leftClipId) && processedItemIds.has(t.rightClipId)
+  );
+
   return {
     fps,
     durationInFrames,
     width,
     height,
     tracks: sortedTracks,
+    transitions: processedTransitions,
   };
 }

@@ -215,6 +215,7 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
   const scrollLeftRef = useRef(0);
   const scrollUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const SCROLL_THROTTLE_MS = 50; // Match zoom throttle for synchronized updates
+  const setScrollPosition = useTimelineStore((s) => s.setScrollPosition);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -228,6 +229,8 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
         scrollUpdateTimeoutRef.current = setTimeout(() => {
           scrollUpdateTimeoutRef.current = null;
           setScrollLeft(scrollLeftRef.current);
+          // Sync to store for persistence (debounced to avoid excessive updates)
+          setScrollPosition(scrollLeftRef.current);
         }, SCROLL_THROTTLE_MS);
       }
     };
@@ -240,6 +243,22 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
         clearTimeout(scrollUpdateTimeoutRef.current);
       }
     };
+  }, [setScrollPosition]);
+
+  // Restore scroll position from store on initial mount
+  const initialScrollRestored = useRef(false);
+  useEffect(() => {
+    if (initialScrollRestored.current) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const savedScrollPosition = useTimelineStore.getState().scrollPosition;
+    if (savedScrollPosition > 0) {
+      container.scrollLeft = savedScrollPosition;
+      scrollLeftRef.current = savedScrollPosition;
+      setScrollLeft(savedScrollPosition);
+    }
+    initialScrollRestored.current = true;
   }, []);
 
   // Apply pending scroll AFTER render when DOM has updated width

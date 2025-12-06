@@ -99,6 +99,9 @@ export function Editor({ projectId, project }: EditorProps) {
         items: project.timeline.items as any, // Type assertion needed for serialization
         inPoint: project.timeline.inPoint ?? null,
         outPoint: project.timeline.outPoint ?? null,
+        markers: project.timeline.markers ?? [],
+        transitions: (project.timeline.transitions as any) ?? [],
+        scrollPosition: project.timeline.scrollPosition ?? 0,
       });
 
       // Restore playback and view state

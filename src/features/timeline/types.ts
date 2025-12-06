@@ -24,6 +24,7 @@ export interface TimelineActions {
   rippleDeleteItems: (ids: string[]) => void;
   closeGapAtPosition: (trackId: string, frame: number) => void;
   toggleSnap: () => void;
+  setScrollPosition: (position: number) => void;
   moveItem: (id: string, newFrom: number, newTrackId?: string) => void;
   moveItems: (updates: Array<{ id: string; from: number; trackId?: string }>) => void;
   duplicateItems: (itemIds: string[], positions: Array<{ from: number; trackId: string }>) => void;

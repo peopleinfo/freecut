@@ -49,10 +49,60 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
     isDirty: true,
   }),
   addItem: (item) => set((state) => ({ items: [...state.items, item as any], isDirty: true })),
-  updateItem: (id, updates) => set((state) => ({
-    items: state.items.map((i) => (i.id === id ? { ...i, ...updates } as typeof i : i)),
-    isDirty: true,
-  })),
+  updateItem: (id, updates) => set((state) => {
+    const originalItem = state.items.find((i) => i.id === id);
+    if (!originalItem) return state;
+
+    // Apply the update
+    const newItems = state.items.map((i) =>
+      i.id === id ? { ...i, ...updates } as typeof i : i
+    );
+
+    // Check if position-related properties changed (affects transitions)
+    const positionChanged = 'from' in updates || 'durationInFrames' in updates || 'trackId' in updates;
+
+    if (!positionChanged) {
+      return { items: newItems, isDirty: true };
+    }
+
+    // Get the updated item
+    const updatedItem = newItems.find((i) => i.id === id)!;
+
+    // Find transitions that are now broken
+    const brokenTransitionIds: string[] = [];
+    for (const t of state.transitions) {
+      if (t.leftClipId !== id && t.rightClipId !== id) continue;
+
+      // Get both clips with updated positions
+      const leftClip = t.leftClipId === id
+        ? updatedItem
+        : newItems.find((i) => i.id === t.leftClipId);
+      const rightClip = t.rightClipId === id
+        ? updatedItem
+        : newItems.find((i) => i.id === t.rightClipId);
+
+      if (!leftClip || !rightClip) {
+        brokenTransitionIds.push(t.id);
+        continue;
+      }
+
+      // Check if clips are still adjacent on same track
+      const leftEnd = leftClip.from + leftClip.durationInFrames;
+      const stillAdjacent = leftClip.trackId === rightClip.trackId && leftEnd === rightClip.from;
+
+      if (!stillAdjacent) {
+        brokenTransitionIds.push(t.id);
+      }
+    }
+
+    return {
+      items: newItems,
+      transitions: brokenTransitionIds.length > 0
+        ? state.transitions.filter((t) => !brokenTransitionIds.includes(t.id))
+        : state.transitions,
+      isDirty: true,
+    };
+  }),
   removeItems: (ids) => set((state) => {
     const idsSet = new Set(ids);
     return {
@@ -123,23 +173,103 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
     return { items: newItems, isDirty: true };
   }),
   toggleSnap: () => set((state) => ({ snapEnabled: !state.snapEnabled })),
-  moveItem: (id, newFrom, newTrackId) => set((state) => ({
-    items: state.items.map((i) =>
+  setScrollPosition: (position) => set({ scrollPosition: position }),
+  moveItem: (id, newFrom, newTrackId) => set((state) => {
+    const movedItem = state.items.find((i) => i.id === id);
+    if (!movedItem) return state;
+
+    // Apply the move
+    const newItems = state.items.map((i) =>
       i.id === id
         ? { ...i, from: newFrom, ...(newTrackId && { trackId: newTrackId }) }
         : i
-    ),
-    isDirty: true,
-  })),
+    );
+
+    // Get the moved item's new state
+    const movedItemNew = {
+      ...movedItem,
+      from: newFrom,
+      trackId: newTrackId || movedItem.trackId,
+    };
+
+    // Find transitions that are now broken (clips no longer adjacent on same track)
+    const brokenTransitionIds: string[] = [];
+    for (const t of state.transitions) {
+      if (t.leftClipId !== id && t.rightClipId !== id) continue;
+
+      // Get both clips (with updated position for moved item)
+      const leftClip = t.leftClipId === id
+        ? movedItemNew
+        : newItems.find((i) => i.id === t.leftClipId);
+      const rightClip = t.rightClipId === id
+        ? movedItemNew
+        : newItems.find((i) => i.id === t.rightClipId);
+
+      if (!leftClip || !rightClip) {
+        brokenTransitionIds.push(t.id);
+        continue;
+      }
+
+      // Check if clips are still adjacent on same track
+      const leftEnd = leftClip.from + leftClip.durationInFrames;
+      const stillAdjacent = leftClip.trackId === rightClip.trackId && leftEnd === rightClip.from;
+
+      if (!stillAdjacent) {
+        brokenTransitionIds.push(t.id);
+      }
+    }
+
+    return {
+      items: newItems,
+      transitions: brokenTransitionIds.length > 0
+        ? state.transitions.filter((t) => !brokenTransitionIds.includes(t.id))
+        : state.transitions,
+      isDirty: true,
+    };
+  }),
   moveItems: (updates) => set((state) => {
     const updateMap = new Map(updates.map((u) => [u.id, u]));
+
+    // Apply the moves
+    const newItems = state.items.map((i) => {
+      const update = updateMap.get(i.id);
+      return update
+        ? { ...i, from: update.from, ...(update.trackId && { trackId: update.trackId }) }
+        : i;
+    });
+
+    // Build a map of moved items for quick lookup
+    const movedItemIds = new Set(updates.map((u) => u.id));
+
+    // Find transitions that are now broken
+    const brokenTransitionIds: string[] = [];
+    for (const t of state.transitions) {
+      // Only check transitions where at least one clip was moved
+      if (!movedItemIds.has(t.leftClipId) && !movedItemIds.has(t.rightClipId)) continue;
+
+      // Get both clips with their new positions
+      const leftClip = newItems.find((i) => i.id === t.leftClipId);
+      const rightClip = newItems.find((i) => i.id === t.rightClipId);
+
+      if (!leftClip || !rightClip) {
+        brokenTransitionIds.push(t.id);
+        continue;
+      }
+
+      // Check if clips are still adjacent on same track
+      const leftEnd = leftClip.from + leftClip.durationInFrames;
+      const stillAdjacent = leftClip.trackId === rightClip.trackId && leftEnd === rightClip.from;
+
+      if (!stillAdjacent) {
+        brokenTransitionIds.push(t.id);
+      }
+    }
+
     return {
-      items: state.items.map((i) => {
-        const update = updateMap.get(i.id);
-        return update
-          ? { ...i, from: update.from, ...(update.trackId && { trackId: update.trackId }) }
-          : i;
-      }),
+      items: newItems,
+      transitions: brokenTransitionIds.length > 0
+        ? state.transitions.filter((t) => !brokenTransitionIds.includes(t.id))
+        : state.transitions,
       isDirty: true,
     };
   }),
@@ -180,8 +310,8 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
   }),
 
   // Trim item from start: increases trimStart and sourceStart, adjusts from position
-  trimItemStart: (id, trimAmount) => set((state) => ({
-    items: state.items.map((item) => {
+  trimItemStart: (id, trimAmount) => set((state) => {
+    const newItems = state.items.map((item) => {
       if (item.id !== id) return item;
 
       // Non-media items (text, shape, adjustment) use simple trimming - just adjust position and duration
@@ -267,13 +397,44 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
       }
 
       return { ...item, ...updates } as typeof item;
-    }),
-    isDirty: true,
-  })),
+    });
+
+    // Find transitions broken by this trim (trimming start affects left-side transitions)
+    const brokenTransitionIds: string[] = [];
+    const trimmedItem = newItems.find((i) => i.id === id);
+    if (trimmedItem) {
+      for (const t of state.transitions) {
+        if (t.leftClipId !== id && t.rightClipId !== id) continue;
+
+        const leftClip = newItems.find((i) => i.id === t.leftClipId);
+        const rightClip = newItems.find((i) => i.id === t.rightClipId);
+
+        if (!leftClip || !rightClip) {
+          brokenTransitionIds.push(t.id);
+          continue;
+        }
+
+        const leftEnd = leftClip.from + leftClip.durationInFrames;
+        const stillAdjacent = leftClip.trackId === rightClip.trackId && leftEnd === rightClip.from;
+
+        if (!stillAdjacent) {
+          brokenTransitionIds.push(t.id);
+        }
+      }
+    }
+
+    return {
+      items: newItems,
+      transitions: brokenTransitionIds.length > 0
+        ? state.transitions.filter((t) => !brokenTransitionIds.includes(t.id))
+        : state.transitions,
+      isDirty: true,
+    };
+  }),
 
   // Trim item from end: increases trimEnd and adjusts duration
-  trimItemEnd: (id, trimAmount) => set((state) => ({
-    items: state.items.map((item) => {
+  trimItemEnd: (id, trimAmount) => set((state) => {
+    const newItems = state.items.map((item) => {
       if (item.id !== id) return item;
 
       // Non-media items (text, shape, adjustment) use simple trimming - just adjust duration
@@ -349,9 +510,40 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
         speed: item.speed,
         sourceDuration: item.sourceDuration,
       } as typeof item;
-    }),
-    isDirty: true,
-  })),
+    });
+
+    // Find transitions broken by this trim (trimming end affects right-side transitions)
+    const brokenTransitionIds: string[] = [];
+    const trimmedItem = newItems.find((i) => i.id === id);
+    if (trimmedItem) {
+      for (const t of state.transitions) {
+        if (t.leftClipId !== id && t.rightClipId !== id) continue;
+
+        const leftClip = newItems.find((i) => i.id === t.leftClipId);
+        const rightClip = newItems.find((i) => i.id === t.rightClipId);
+
+        if (!leftClip || !rightClip) {
+          brokenTransitionIds.push(t.id);
+          continue;
+        }
+
+        const leftEnd = leftClip.from + leftClip.durationInFrames;
+        const stillAdjacent = leftClip.trackId === rightClip.trackId && leftEnd === rightClip.from;
+
+        if (!stillAdjacent) {
+          brokenTransitionIds.push(t.id);
+        }
+      }
+    }
+
+    return {
+      items: newItems,
+      transitions: brokenTransitionIds.length > 0
+        ? state.transitions.filter((t) => !brokenTransitionIds.includes(t.id))
+        : state.transitions,
+      isDirty: true,
+    };
+  }),
 
   // Join multiple adjacent items that were previously split (inverse of splitItem)
   // Items must form a contiguous chain with same originId, mediaId, track, speed, and source continuity
@@ -1058,6 +1250,7 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
         // Save playback and view state
         currentFrame,
         zoomLevel,
+        scrollPosition: state.scrollPosition,
         // Save in/out points
         ...(state.inPoint !== null && { inPoint: state.inPoint }),
         ...(state.outPoint !== null && { outPoint: state.outPoint }),
@@ -1079,6 +1272,9 @@ export const useTimelineStore = create<TimelineState & TimelineActions>()(
             rightClipId: t.rightClipId,
             trackId: t.trackId,
             durationInFrames: t.durationInFrames,
+            presentation: t.presentation,
+            ...(t.timing && { timing: t.timing }),
+            ...(t.direction && { direction: t.direction }),
           })),
         }),
       };

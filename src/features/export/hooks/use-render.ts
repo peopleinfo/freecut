@@ -114,9 +114,9 @@ export function useRender(): UseRenderReturn {
 
         // Read current state directly from store to avoid stale closure issues
         const state = useTimelineStore.getState();
-        const { tracks, items, fps, inPoint, outPoint } = state;
+        const { tracks, items, transitions, fps, inPoint, outPoint } = state;
 
-        console.log('[useRender] Export with IO points:', { inPoint, outPoint, fps });
+        console.log('[useRender] Export with IO points:', { inPoint, outPoint, fps, transitionCount: transitions.length });
 
         // Convert timeline to Remotion format with export settings
         // Use project FPS from timeline store
@@ -124,6 +124,7 @@ export function useRender(): UseRenderReturn {
         const composition = convertTimelineToRemotion(
           tracks,
           items,
+          transitions,
           fps,
           settings.resolution.width,
           settings.resolution.height,

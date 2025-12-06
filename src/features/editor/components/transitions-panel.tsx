@@ -63,7 +63,7 @@ for (const config of PRESENTATION_CONFIGS) {
   if (!CATEGORIES[config.category]) {
     CATEGORIES[config.category] = [];
   }
-  CATEGORIES[config.category].push(config);
+  CATEGORIES[config.category]!.push(config);
 }
 const CATEGORY_ORDER = ['basic', 'wipe', 'slide', 'flip', 'special'];
 
@@ -178,7 +178,7 @@ function computeAdjacentInfo(
 ): AdjacentInfo | null {
   if (selectedItemIds.length !== 1) return null;
 
-  const selectedId = selectedItemIds[0];
+  const selectedId = selectedItemIds[0]!;
   const selectedItem = items.find((i) => i.id === selectedId);
   if (!selectedItem) return null;
 

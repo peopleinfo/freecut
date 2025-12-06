@@ -74,6 +74,7 @@ export interface ProjectTimeline {
   // Playback and view state
   currentFrame?: number;
   zoomLevel?: number;
+  scrollPosition?: number;
   // In/Out markers
   inPoint?: number;
   outPoint?: number;
@@ -92,6 +93,9 @@ export interface ProjectTimeline {
     rightClipId: string;
     trackId: string;
     durationInFrames: number;
+    presentation?: string;
+    timing?: string;
+    direction?: string;
   }>;
 }
 
