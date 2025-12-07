@@ -423,40 +423,8 @@ const FrameAwareMaskDefinitions: React.FC<{
   return <MaskDefinitions {...props} currentFrame={currentFrame} />;
 };
 
-/**
- * Clearing Layer Component
- *
- * Renders a background fill when no video is currently active.
- * Uses its own useCurrentFrame() hook to isolate per-frame re-renders
- * from the parent MainComposition.
- */
-const ClearingLayer: React.FC<{
-  videoItems: EnrichedVisualItem[];
-  chains: ClipChain[];
-  backgroundColor: string;
-}> = ({ videoItems, chains, backgroundColor }) => {
-  const currentFrame = useCurrentFrame();
-
-  // Check standalone videos
-  const hasActiveStandaloneVideo = videoItems.some(
-    (item) =>
-      item.trackVisible &&
-      currentFrame >= item.from &&
-      currentFrame < item.from + item.durationInFrames
-  );
-
-  // Check clips in transition chains
-  // A chain is active if the current frame is within its rendered duration
-  // Use pre-computed renderedDuration to avoid reduce() on every frame
-  const hasActiveChainClip = chains.some((chain) => {
-    if (!chain.clips[0]?.trackVisible) return false;
-    const chainEnd = chain.startFrame + chain.renderedDuration;
-    return currentFrame >= chain.startFrame && currentFrame < chainEnd;
-  });
-
-  if (hasActiveStandaloneVideo || hasActiveChainClip) return null;
-  return <AbsoluteFill style={{ backgroundColor, zIndex: 1000 }} />;
-};
+// ClearingLayer removed - was causing flicker at clip boundaries
+// Background layer at z-index -1 is sufficient for showing background color
 
 /**
  * Audio renderer for clips in transition chains.
@@ -519,6 +487,8 @@ const ChainAudioRenderer = React.memo<{
   }, [chains, trackInfo, visibleTrackIds]);
 
   // Flatten and render all audio clips
+  // Use clip.id for keys (not originId) because after splits, both parts may end up in
+  // different chains with the same originId, causing duplicate key errors
   return (
     <>
       {chainAudioData.flat().map((data) => (
@@ -574,6 +544,142 @@ const ChainClipAudio = React.memo<{
       crossfadeFadeOut={fadeOutDuration}
     />
   );
+});
+
+/**
+ * Memoized renderer for an entire transition chain.
+ * Prevents TransitionSeries re-renders when unrelated clips change.
+ * Uses deep comparison of chain structure for stability.
+ */
+const ChainRenderer = React.memo<{
+  chain: ClipChain;
+  trackVisible: boolean;
+  trackOrder: number;
+  zIndex: number;
+  adjustmentLayers: AdjustmentLayerWithTrackOrder[];
+  canvasWidth: number;
+  canvasHeight: number;
+}>(function ChainRenderer({
+  chain,
+  trackVisible,
+  trackOrder,
+  zIndex,
+  adjustmentLayers,
+  canvasWidth,
+  canvasHeight,
+}) {
+  // Use originId for stable key across splits
+  const chainKey = chain.clips[0]!.originId || chain.clips[0]!.id;
+
+  // Premount to prevent flicker when transitioning from standalone clips
+  // This mounts the content early (with opacity:0) so videos can preload
+  // Using minimal value to balance flicker prevention vs pause
+  const premountFrames = 5;
+
+  return (
+    <Sequence
+      key={`chain-${chainKey}`}
+      from={chain.startFrame}
+      durationInFrames={chain.renderedDuration}
+      premountFor={premountFrames}
+    >
+      <AbsoluteFill
+        style={{
+          zIndex,
+          visibility: trackVisible ? 'visible' : 'hidden',
+          // GPU layer hints to prevent compositing flicker during transitions
+          transform: 'translateZ(0)',
+          backfaceVisibility: 'hidden',
+        }}
+      >
+        <TransitionSeries>
+          {chain.clips.map((clip, index) => {
+            const transition = chain.transitions[index];
+            const clipKey = clip.originId || clip.id;
+
+            return (
+              <React.Fragment key={clipKey}>
+                {/* TransitionSeries requires direct children - cannot use wrapper component */}
+                <TransitionSeries.Sequence durationInFrames={clip.durationInFrames}>
+                  <ItemEffectWrapper
+                    itemTrackOrder={trackOrder}
+                    adjustmentLayers={adjustmentLayers}
+                    sequenceFrom={clip.from}
+                  >
+                    <Item
+                      item={clip}
+                      muted={true}
+                      masks={[]}
+                    />
+                  </ItemEffectWrapper>
+                </TransitionSeries.Sequence>
+                {transition && (
+                  <TransitionSeries.Transition
+                    timing={getTransitionTiming(transition.timing, transition.durationInFrames)}
+                    presentation={getTransitionPresentation(
+                      transition.presentation,
+                      canvasWidth,
+                      canvasHeight,
+                      transition.direction
+                    )}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </TransitionSeries>
+      </AbsoluteFill>
+    </Sequence>
+  );
+}, (prevProps, nextProps) => {
+  // Compare chain identity using first clip's originId
+  const prevChainId = prevProps.chain.clips[0]!.originId || prevProps.chain.clips[0]!.id;
+  const nextChainId = nextProps.chain.clips[0]!.originId || nextProps.chain.clips[0]!.id;
+  if (prevChainId !== nextChainId) return false;
+
+  // Compare basic chain properties
+  if (prevProps.chain.startFrame !== nextProps.chain.startFrame) return false;
+  if (prevProps.chain.renderedDuration !== nextProps.chain.renderedDuration) return false;
+  if (prevProps.chain.clips.length !== nextProps.chain.clips.length) return false;
+  if (prevProps.chain.transitions.length !== nextProps.chain.transitions.length) return false;
+
+  // Compare track properties
+  if (prevProps.trackVisible !== nextProps.trackVisible) return false;
+  if (prevProps.trackOrder !== nextProps.trackOrder) return false;
+  if (prevProps.zIndex !== nextProps.zIndex) return false;
+
+  // Compare clips by identity and critical properties
+  for (let i = 0; i < prevProps.chain.clips.length; i++) {
+    const prev = prevProps.chain.clips[i]!;
+    const next = nextProps.chain.clips[i]!;
+    const prevId = prev.originId || prev.id;
+    const nextId = next.originId || next.id;
+    if (prevId !== nextId) return false;
+    if (prev.from !== next.from) return false;
+    if (prev.durationInFrames !== next.durationInFrames) return false;
+    if (prev.src !== next.src) return false;
+    if (prev.sourceStart !== next.sourceStart) return false;
+  }
+
+  // Compare transitions
+  for (let i = 0; i < prevProps.chain.transitions.length; i++) {
+    const prev = prevProps.chain.transitions[i]!;
+    const next = nextProps.chain.transitions[i]!;
+    if (prev.id !== next.id) return false;
+    if (prev.durationInFrames !== next.durationInFrames) return false;
+    if (prev.presentation !== next.presentation) return false;
+    if (prev.timing !== next.timing) return false;
+    if (prev.direction !== next.direction) return false;
+  }
+
+  // Compare adjustment layers
+  if (prevProps.adjustmentLayers.length !== nextProps.adjustmentLayers.length) return false;
+  for (let i = 0; i < prevProps.adjustmentLayers.length; i++) {
+    if (prevProps.adjustmentLayers[i]!.layer.id !== nextProps.adjustmentLayers[i]!.layer.id) return false;
+    if (prevProps.adjustmentLayers[i]!.trackOrder !== nextProps.adjustmentLayers[i]!.trackOrder) return false;
+  }
+
+  return true;
 });
 
 /**
@@ -788,6 +894,9 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, transiti
           zIndex: item.zIndex,
           // Use visibility: hidden for invisible tracks - keeps DOM stable, no re-render
           visibility: item.trackVisible ? 'visible' : 'hidden',
+          // GPU layer hints to prevent compositing flicker during transitions
+          transform: 'translateZ(0)',
+          backfaceVisibility: 'hidden',
         }}
       >
         <ItemEffectWrapper
@@ -845,80 +954,41 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, transiti
         />
       )}
 
-      {/* VIDEO LAYER - all videos in single StableVideoSequence for DOM stability */}
+      {/* VIDEO LAYER - standalone videos AND transition chains in SINGLE wrapper for DOM stability */}
+      {/* Combining them prevents flicker when transitioning between standalone and chain clips */}
       {/* ALL effects (CSS, glitch, halftone) applied per-item via ItemEffectWrapper */}
-      {/* Only items BELOW adjustment layer (higher track order) receive effects */}
       <StableMaskedGroup hasMasks={hasActiveMasks}>
+        {/* Standalone videos */}
         <StableVideoSequence
           items={videoItems as any}
           premountFor={Math.round(fps * 2)}
           renderItem={renderVideoItem as any}
         />
+
+        {/* Transition chains - always render container for DOM stability (even when empty) */}
+        {chains.map((chain) => {
+          const track = tracks.find((t) => t.id === chain.trackId);
+          const trackVisible = visibleTrackIds.has(chain.trackId);
+          const trackOrder = track?.order ?? 0;
+          const zIndex = maxOrder - trackOrder;
+          // Use originId for stable key across splits (originId is preserved when splitting)
+          const chainKey = chain.clips[0]!.originId || chain.clips[0]!.id;
+
+          return (
+            <ChainRenderer
+              key={`chain-${chainKey}`}
+              chain={chain}
+              trackVisible={trackVisible}
+              trackOrder={trackOrder}
+              zIndex={zIndex}
+              adjustmentLayers={visibleAdjustmentLayers}
+              canvasWidth={canvasWidth}
+              canvasHeight={canvasHeight}
+            />
+          );
+        })}
       </StableMaskedGroup>
 
-      {/* TRANSITION CHAINS - render using Remotion TransitionSeries */}
-      {/* Each chain is a sequence of clips connected by transitions */}
-      {chains.length > 0 && (
-        <StableMaskedGroup hasMasks={hasActiveMasks}>
-          {chains.map((chain) => {
-            const track = tracks.find((t) => t.id === chain.trackId);
-            const trackVisible = visibleTrackIds.has(chain.trackId);
-            const trackOrder = track?.order ?? 0;
-            const zIndex = maxOrder - trackOrder;
-
-            return (
-              <Sequence
-                key={`chain-${chain.clips[0]!.id}`}
-                from={chain.startFrame}
-                durationInFrames={chain.renderedDuration}
-              >
-                <AbsoluteFill
-                  style={{
-                    zIndex,
-                    visibility: trackVisible ? 'visible' : 'hidden',
-                  }}
-                >
-                  <TransitionSeries>
-                    {chain.clips.map((clip, index) => {
-                      // Render the clip
-                      const transition = chain.transitions[index]; // Transition AFTER this clip
-
-                      return (
-                        <React.Fragment key={clip.id}>
-                          <TransitionSeries.Sequence durationInFrames={clip.durationInFrames}>
-                            <ItemEffectWrapper
-                              itemTrackOrder={trackOrder}
-                              adjustmentLayers={visibleAdjustmentLayers}
-                              sequenceFrom={clip.from}
-                            >
-                              <Item
-                                item={clip}
-                                muted={true} // Always mute in TransitionSeries - audio rendered separately with crossfade
-                                masks={[]}
-                              />
-                            </ItemEffectWrapper>
-                          </TransitionSeries.Sequence>
-
-                          {/* Add transition after this clip (if not the last clip) */}
-                          {transition && (
-                            <TransitionSeries.Transition
-                              timing={getTransitionTiming(transition.timing, transition.durationInFrames)}
-                              presentation={getTransitionPresentation(transition.presentation, canvasWidth, canvasHeight, transition.direction)}
-                            />
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </TransitionSeries>
-                </AbsoluteFill>
-              </Sequence>
-            );
-          })}
-        </StableMaskedGroup>
-      )}
-
-      {/* CLEARING LAYER - uses its own useCurrentFrame() to isolate per-frame re-renders */}
-      <ClearingLayer videoItems={videoItems} chains={chains} backgroundColor={backgroundColor} />
 
       {/* NON-MEDIA LAYERS - all in single structure, per-item effects via ItemEffectWrapper */}
       {/* No more above/below split - items never move between DOM parents */}
