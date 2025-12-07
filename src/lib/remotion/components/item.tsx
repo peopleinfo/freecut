@@ -309,42 +309,40 @@ const TextContent: React.FC<{ item: TextItem }> = ({ item }) => {
 const ShapeContent: React.FC<{ item: ShapeItem }> = ({ item }) => {
   // Read preview values from gizmo store for shape properties
   const itemPropertiesPreview = useGizmoStore((s) => s.itemPropertiesPreview);
-  const preview = itemPropertiesPreview?.[item.id];
+  const shapePropsPreview = itemPropertiesPreview?.[item.id];
 
   // Read transform preview from gizmo store for real-time scaling
   const activeGizmo = useGizmoStore((s) => s.activeGizmo);
   const previewTransform = useGizmoStore((s) => s.previewTransform);
-  const propertiesPreview = useGizmoStore((s) => s.propertiesPreview);
-  const groupPreviewTransforms = useGizmoStore((s) => s.groupPreviewTransforms);
+  // Read from unified preview system (includes group transforms and properties preview)
+  const unifiedPreview = useGizmoStore(
+    useCallback((s) => s.preview?.[item.id], [item.id])
+  );
 
   // Use preview values if available, otherwise use item's stored values
-  const fillColor = preview?.fillColor ?? item.fillColor ?? '#3b82f6';
-  const strokeColor = preview?.strokeColor ?? item.strokeColor;
-  const strokeWidth = preview?.strokeWidth ?? item.strokeWidth ?? 0;
-  const cornerRadius = preview?.cornerRadius ?? item.cornerRadius ?? 0;
-  const direction = preview?.direction ?? item.direction ?? 'up';
-  const points = preview?.points ?? item.points ?? 5;
-  const innerRadius = preview?.innerRadius ?? item.innerRadius ?? 0.5;
-  const shapeType = preview?.shapeType ?? item.shapeType;
+  const fillColor = shapePropsPreview?.fillColor ?? item.fillColor ?? '#3b82f6';
+  const strokeColor = shapePropsPreview?.strokeColor ?? item.strokeColor;
+  const strokeWidth = shapePropsPreview?.strokeWidth ?? item.strokeWidth ?? 0;
+  const cornerRadius = shapePropsPreview?.cornerRadius ?? item.cornerRadius ?? 0;
+  const direction = shapePropsPreview?.direction ?? item.direction ?? 'up';
+  const points = shapePropsPreview?.points ?? item.points ?? 5;
+  const innerRadius = shapePropsPreview?.innerRadius ?? item.innerRadius ?? 0.5;
+  const shapeType = shapePropsPreview?.shapeType ?? item.shapeType;
 
   // Get dimensions with preview support for real-time gizmo scaling
-  // Priority: Group preview > Single gizmo preview > Properties preview > Base transform
+  // Priority: Unified preview (group/properties) > Single gizmo preview > Base transform
   let width = item.transform?.width ?? 200;
   let height = item.transform?.height ?? 200;
 
-  const groupPreviewForItem = groupPreviewTransforms?.get(item.id);
+  const unifiedPreviewTransform = unifiedPreview?.transform;
   const isGizmoPreviewActive = activeGizmo?.itemId === item.id && previewTransform !== null;
-  const propertiesPreviewForItem = propertiesPreview?.[item.id];
 
-  if (groupPreviewForItem) {
-    width = groupPreviewForItem.width;
-    height = groupPreviewForItem.height;
+  if (unifiedPreviewTransform) {
+    width = unifiedPreviewTransform.width ?? width;
+    height = unifiedPreviewTransform.height ?? height;
   } else if (isGizmoPreviewActive && previewTransform) {
     width = previewTransform.width;
     height = previewTransform.height;
-  } else if (propertiesPreviewForItem) {
-    width = propertiesPreviewForItem.width ?? width;
-    height = propertiesPreviewForItem.height ?? height;
   }
 
   // Common stroke props
@@ -356,12 +354,10 @@ const ShapeContent: React.FC<{ item: ShapeItem }> = ({ item }) => {
   // Check if aspect ratio is locked (for squish/squash behavior)
   // Read from preview transforms if available, otherwise from item
   let aspectLocked = item.transform?.aspectRatioLocked ?? true;
-  if (groupPreviewForItem?.aspectRatioLocked !== undefined) {
-    aspectLocked = groupPreviewForItem.aspectRatioLocked;
+  if (unifiedPreviewTransform?.aspectRatioLocked !== undefined) {
+    aspectLocked = unifiedPreviewTransform.aspectRatioLocked;
   } else if (isGizmoPreviewActive && previewTransform?.aspectRatioLocked !== undefined) {
     aspectLocked = previewTransform.aspectRatioLocked;
-  } else if (propertiesPreviewForItem?.aspectRatioLocked !== undefined) {
-    aspectLocked = propertiesPreviewForItem.aspectRatioLocked;
   }
 
   // Centering wrapper style for SVG shapes
@@ -538,8 +534,8 @@ const MaskWrapper: React.FC<{
   // Read gizmo store for real-time mask preview during drag operations
   const activeGizmo = useGizmoStore((s) => s.activeGizmo);
   const previewTransform = useGizmoStore((s) => s.previewTransform);
-  const propertiesPreview = useGizmoStore((s) => s.propertiesPreview);
-  const groupPreviewTransforms = useGizmoStore((s) => s.groupPreviewTransforms);
+  // Read from unified preview system
+  const preview = useGizmoStore((s) => s.preview);
 
   if (!masks || masks.length === 0) {
     return <>{children}</>;
@@ -555,11 +551,10 @@ const MaskWrapper: React.FC<{
   // Check gizmo store for real-time preview transforms (same as ShapeContent)
   const maskPathsWithStroke = masks.map(({ shape, transform }) => {
     // Check if this mask has an active preview transform
-    const groupPreviewForMask = groupPreviewTransforms?.get(shape.id);
+    const unifiedPreviewForMask = preview?.[shape.id]?.transform;
     const isGizmoPreviewActive = activeGizmo?.itemId === shape.id && previewTransform !== null;
-    const propertiesPreviewForMask = propertiesPreview?.[shape.id];
 
-    // Priority: Group preview > Single gizmo preview > Properties preview > Base transform
+    // Priority: Unified preview (group/properties) > Single gizmo preview > Base transform
     let resolvedTransform = {
       x: transform.x ?? 0,
       y: transform.y ?? 0,
@@ -569,14 +564,15 @@ const MaskWrapper: React.FC<{
       opacity: transform.opacity ?? 1,
     };
 
-    if (groupPreviewForMask) {
+    if (unifiedPreviewForMask) {
       resolvedTransform = {
-        x: groupPreviewForMask.x,
-        y: groupPreviewForMask.y,
-        width: groupPreviewForMask.width,
-        height: groupPreviewForMask.height,
-        rotation: groupPreviewForMask.rotation,
-        opacity: groupPreviewForMask.opacity,
+        ...resolvedTransform,
+        x: unifiedPreviewForMask.x ?? resolvedTransform.x,
+        y: unifiedPreviewForMask.y ?? resolvedTransform.y,
+        width: unifiedPreviewForMask.width ?? resolvedTransform.width,
+        height: unifiedPreviewForMask.height ?? resolvedTransform.height,
+        rotation: unifiedPreviewForMask.rotation ?? resolvedTransform.rotation,
+        opacity: unifiedPreviewForMask.opacity ?? resolvedTransform.opacity,
       };
     } else if (isGizmoPreviewActive && previewTransform) {
       resolvedTransform = {
@@ -586,11 +582,6 @@ const MaskWrapper: React.FC<{
         height: previewTransform.height,
         rotation: previewTransform.rotation,
         opacity: previewTransform.opacity,
-      };
-    } else if (propertiesPreviewForMask) {
-      resolvedTransform = {
-        ...resolvedTransform,
-        ...propertiesPreviewForMask,
       };
     }
 
@@ -750,24 +741,23 @@ const TransformWrapper: React.FC<{
   // Read preview transform directly from store - only re-renders this component
   const activeGizmo = useGizmoStore((s) => s.activeGizmo);
   const previewTransform = useGizmoStore((s) => s.previewTransform);
-  const propertiesPreview = useGizmoStore((s) => s.propertiesPreview);
   const itemPropertiesPreview = useGizmoStore((s) => s.itemPropertiesPreview);
-  const groupPreviewTransforms = useGizmoStore((s) => s.groupPreviewTransforms);
+  // Read from unified preview system (includes group transforms and properties preview)
+  const unifiedPreview = useGizmoStore(
+    useCallback((s) => s.preview?.[item.id], [item.id])
+  );
 
   // Get keyframes for this item (granular selector)
   const itemKeyframes = useTimelineStore(
-    useCallback((s) => s.keyframes.find((k) => k.itemId === item.id), [item.id])
+    useCallback((s: { keyframes: { itemId: string }[] }) => s.keyframes.find((k: { itemId: string }) => k.itemId === item.id), [item.id])
   );
 
   // Check if this item has an active single-item gizmo preview transform
   const isGizmoPreviewActive = activeGizmo?.itemId === item.id && previewTransform !== null;
 
-  // Check if this item has an active group preview transform
-  const groupPreviewForItem = groupPreviewTransforms?.get(item.id);
-  const isGroupPreviewActive = groupPreviewForItem !== undefined;
-
-  // Check if this item has a properties panel preview
-  const propertiesPreviewForItem = propertiesPreview?.[item.id];
+  // Check if this item has an active unified preview transform (from group drag or properties panel)
+  const unifiedPreviewTransform = unifiedPreview?.transform;
+  const isUnifiedPreviewActive = unifiedPreviewTransform !== undefined;
 
   // Check if this item has an item properties preview (fades, etc.)
   const itemPreviewForItem = itemPropertiesPreview?.[item.id];
@@ -785,16 +775,13 @@ const TransformWrapper: React.FC<{
     return resolveAnimatedTransform(baseResolved, itemKeyframes, relativeFrame);
   }, [baseResolved, itemKeyframes, relativeFrame]);
 
-  // Priority: Group preview > Single gizmo preview > Properties preview > Keyframe animation > Base
+  // Priority: Unified preview (group/properties) > Single gizmo preview > Keyframe animation > Base
   let resolved = animatedResolved;
-  if (isGroupPreviewActive) {
-    // Use group preview transform for multi-item drag/scale/rotate
-    resolved = { ...groupPreviewForItem, cornerRadius: groupPreviewForItem.cornerRadius ?? 0 };
+  if (isUnifiedPreviewActive && unifiedPreviewTransform) {
+    // Use unified preview transform (from group drag/scale/rotate or properties panel)
+    resolved = { ...animatedResolved, ...unifiedPreviewTransform, cornerRadius: unifiedPreviewTransform.cornerRadius ?? animatedResolved.cornerRadius };
   } else if (isGizmoPreviewActive) {
     resolved = { ...previewTransform, cornerRadius: previewTransform.cornerRadius ?? 0 };
-  } else if (propertiesPreviewForItem) {
-    // Merge properties preview on top of animated resolved
-    resolved = { ...animatedResolved, ...propertiesPreviewForItem };
   }
 
   // Calculate fade opacity based on fadeIn/fadeOut (in seconds)
