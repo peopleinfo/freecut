@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { AbsoluteFill, useCurrentFrame, Sequence, OffthreadVideo, Img, interpolate } from 'remotion';
 import type { VideoItem, ImageItem } from '@/types/timeline';
 import type { Transition, WipeDirection, SlideDirection, FlipDirection } from '@/types/transition';
@@ -342,6 +342,28 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
   // We want to show the last `durationInFrames` frames of the left clip
   const leftClipContentOffset = -(leftClip.durationInFrames - transition.durationInFrames);
 
+  // Adjust right clip's sourceStart to align with normal rendering after transition ends
+  // Without this offset, transition shows frames 0 to (durationInFrames-1), then normal
+  // rendering jumps back to frame halfDuration, causing visible frame repetition.
+  // With the offset, transition shows frames that lead into where normal rendering continues.
+  const adjustedRightClip = useMemo(() => {
+    if (rightClip.type === 'video') {
+      const videoClip = rightClip as VideoItem & typeof rightClip;
+      const sourceStart = videoClip.sourceStart ?? videoClip.trimStart ?? videoClip.offset ?? 0;
+      // Offset by -halfDuration so last transition frame leads into first normal frame
+      const adjustedSourceStart = Math.max(0, sourceStart - halfDuration);
+      return {
+        ...videoClip,
+        sourceStart: adjustedSourceStart,
+        // Also adjust trimStart/offset if they exist to maintain consistency
+        ...(videoClip.trimStart != null ? { trimStart: Math.max(0, videoClip.trimStart - halfDuration) } : {}),
+        ...(videoClip.offset != null ? { offset: Math.max(0, videoClip.offset - halfDuration) } : {}),
+      };
+    }
+    // Images don't need frame offset adjustment
+    return rightClip;
+  }, [rightClip, halfDuration]);
+
   return (
     <Sequence
       from={transitionStart}
@@ -359,7 +381,7 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
         <AbsoluteFill style={{ backgroundColor: '#000' }} />
 
         {/* Incoming clip (right) - sits at bottom, gets revealed */}
-        {/* Renders for full transition duration, starting from right clip's source beginning */}
+        {/* Uses adjusted sourceStart so frames align with normal rendering after transition */}
         <TransitionOverlay
           transition={transition}
           isOutgoing={false}
@@ -369,7 +391,7 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
             from={0}
             durationInFrames={transition.durationInFrames}
           >
-            <ClipContent clip={rightClip} />
+            <ClipContent clip={adjustedRightClip} />
           </Sequence>
         </TransitionOverlay>
 
