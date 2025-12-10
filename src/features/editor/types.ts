@@ -56,3 +56,7 @@ export interface SelectionActions {
   toggleKeyframeLanes: (itemId: string) => void;
   setKeyframeLanesExpanded: (itemId: string, expanded: boolean) => void;
 }
+
+// Combined store types for selector type inference
+export type EditorStore = EditorState & EditorActions;
+export type SelectionStore = SelectionState & SelectionActions;

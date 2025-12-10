@@ -313,21 +313,25 @@ export class MediaLibraryService {
   }
 
   /**
-   * Delete multiple media items from a project in batch
+   * Delete multiple media items from a project in batch.
+   * Uses parallel deletion for better performance.
    */
   async deleteMediaBatchFromProject(
     projectId: string,
     mediaIds: string[]
   ): Promise<void> {
-    const errors: Array<{ id: string; error: unknown }> = [];
+    const results = await Promise.allSettled(
+      mediaIds.map((mediaId) => this.deleteMediaFromProject(projectId, mediaId))
+    );
 
-    for (const mediaId of mediaIds) {
-      try {
-        await this.deleteMediaFromProject(projectId, mediaId);
-      } catch (error) {
-        console.error(`Failed to delete media ${mediaId}:`, error);
-        errors.push({ id: mediaId, error });
-      }
+    const errors = results
+      .map((result, i) => ({ result, id: mediaIds[i] }))
+      .filter((r): r is { result: PromiseRejectedResult; id: string } =>
+        r.result.status === 'rejected'
+      );
+
+    for (const { id, result } of errors) {
+      console.error(`Failed to delete media ${id}:`, result.reason);
     }
 
     if (errors.length === mediaIds.length) {
@@ -344,19 +348,21 @@ export class MediaLibraryService {
   }
 
   /**
-   * Delete all media associations for a project
-   * Used when deleting a project
+   * Delete all media associations for a project.
+   * Used when deleting a project. Uses parallel deletion for better performance.
    */
   async deleteAllMediaFromProject(projectId: string): Promise<void> {
     const mediaIds = await getProjectMediaIds(projectId);
 
-    for (const mediaId of mediaIds) {
-      try {
-        await this.deleteMediaFromProject(projectId, mediaId);
-      } catch (error) {
-        console.error(`Failed to delete media ${mediaId} from project:`, error);
+    const results = await Promise.allSettled(
+      mediaIds.map((mediaId) => this.deleteMediaFromProject(projectId, mediaId))
+    );
+
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        console.error(`Failed to delete media ${mediaIds[i]} from project:`, result.reason);
       }
-    }
+    });
   }
 
   /**

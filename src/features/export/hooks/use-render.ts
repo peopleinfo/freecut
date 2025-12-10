@@ -144,23 +144,26 @@ export function useRender(): UseRenderReturn {
 
         console.log('[useRender] Uploading', mediaIds.size, 'media files...');
 
-        // Upload media files
+        // Load media files in parallel for better performance
+        const mediaLoadResults = await Promise.allSettled(
+          Array.from(mediaIds).map(async (mediaId) => {
+            const [blob, metadata] = await Promise.all([
+              mediaLibraryService.getMediaFile(mediaId),
+              mediaLibraryService.getMedia(mediaId),
+            ]);
+            return { mediaId, blob, filename: metadata?.fileName };
+          })
+        );
+
         const mediaFiles: { mediaId: string; blob: Blob; filename: string }[] = [];
-
-        for (const mediaId of mediaIds) {
-          try {
-            const blob = await mediaLibraryService.getMediaFile(mediaId);
-            const metadata = await mediaLibraryService.getMedia(mediaId);
-
-            if (blob && metadata) {
-              mediaFiles.push({
-                mediaId,
-                blob,
-                filename: metadata.fileName,
-              });
+        for (const result of mediaLoadResults) {
+          if (result.status === 'fulfilled') {
+            const { mediaId, blob, filename } = result.value;
+            if (blob && filename) {
+              mediaFiles.push({ mediaId, blob, filename });
             }
-          } catch (err) {
-            console.error(`[useRender] Failed to get media ${mediaId}:`, err);
+          } else {
+            console.error('[useRender] Failed to get media:', result.reason);
           }
         }
 

@@ -15,3 +15,6 @@ export interface ProjectActions {
   deleteProject: (id: string) => Promise<void>;
   setCurrentProject: (project: Project | null) => void;
 }
+
+// Combined store type for selector type inference
+export type ProjectStore = ProjectState & ProjectActions;

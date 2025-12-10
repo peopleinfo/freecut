@@ -1,16 +1,15 @@
-import { useMemo, useCallback, useState, useRef, useEffect, memo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { MapPin, Trash2, RotateCcw } from 'lucide-react';
-import { HexColorPicker } from 'react-colorful';
+import { MapPin, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import { useSelectionStore } from '@/features/editor/stores/selection-store';
-import { PropertySection, PropertyRow, NumberInput } from '../components';
+import { PropertySection, PropertyRow, NumberInput, ColorPicker } from '../components';
 
 const DEFAULT_MARKER_COLOR = 'oklch(0.65 0.20 250)';
 
 // Preset colors for quick selection
-const PRESET_COLORS = [
+const MARKER_PRESET_COLORS = [
   'oklch(0.65 0.20 250)', // Blue (default)
   'oklch(0.65 0.20 30)',  // Red
   'oklch(0.70 0.20 140)', // Green
@@ -18,80 +17,6 @@ const PRESET_COLORS = [
   'oklch(0.60 0.20 310)', // Purple
   'oklch(0.70 0.15 180)', // Cyan
 ];
-
-/**
- * Marker color picker with presets.
- * Local state for instant preview, commits on close.
- */
-const MarkerColorPicker = memo(function MarkerColorPicker({
-  color,
-  onChange,
-}: {
-  color: string;
-  onChange: (color: string) => void;
-}) {
-  const [localColor, setLocalColor] = useState(color);
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Sync local state when color prop changes
-  useEffect(() => {
-    setLocalColor(color);
-  }, [color]);
-
-  const handleClose = useCallback(() => {
-    onChange(localColor);
-    setIsOpen(false);
-  }, [localColor, onChange]);
-
-  // Click outside to close
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        handleClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, handleClose]);
-
-  return (
-    <div ref={containerRef} className="relative flex-1">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-6 h-6 rounded border border-border flex-shrink-0"
-        style={{ backgroundColor: localColor }}
-      />
-
-      {isOpen && (
-        <div className="absolute top-8 left-0 z-50 p-2 bg-popover border border-border rounded-lg shadow-lg">
-          {/* Preset color swatches */}
-          <div className="flex gap-1 mb-2">
-            {PRESET_COLORS.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => {
-                  setLocalColor(preset);
-                  onChange(preset);
-                }}
-                className="w-6 h-6 rounded border border-border hover:ring-1 hover:ring-ring transition-all"
-                style={{ backgroundColor: preset }}
-                title={preset}
-              />
-            ))}
-          </div>
-          {/* Full color picker */}
-          <HexColorPicker color={localColor} onChange={setLocalColor} />
-        </div>
-      )}
-    </div>
-  );
-});
 
 /**
  * Marker properties panel - shown when a marker is selected.
@@ -211,23 +136,14 @@ export function MarkerPanel() {
         </PropertyRow>
 
         {/* Color */}
-        <PropertyRow label="Color">
-          <div className="flex items-center gap-1 w-full">
-            <MarkerColorPicker
-              color={selectedMarker.color}
-              onChange={handleColorChange}
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 flex-shrink-0"
-              onClick={handleResetColor}
-              title="Reset to default color"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-        </PropertyRow>
+        <ColorPicker
+          label="Color"
+          color={selectedMarker.color}
+          onChange={handleColorChange}
+          onReset={handleResetColor}
+          defaultColor={DEFAULT_MARKER_COLOR}
+          presets={MARKER_PRESET_COLORS}
+        />
 
         {/* Delete button */}
         <div className="pt-2">

@@ -19,16 +19,9 @@ import {
 } from '@/components/ui/context-menu';
 import { canJoinItems, canJoinMultipleItems } from '@/utils/clip-utils';
 import { cn } from '@/lib/utils';
-import { ClipFilmstrip } from '../clip-filmstrip';
-import { ClipWaveform } from '../clip-waveform';
-import { Link2Off, Diamond } from 'lucide-react';
-import {
-  CLIP_HEIGHT,
-  CLIP_LABEL_HEIGHT,
-  VIDEO_FILMSTRIP_HEIGHT,
-  VIDEO_WAVEFORM_HEIGHT,
-  AUDIO_WAVEFORM_HEIGHT,
-} from '@/constants/timeline';
+import { CLIP_HEIGHT } from '@/constants/timeline';
+import { ClipContent } from './clip-content';
+import { ClipIndicators } from './clip-indicators';
 
 // Width in pixels for edge hover detection (trim/rate-stretch handles)
 const EDGE_HOVER_ZONE = 8;
@@ -591,154 +584,26 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         />
       )}
 
-      {/* Keyframe indicator - shows when item has keyframe animations */}
-      {hasKeyframes && (
-        <div
-          className="absolute top-1 right-1 z-10 pointer-events-none"
-          title="Has keyframe animations"
-        >
-          <Diamond className="w-3 h-3 text-amber-500 fill-amber-500/50" />
-        </div>
-      )}
+      {/* Clip visual content (filmstrip, waveform, text preview, etc.) */}
+      <ClipContent
+        item={item}
+        clipWidth={isStretching ? stretchVisualWidth : isTrimming ? trimVisualWidth : width}
+        fps={fps}
+        isClipVisible={isClipVisible}
+        pixelsPerSecond={pixelsPerSecond}
+      />
 
-      {/* Video clip 2-row layout: filmstrip (with overlayed label) | waveform */}
-      {item.type === 'video' && item.mediaId && (
-        <div className="absolute inset-0 flex flex-col">
-          {/* Row 1: Filmstrip with overlayed label */}
-          <div className="relative overflow-hidden" style={{ height: VIDEO_FILMSTRIP_HEIGHT }}>
-            <ClipFilmstrip
-              mediaId={item.mediaId}
-              clipWidth={isStretching ? stretchVisualWidth : isTrimming ? trimVisualWidth : width}
-              sourceStart={(item.sourceStart ?? 0) / fps}
-              sourceDuration={(item.sourceDuration ?? item.durationInFrames) / fps}
-              trimStart={(item.trimStart ?? 0) / fps}
-              speed={item.speed ?? 1}
-              fps={fps}
-              isVisible={isClipVisible}
-              pixelsPerSecond={pixelsPerSecond}
-              height={VIDEO_FILMSTRIP_HEIGHT}
-              className="top-0"
-            />
-            {/* Overlayed label */}
-            <div
-              className="absolute top-0 left-0 max-w-full px-2 text-[11px] font-medium truncate"
-              style={{ lineHeight: `${CLIP_LABEL_HEIGHT}px` }}
-            >
-              {item.label}
-            </div>
-          </div>
-          {/* Row 2: Waveform */}
-          <div className="relative overflow-hidden" style={{ height: VIDEO_WAVEFORM_HEIGHT }}>
-            <ClipWaveform
-              mediaId={item.mediaId}
-              clipWidth={isStretching ? stretchVisualWidth : isTrimming ? trimVisualWidth : width}
-              sourceStart={(item.sourceStart ?? 0) / fps}
-              sourceDuration={(item.sourceDuration ?? item.durationInFrames) / fps}
-              trimStart={(item.trimStart ?? 0) / fps}
-              speed={item.speed ?? 1}
-              fps={fps}
-              isVisible={isClipVisible}
-              pixelsPerSecond={pixelsPerSecond}
-              height={VIDEO_WAVEFORM_HEIGHT}
-              className="top-0"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Audio clip 2-row layout: label | waveform */}
-      {item.type === 'audio' && item.mediaId && (
-        <div className="absolute inset-0 flex flex-col">
-          {/* Row 1: Label */}
-          <div
-            className="px-2 text-[11px] font-medium truncate"
-            style={{ height: CLIP_LABEL_HEIGHT, lineHeight: `${CLIP_LABEL_HEIGHT}px` }}
-          >
-            {item.label}
-          </div>
-          {/* Row 2: Waveform */}
-          <div className="relative overflow-hidden" style={{ height: AUDIO_WAVEFORM_HEIGHT }}>
-            <ClipWaveform
-              mediaId={item.mediaId}
-              clipWidth={isStretching ? stretchVisualWidth : isTrimming ? trimVisualWidth : width}
-              sourceStart={(item.sourceStart ?? 0) / fps}
-              sourceDuration={(item.sourceDuration ?? item.durationInFrames) / fps}
-              trimStart={(item.trimStart ?? 0) / fps}
-              speed={item.speed ?? 1}
-              fps={fps}
-              isVisible={isClipVisible}
-              pixelsPerSecond={pixelsPerSecond}
-              height={AUDIO_WAVEFORM_HEIGHT}
-              className="top-0"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Text item - show text content preview */}
-      {item.type === 'text' && (
-        <div className="absolute inset-0 flex flex-col px-2 py-1 overflow-hidden">
-          <div className="text-[10px] text-muted-foreground truncate">Text</div>
-          <div className="text-xs font-medium truncate flex-1">
-            {item.text || 'Empty text'}
-          </div>
-        </div>
-      )}
-
-      {/* Adjustment layer - show effects summary */}
-      {item.type === 'adjustment' && (
-        <div className="absolute inset-0 flex flex-col px-2 py-1 overflow-hidden">
-          <div className="text-[10px] text-muted-foreground truncate">Adjustment Layer</div>
-          <div className="text-xs font-medium truncate flex-1">
-            {item.effects?.filter(e => e.enabled).length
-              ? `${item.effects.filter(e => e.enabled).length} effect${item.effects.filter(e => e.enabled).length > 1 ? 's' : ''}`
-              : 'No effects'}
-          </div>
-        </div>
-      )}
-
-      {/* Item label - for image and shape items */}
-      {item.type !== 'video' && item.type !== 'audio' && item.type !== 'text' && item.type !== 'adjustment' && (
-        <div className="px-2 py-1 text-xs font-medium truncate">
-          {item.label}
-        </div>
-      )}
-
-      {/* Mask indicator for shape items */}
-      {item.type === 'shape' && item.isMask && (
-        <div className="absolute top-1 right-1 px-1 py-0.5 text-[10px] font-bold bg-cyan-500/80 text-white rounded">
-          M
-        </div>
-      )}
-
-      {/* Speed badge - show when speed is not 1x (use tolerance for floating point) */}
-      {Math.abs(currentSpeed - 1) > 0.005 && !isStretching && (
-        <div className="absolute top-1 right-1 px-1 py-0.5 text-[10px] font-bold bg-black/60 text-white rounded font-mono">
-          {currentSpeed.toFixed(2)}x
-        </div>
-      )}
-
-      {/* Missing media indicator - show when media file is broken */}
-      {isBroken && item.mediaId && (
-        <div
-          className="absolute bottom-1 left-1 p-0.5 rounded bg-destructive/90 text-destructive-foreground"
-          title="Media file missing - relink in Media Library"
-        >
-          <Link2Off className="w-3 h-3" />
-        </div>
-      )}
-
-      {/* Preview speed overlay during stretch - always rendered, visibility controlled via CSS */}
-      <div
-        className={cn(
-          "absolute inset-0 flex items-center justify-center bg-black/50 pointer-events-none z-10 transition-opacity duration-75",
-          isStretching && stretchFeedback ? "opacity-100" : "opacity-0"
-        )}
-      >
-        <span className="text-white font-mono text-sm font-bold">
-          {stretchFeedback?.speed.toFixed(2) ?? '1.00'}x
-        </span>
-      </div>
+      {/* Status indicators (keyframes, speed, broken media, mask) */}
+      <ClipIndicators
+        hasKeyframes={hasKeyframes}
+        currentSpeed={currentSpeed}
+        isStretching={isStretching}
+        stretchFeedback={stretchFeedback}
+        isBroken={isBroken}
+        hasMediaId={!!item.mediaId}
+        isMask={item.type === 'shape' ? item.isMask ?? false : false}
+        isShape={item.type === 'shape'}
+      />
 
       {/* Trim handles - always rendered, visibility controlled via CSS to prevent DOM churn */}
       {/* Left trim handle - w-2 (8px) matches EDGE_HOVER_ZONE */}

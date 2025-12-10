@@ -22,7 +22,8 @@
       "WebFetch(domain:frontendmasters.com)",
       "Bash(find:*)",
       "Bash(dir:*)",
-      "WebFetch(domain:docs.re.video)"
+      "WebFetch(domain:docs.re.video)",
+      "Bash(wc:*)"
     ],
     "deny": [],
     "ask": []

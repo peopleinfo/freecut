@@ -9,33 +9,13 @@ import {
   PropertyRow,
   NumberInput,
 } from '../components';
+import { getMixedValue } from '../utils';
 
 interface AudioSectionProps {
   items: TimelineItem[];
 }
 
-type MixedValue = number | 'mixed';
-
 type AudioCapableItem = VideoItem | AudioItem;
-
-/**
- * Get a value from audio-capable items, returning 'mixed' if they differ.
- */
-function getMixedAudioValue(
-  items: TimelineItem[],
-  getter: (item: AudioCapableItem) => number | undefined,
-  defaultValue = 0
-): MixedValue {
-  const audioItems = items.filter(
-    (item): item is AudioCapableItem =>
-      item.type === 'video' || item.type === 'audio'
-  );
-  if (audioItems.length === 0) return defaultValue;
-
-  const values = audioItems.map((item) => getter(item) ?? defaultValue);
-  const firstValue = values[0]!; // Safe: audioItems.length > 0 checked above
-  return values.every((v) => Math.abs(v - firstValue) < 0.01) ? firstValue : 'mixed';
-}
 
 /**
  * Audio section - volume and audio fades.
@@ -60,9 +40,9 @@ export function AudioSection({ items }: AudioSectionProps) {
   const itemIds = useMemo(() => audioItems.map((item) => item.id), [audioItems]);
 
   // Get current values (volume in dB, defaults to 0 dB = unity gain)
-  const volume = getMixedAudioValue(audioItems, (item) => item.volume, 0);
-  const fadeIn = getMixedAudioValue(audioItems, (item) => item.audioFadeIn);
-  const fadeOut = getMixedAudioValue(audioItems, (item) => item.audioFadeOut);
+  const volume = getMixedValue(audioItems, (item) => item.volume, 0);
+  const fadeIn = getMixedValue(audioItems, (item) => item.audioFadeIn, 0);
+  const fadeOut = getMixedValue(audioItems, (item) => item.audioFadeOut, 0);
 
   // Live preview for volume (during drag)
   const handleVolumeLiveChange = useCallback(

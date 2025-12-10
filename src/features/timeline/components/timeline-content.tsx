@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react';
+import { useMemo, useRef, useEffect, useLayoutEffect, useState, useCallback, memo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 // Stores and selectors
@@ -52,8 +52,9 @@ export interface TimelineContentProps {
  * - TimelinePlayhead (through tracks)
  *
  * Dynamically calculates width based on furthest item
+ * Memoized to prevent re-renders when props haven't changed.
  */
-export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: TimelineContentProps) {
+export const TimelineContent = memo(function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: TimelineContentProps) {
   // Use granular selectors - Zustand v5 best practice
   const tracks = useTimelineStore((s) => s.tracks);
   const fps = useTimelineStore((s) => s.fps);
@@ -750,4 +751,4 @@ export function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: Ti
       </div>
     </div>
   );
-}
+});

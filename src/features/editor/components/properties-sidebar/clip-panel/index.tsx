@@ -1,9 +1,12 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, memo } from 'react';
 import { Separator } from '@/components/ui/separator';
 import { useSelectionStore } from '@/features/editor/stores/selection-store';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import { useProjectStore } from '@/features/projects/stores/project-store';
+import type { SelectionState, SelectionActions } from '@/features/editor/types';
+import type { TimelineState, TimelineActions } from '@/features/timeline/types';
 import type { TransformProperties } from '@/types/transform';
+import type { TimelineItem } from '@/types/timeline';
 
 import { SourceSection } from './source-section';
 import { LayoutSection } from './layout-section';
@@ -15,20 +18,42 @@ import { ShapeSection } from './shape-section';
 import { EffectsSection } from '@/features/effects/components/effects-section';
 
 /**
+ * Compute item type information in a single pass for efficiency.
+ * Uses Set for O(1) type lookups instead of repeated array iterations.
+ */
+function computeItemTypeInfo(items: TimelineItem[]) {
+  const types = new Set(items.map(item => item.type));
+
+  return {
+    hasVisualItems: types.has('video') || types.has('image') || types.has('text') || types.has('shape') || types.has('adjustment'),
+    hasVideoItems: types.has('video'),
+    hasAudioItems: types.has('video') || types.has('audio'),
+    hasTextItems: types.has('text'),
+    hasShapeItems: types.has('shape'),
+    hasAdjustmentItems: types.has('adjustment'),
+    isOnlyAdjustmentItems: types.size === 1 && types.has('adjustment'),
+    isOnlyTextOrShape: items.length > 0 && items.every(
+      item => item.type === 'text' || item.type === 'shape'
+    ),
+  };
+}
+
+/**
  * Clip properties panel - shown when one or more clips are selected.
  * Displays and allows editing of clip transforms and media properties.
+ * Memoized to prevent re-renders when props haven't changed.
  */
-export function ClipPanel() {
-  // Granular selectors
-  const selectedItemIds = useSelectionStore((s) => s.selectedItemIds);
-  const items = useTimelineStore((s) => s.items);
-  const fps = useTimelineStore((s) => s.fps);
-  const updateItemsTransform = useTimelineStore((s) => s.updateItemsTransform);
+export const ClipPanel = memo(function ClipPanel() {
+  // Granular selectors with explicit types
+  const selectedItemIds = useSelectionStore((s: SelectionState & SelectionActions) => s.selectedItemIds);
+  const items = useTimelineStore((s: TimelineState & TimelineActions) => s.items);
+  const fps = useTimelineStore((s: TimelineState & TimelineActions) => s.fps);
+  const updateItemsTransform = useTimelineStore((s: TimelineState & TimelineActions) => s.updateItemsTransform);
   const currentProject = useProjectStore((s) => s.currentProject);
 
   // Get selected items
   const selectedItems = useMemo(
-    () => items.filter((item) => selectedItemIds.includes(item.id)),
+    () => items.filter((item: TimelineItem) => selectedItemIds.includes(item.id)),
     [items, selectedItemIds]
   );
 
@@ -42,67 +67,32 @@ export function ClipPanel() {
     [currentProject]
   );
 
-  // Check if selection includes visual items (not just audio)
-  const hasVisualItems = useMemo(
-    () => selectedItems.some((item) => item.type !== 'audio'),
+  // CONSOLIDATED: Single pass for all item type checks
+  const itemTypeInfo = useMemo(
+    () => computeItemTypeInfo(selectedItems),
     [selectedItems]
   );
 
-  // Check if selection includes video items
-  const hasVideoItems = useMemo(
-    () => selectedItems.some((item) => item.type === 'video'),
-    [selectedItems]
-  );
-
-  // Check if selection includes audio-capable items
-  const hasAudioItems = useMemo(
-    () =>
-      selectedItems.some(
-        (item) => item.type === 'video' || item.type === 'audio'
-      ),
-    [selectedItems]
-  );
-
-  // Check if selection includes text items
-  const hasTextItems = useMemo(
-    () => selectedItems.some((item) => item.type === 'text'),
-    [selectedItems]
-  );
-
-  // Check if selection includes shape items
-  const hasShapeItems = useMemo(
-    () => selectedItems.some((item) => item.type === 'shape'),
-    [selectedItems]
-  );
-
-  // Check if selection includes adjustment items
-  const hasAdjustmentItems = useMemo(
-    () => selectedItems.some((item) => item.type === 'adjustment'),
-    [selectedItems]
-  );
-
-  // Check if selection is only adjustment items (no layout/fill controls needed)
-  const isOnlyAdjustmentItems = useMemo(
-    () => selectedItems.length > 0 && selectedItems.every((item) => item.type === 'adjustment'),
-    [selectedItems]
-  );
+  // Destructure for cleaner usage
+  const {
+    hasVisualItems,
+    hasVideoItems,
+    hasAudioItems,
+    hasTextItems,
+    hasShapeItems,
+    hasAdjustmentItems,
+    isOnlyAdjustmentItems,
+    isOnlyTextOrShape,
+  } = itemTypeInfo;
 
   // Memoized filtered arrays for child components - prevents new array creation each render
   const layoutFillItems = useMemo(
-    () => selectedItems.filter((item) => item.type !== 'audio' && item.type !== 'adjustment'),
+    () => selectedItems.filter((item: TimelineItem) => item.type !== 'audio' && item.type !== 'adjustment'),
     [selectedItems]
   );
 
   const visualItems = useMemo(
-    () => selectedItems.filter((item) => item.type !== 'audio'),
-    [selectedItems]
-  );
-
-  // Check if selection is only text/shape items (no aspect ratio lock by default)
-  const isOnlyTextOrShape = useMemo(
-    () => selectedItems.length > 0 && selectedItems.every(
-      (item) => item.type === 'text' || item.type === 'shape'
-    ),
+    () => selectedItems.filter((item: TimelineItem) => item.type !== 'audio'),
     [selectedItems]
   );
 
@@ -113,7 +103,7 @@ export function ClipPanel() {
 
     // Check if any item has explicit aspectRatioLocked set
     const firstWithExplicit = selectedItems.find(
-      (item) => item.transform?.aspectRatioLocked !== undefined
+      (item: TimelineItem) => item.transform?.aspectRatioLocked !== undefined
     );
     if (firstWithExplicit) {
       return firstWithExplicit.transform!.aspectRatioLocked!;
@@ -126,7 +116,7 @@ export function ClipPanel() {
   // Toggle aspect lock - updates all selected items' transforms
   const handleAspectLockToggle = useCallback(() => {
     const newValue = !aspectLocked;
-    const itemIds = selectedItems.map((item) => item.id);
+    const itemIds = selectedItems.map((item: TimelineItem) => item.id);
     updateItemsTransform(itemIds, { aspectRatioLocked: newValue });
   }, [aspectLocked, selectedItems, updateItemsTransform]);
 
@@ -219,4 +209,4 @@ export function ClipPanel() {
       {hasAudioItems && <AudioSection items={selectedItems} />}
     </div>
   );
-}
+});

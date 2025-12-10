@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState, useRef, useEffect, memo } from 'react';
-import { Type, RotateCcw, AlignLeft, AlignCenter, AlignRight, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd } from 'lucide-react';
+import { useCallback, useMemo } from 'react';
+import { Type, AlignLeft, AlignCenter, AlignRight, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -9,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { HexColorPicker } from 'react-colorful';
 import type { TextItem, TimelineItem } from '@/types/timeline';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
@@ -17,6 +16,7 @@ import {
   PropertySection,
   PropertyRow,
   NumberInput,
+  ColorPicker,
 } from '../components';
 
 // Available Google Fonts (subset for initial implementation)
@@ -44,100 +44,6 @@ const FONT_WEIGHT_OPTIONS = [
 interface TextSectionProps {
   items: TimelineItem[];
 }
-
-/**
- * Color picker component for text properties.
- * Supports live preview during picker drag via onLiveChange.
- */
-const TextColorPicker = memo(function TextColorPicker({
-  label,
-  color,
-  onChange,
-  onLiveChange,
-  onReset,
-  defaultColor,
-}: {
-  label: string;
-  color: string;
-  onChange: (color: string) => void;
-  onLiveChange?: (color: string) => void;
-  onReset?: () => void;
-  defaultColor?: string;
-}) {
-  const [localColor, setLocalColor] = useState(color);
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setLocalColor(color);
-  }, [color]);
-
-  const handleColorChange = useCallback((newColor: string) => {
-    setLocalColor(newColor);
-    // Call live preview during drag
-    onLiveChange?.(newColor);
-  }, [onLiveChange]);
-
-  const handleCommit = useCallback(() => {
-    onChange(localColor);
-  }, [localColor, onChange]);
-
-  const handleClose = useCallback(() => {
-    handleCommit();
-    setIsOpen(false);
-  }, [handleCommit]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        handleClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, handleClose]);
-
-  return (
-    <PropertyRow label={label}>
-      <div ref={containerRef} className="relative flex items-center gap-1 w-full">
-        <button
-          type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center gap-2 flex-1"
-        >
-          <div
-            className="w-6 h-6 rounded border border-border flex-shrink-0"
-            style={{ backgroundColor: localColor }}
-          />
-          <span className="text-xs font-mono text-muted-foreground uppercase">
-            {localColor}
-          </span>
-        </button>
-
-        {onReset && defaultColor && color !== defaultColor && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 flex-shrink-0"
-            onClick={onReset}
-            title="Reset"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </Button>
-        )}
-
-        {isOpen && (
-          <div className="absolute top-8 left-0 z-50 p-2 bg-popover border border-border rounded-lg shadow-lg">
-            <HexColorPicker color={localColor} onChange={handleColorChange} />
-          </div>
-        )}
-      </div>
-    </PropertyRow>
-  );
-});
 
 /**
  * Text section - properties for text items (font, color, alignment, etc.)
@@ -440,7 +346,7 @@ export function TextSection({ items }: TextSectionProps) {
       </PropertyRow>
 
       {/* Text Color */}
-      <TextColorPicker
+      <ColorPicker
         label="Color"
         color={sharedValues.color ?? '#ffffff'}
         onChange={handleColorChange}

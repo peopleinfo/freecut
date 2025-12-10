@@ -4,11 +4,13 @@ import { Button } from '@/components/ui/button';
 import type { TimelineItem, VideoItem } from '@/types/timeline';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
+import type { TimelineState, TimelineActions } from '@/features/timeline/types';
 import {
   PropertySection,
   PropertyRow,
   NumberInput,
 } from '../components';
+import { getMixedValue } from '../utils';
 
 // Speed limits (matching rate-stretch)
 const MIN_SPEED = 0.1;
@@ -16,24 +18,6 @@ const MAX_SPEED = 10.0;
 
 interface VideoSectionProps {
   items: TimelineItem[];
-}
-
-type MixedValue = number | 'mixed';
-
-/**
- * Get a value from video items, returning 'mixed' if they differ.
- */
-function getMixedVideoValue(
-  items: TimelineItem[],
-  getter: (item: VideoItem) => number | undefined,
-  defaultValue = 0
-): MixedValue {
-  const videoItems = items.filter((item): item is VideoItem => item.type === 'video');
-  if (videoItems.length === 0) return defaultValue;
-
-  const values = videoItems.map((item) => getter(item) ?? defaultValue);
-  const firstValue = values[0]!; // Safe: videoItems.length > 0 checked above
-  return values.every((v) => Math.abs(v - firstValue) < 0.001) ? firstValue : 'mixed';
 }
 
 /**
@@ -45,8 +29,8 @@ function getMixedVideoValue(
  * - Slower speed = longer clip (same content plays slower)
  */
 export function VideoSection({ items }: VideoSectionProps) {
-  const rateStretchItem = useTimelineStore((s) => s.rateStretchItem);
-  const updateItem = useTimelineStore((s) => s.updateItem);
+  const rateStretchItem = useTimelineStore((s: TimelineState & TimelineActions) => s.rateStretchItem);
+  const updateItem = useTimelineStore((s: TimelineState & TimelineActions) => s.updateItem);
 
   // Gizmo store for live fade preview
   const setPropertiesPreviewNew = useGizmoStore((s) => s.setPropertiesPreviewNew);
@@ -61,9 +45,9 @@ export function VideoSection({ items }: VideoSectionProps) {
   const itemIds = useMemo(() => videoItems.map((item) => item.id), [videoItems]);
 
   // Get current values (speed defaults to 1, fades default to 0)
-  const speed = getMixedVideoValue(videoItems, (item) => item.speed, 1);
-  const fadeIn = getMixedVideoValue(videoItems, (item) => item.fadeIn, 0);
-  const fadeOut = getMixedVideoValue(videoItems, (item) => item.fadeOut, 0);
+  const speed = getMixedValue(videoItems, (item) => item.speed, 1);
+  const fadeIn = getMixedValue(videoItems, (item) => item.fadeIn, 0);
+  const fadeOut = getMixedValue(videoItems, (item) => item.fadeOut, 0);
 
   // Handle speed change - uses rate stretch to adjust duration
   // Read current values from store to avoid depending on videoItems
@@ -76,8 +60,8 @@ export function VideoSection({ items }: VideoSectionProps) {
 
       const currentItems = useTimelineStore.getState().items;
       currentItems
-        .filter((item): item is VideoItem => item.type === 'video' && itemIds.includes(item.id))
-        .forEach((item) => {
+        .filter((item: TimelineItem): item is VideoItem => item.type === 'video' && itemIds.includes(item.id))
+        .forEach((item: VideoItem) => {
           const currentSpeed = item.speed || 1;
           // Use stored sourceDuration if available, otherwise calculate from current state
           // This prevents accumulated rounding errors from multiple speed changes
@@ -141,8 +125,8 @@ export function VideoSection({ items }: VideoSectionProps) {
     const tolerance = 0.01;
     const currentItems = useTimelineStore.getState().items;
     currentItems
-      .filter((item): item is VideoItem => item.type === 'video' && itemIds.includes(item.id))
-      .forEach((item) => {
+      .filter((item: TimelineItem): item is VideoItem => item.type === 'video' && itemIds.includes(item.id))
+      .forEach((item: VideoItem) => {
         const currentSpeed = item.speed || 1;
         if (Math.abs(currentSpeed - 1) <= tolerance) return;
 
@@ -159,7 +143,7 @@ export function VideoSection({ items }: VideoSectionProps) {
     const tolerance = 0.01;
     const currentItems = useTimelineStore.getState().items;
     const needsUpdate = currentItems.some(
-      (item) => itemIds.includes(item.id) && (item.fadeIn ?? 0) > tolerance
+      (item: TimelineItem) => itemIds.includes(item.id) && ((item as VideoItem).fadeIn ?? 0) > tolerance
     );
     if (needsUpdate) {
       itemIds.forEach((id) => updateItem(id, { fadeIn: 0 }));
@@ -171,7 +155,7 @@ export function VideoSection({ items }: VideoSectionProps) {
     const tolerance = 0.01;
     const currentItems = useTimelineStore.getState().items;
     const needsUpdate = currentItems.some(
-      (item) => itemIds.includes(item.id) && (item.fadeOut ?? 0) > tolerance
+      (item: TimelineItem) => itemIds.includes(item.id) && ((item as VideoItem).fadeOut ?? 0) > tolerance
     );
     if (needsUpdate) {
       itemIds.forEach((id) => updateItem(id, { fadeOut: 0 }));

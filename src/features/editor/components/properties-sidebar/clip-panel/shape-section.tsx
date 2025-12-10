@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useRef, useEffect, memo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Shapes, RotateCcw, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,7 +8,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { HexColorPicker } from 'react-colorful';
 import type { ShapeItem, ShapeType, TimelineItem } from '@/types/timeline';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
@@ -16,6 +15,7 @@ import {
   PropertySection,
   PropertyRow,
   NumberInput,
+  ColorPicker,
 } from '../components';
 
 // Shape type options
@@ -40,102 +40,6 @@ const DIRECTION_OPTIONS: { value: 'up' | 'down' | 'left' | 'right'; label: strin
 interface ShapeSectionProps {
   items: TimelineItem[];
 }
-
-/**
- * Color picker component for shape properties.
- * Supports live preview during picker drag via onLiveChange.
- */
-const ShapeColorPicker = memo(function ShapeColorPicker({
-  label,
-  color,
-  onChange,
-  onLiveChange,
-  onReset,
-  defaultColor,
-  disabled,
-}: {
-  label: string;
-  color: string;
-  onChange: (color: string) => void;
-  onLiveChange?: (color: string) => void;
-  onReset?: () => void;
-  defaultColor?: string;
-  disabled?: boolean;
-}) {
-  const [localColor, setLocalColor] = useState(color);
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setLocalColor(color);
-  }, [color]);
-
-  const handleColorChange = useCallback((newColor: string) => {
-    setLocalColor(newColor);
-    onLiveChange?.(newColor);
-  }, [onLiveChange]);
-
-  const handleCommit = useCallback(() => {
-    onChange(localColor);
-  }, [localColor, onChange]);
-
-  const handleClose = useCallback(() => {
-    handleCommit();
-    setIsOpen(false);
-  }, [handleCommit]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        handleClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, handleClose]);
-
-  return (
-    <PropertyRow label={label}>
-      <div ref={containerRef} className="relative flex items-center gap-1 w-full">
-        <button
-          type="button"
-          onClick={() => !disabled && setIsOpen(!isOpen)}
-          className={`flex items-center gap-2 flex-1 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-          disabled={disabled}
-        >
-          <div
-            className="w-6 h-6 rounded border border-border flex-shrink-0"
-            style={{ backgroundColor: localColor }}
-          />
-          <span className="text-xs font-mono text-muted-foreground uppercase">
-            {localColor}
-          </span>
-        </button>
-
-        {onReset && defaultColor && color !== defaultColor && !disabled && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 flex-shrink-0"
-            onClick={onReset}
-            title="Reset"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </Button>
-        )}
-
-        {isOpen && !disabled && (
-          <div className="absolute top-8 left-0 z-50 p-2 bg-popover border border-border rounded-lg shadow-lg">
-            <HexColorPicker color={localColor} onChange={handleColorChange} />
-          </div>
-        )}
-      </div>
-    </PropertyRow>
-  );
-});
 
 /**
  * Shape section - properties for shape items (shapeType, colors, stroke, etc.)
@@ -422,7 +326,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
       </PropertyRow>
 
       {/* Fill Color */}
-      <ShapeColorPicker
+      <ColorPicker
         label="Fill"
         color={sharedValues.fillColor ?? '#3b82f6'}
         onChange={handleFillColorChange}
@@ -447,7 +351,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
 
       {/* Stroke Color - only show when stroke width > 0 */}
       {(sharedValues.strokeWidth === 'mixed' || sharedValues.strokeWidth > 0) && (
-        <ShapeColorPicker
+        <ColorPicker
           label="Stroke"
           color={sharedValues.strokeColor || '#1e40af'}
           onChange={handleStrokeColorChange}

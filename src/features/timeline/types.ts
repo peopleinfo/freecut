@@ -76,3 +76,6 @@ export interface TimelineActions {
   markDirty: () => void;
   markClean: () => void;
 }
+
+// Combined store type for selector type inference
+export type TimelineStore = TimelineState & TimelineActions;
