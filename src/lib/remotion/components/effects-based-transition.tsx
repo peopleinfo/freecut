@@ -1,7 +1,8 @@
 import React from 'react';
-import { AbsoluteFill, useCurrentFrame, Sequence, OffthreadVideo, Img, interpolate } from 'remotion';
+import { AbsoluteFill, useCurrentFrame, Sequence, OffthreadVideo, Img, interpolate, useVideoConfig } from 'remotion';
 import type { VideoItem, ImageItem } from '@/types/timeline';
 import type { Transition, WipeDirection, SlideDirection, FlipDirection } from '@/types/transition';
+import { resolveTransform, toTransformStyle, getSourceDimensions } from '../utils/transform-resolver';
 
 /**
  * Enriched visual item with track metadata (same as main-composition)
@@ -39,23 +40,29 @@ function getFadeOpacity(progress: number, isOutgoing: boolean): number {
 function getWipeClipPath(progress: number, direction: WipeDirection, isOutgoing: boolean): string {
   const effectiveProgress = isOutgoing ? progress : 1 - progress;
 
+  // inset(top right bottom left) - clips inward from each edge
+  // "from-left" means wipe edge moves left→right, so clip the LEFT side of outgoing
   switch (direction) {
     case 'from-left':
-      return isOutgoing
-        ? `inset(0 ${effectiveProgress * 100}% 0 0)`
-        : `inset(0 0 0 ${effectiveProgress * 100}%)`;
-    case 'from-right':
+      // Wipe from left: outgoing clips from left, incoming reveals from left
       return isOutgoing
         ? `inset(0 0 0 ${effectiveProgress * 100}%)`
         : `inset(0 ${effectiveProgress * 100}% 0 0)`;
-    case 'from-top':
+    case 'from-right':
+      // Wipe from right: outgoing clips from right, incoming reveals from right
       return isOutgoing
-        ? `inset(0 0 ${effectiveProgress * 100}% 0)`
-        : `inset(${effectiveProgress * 100}% 0 0 0)`;
-    case 'from-bottom':
+        ? `inset(0 ${effectiveProgress * 100}% 0 0)`
+        : `inset(0 0 0 ${effectiveProgress * 100}%)`;
+    case 'from-top':
+      // Wipe from top: outgoing clips from top, incoming reveals from top
       return isOutgoing
         ? `inset(${effectiveProgress * 100}% 0 0 0)`
         : `inset(0 0 ${effectiveProgress * 100}% 0)`;
+    case 'from-bottom':
+      // Wipe from bottom: outgoing clips from bottom, incoming reveals from bottom
+      return isOutgoing
+        ? `inset(0 0 ${effectiveProgress * 100}% 0)`
+        : `inset(${effectiveProgress * 100}% 0 0 0)`;
     default:
       return 'none';
   }
@@ -63,19 +70,26 @@ function getWipeClipPath(progress: number, direction: WipeDirection, isOutgoing:
 
 /**
  * Calculate transform for slide presentation
+ * Uses canvas pixel dimensions to ensure slides align with actual canvas boundaries
  */
-function getSlideTransform(progress: number, direction: SlideDirection, isOutgoing: boolean): string {
+function getSlideTransform(
+  progress: number,
+  direction: SlideDirection,
+  isOutgoing: boolean,
+  canvasWidth: number,
+  canvasHeight: number
+): string {
   const slideProgress = isOutgoing ? progress : progress - 1;
 
   switch (direction) {
     case 'from-left':
-      return `translateX(${slideProgress * 100}%)`;
+      return `translateX(${slideProgress * canvasWidth}px)`;
     case 'from-right':
-      return `translateX(${-slideProgress * 100}%)`;
+      return `translateX(${-slideProgress * canvasWidth}px)`;
     case 'from-top':
-      return `translateY(${slideProgress * 100}%)`;
+      return `translateY(${slideProgress * canvasHeight}px)`;
     case 'from-bottom':
-      return `translateY(${-slideProgress * 100}%)`;
+      return `translateY(${-slideProgress * canvasHeight}px)`;
     default:
       return 'none';
   }
@@ -136,12 +150,23 @@ function getIrisMask(progress: number, isOutgoing: boolean): string {
 /**
  * Render a clip's video/image content using Remotion's proper playback
  * This component plays video continuously rather than seeking per frame
+ * Applies the clip's transform to match normal rendering
  */
 const ClipContent: React.FC<{
   clip: EnrichedVisualItem;
   /** Optional offset to apply to sourceStart (in frames) */
   sourceStartOffset?: number;
-}> = ({ clip, sourceStartOffset = 0 }) => {
+  /** Canvas dimensions for transform calculation */
+  canvasWidth: number;
+  canvasHeight: number;
+  fps: number;
+}> = ({ clip, sourceStartOffset = 0, canvasWidth, canvasHeight, fps }) => {
+  // Resolve the clip's transform to match normal rendering
+  const canvas = { width: canvasWidth, height: canvasHeight, fps };
+  const sourceDimensions = getSourceDimensions(clip);
+  const resolved = resolveTransform(clip, canvas, sourceDimensions);
+  const transformStyle = toTransformStyle(resolved, canvas);
+
   if (clip.type === 'video') {
     const videoClip = clip as VideoItem;
 
@@ -151,24 +176,41 @@ const ClipContent: React.FC<{
     }
 
     const baseSourceStart = videoClip.sourceStart ?? videoClip.trimStart ?? videoClip.offset ?? 0;
-    // Apply offset and clamp to 0 (can't go before video start)
-    const sourceStart = Math.max(0, baseSourceStart + sourceStartOffset);
+    const rawAdjustedStart = baseSourceStart + sourceStartOffset;
+
+    // When we can't go earlier than source start (rawAdjustedStart < 0),
+    // use CSS mirror effect like CapCut does for smooth visual transition
+    const needsMirror = rawAdjustedStart < 0;
+    const sourceStart = Math.max(0, rawAdjustedStart);
     const playbackRate = videoClip.speed ?? 1;
 
+    // Combine transform style with mirror if needed
+    const combinedTransform = needsMirror
+      ? `${transformStyle.transform || ''} scaleX(-1)`.trim()
+      : transformStyle.transform;
+
     return (
-      <OffthreadVideo
-        src={videoClip.src}
-        startFrom={sourceStart}
-        playbackRate={playbackRate}
+      <div
         style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
+          ...transformStyle,
+          transform: combinedTransform || undefined,
+          overflow: 'hidden',
         }}
-        // Ensure no audio from effects layer - audio is handled separately
-        muted={true}
-        volume={0}
-      />
+      >
+        <OffthreadVideo
+          src={videoClip.src}
+          startFrom={sourceStart}
+          playbackRate={playbackRate}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+          }}
+          // Ensure no audio from effects layer - audio is handled separately
+          muted={true}
+          volume={0}
+        />
+      </div>
     );
   } else if (clip.type === 'image') {
     const imageClip = clip as ImageItem;
@@ -179,14 +221,16 @@ const ClipContent: React.FC<{
     }
 
     return (
-      <Img
-        src={imageClip.src}
-        style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-        }}
-      />
+      <div style={{ ...transformStyle, overflow: 'hidden' }}>
+        <Img
+          src={imageClip.src}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+          }}
+        />
+      </div>
     );
   }
   return null;
@@ -206,7 +250,9 @@ const TransitionOverlay: React.FC<{
   isOutgoing: boolean;
   children: React.ReactNode;
   zIndex: number;
-}> = ({ transition, isOutgoing, children, zIndex }) => {
+  canvasWidth: number;
+  canvasHeight: number;
+}> = ({ transition, isOutgoing, children, zIndex, canvasWidth, canvasHeight }) => {
   const frame = useCurrentFrame();
   // frame is already local to the parent Sequence (0 to durationInFrames - 1)
   // To get full 0-1 range, divide by (duration - 1) so last frame = 1.0
@@ -260,10 +306,10 @@ const TransitionOverlay: React.FC<{
         return baseStyle;
 
       case 'slide':
-        // Both clips slide
+        // Both clips slide - use canvas dimensions for proper alignment
         return {
           ...baseStyle,
-          transform: `translateZ(0) ${getSlideTransform(progress, direction as SlideDirection || 'from-left', isOutgoing)}`,
+          transform: `translateZ(0) ${getSlideTransform(progress, direction as SlideDirection || 'from-left', isOutgoing, canvasWidth, canvasHeight)}`,
         };
 
       case 'flip':
@@ -343,6 +389,9 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
   leftClip,
   rightClip,
 }) {
+  // Get canvas dimensions for transform calculations
+  const { width: canvasWidth, height: canvasHeight, fps } = useVideoConfig();
+
   // Calculate transition timing - transition is centered on cut point (half in, half out)
   const cutPoint = leftClip.from + leftClip.durationInFrames;
   const halfDuration = Math.floor(transition.durationInFrames / 2);
@@ -386,12 +435,14 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
           transition={transition}
           isOutgoing={false}
           zIndex={1}
+          canvasWidth={canvasWidth}
+          canvasHeight={canvasHeight}
         >
           <Sequence
             from={0}
             durationInFrames={transition.durationInFrames}
           >
-            <ClipContent clip={rightClip} sourceStartOffset={rightClipSourceOffset} />
+            <ClipContent clip={rightClip} sourceStartOffset={rightClipSourceOffset} canvasWidth={canvasWidth} canvasHeight={canvasHeight} fps={fps} />
           </Sequence>
         </TransitionOverlay>
 
@@ -401,12 +452,14 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
           transition={transition}
           isOutgoing={true}
           zIndex={2}
+          canvasWidth={canvasWidth}
+          canvasHeight={canvasHeight}
         >
           <Sequence
             from={leftClipContentOffset}
             durationInFrames={transition.durationInFrames + Math.abs(leftClipContentOffset)}
           >
-            <ClipContent clip={leftClip} />
+            <ClipContent clip={leftClip} canvasWidth={canvasWidth} canvasHeight={canvasHeight} fps={fps} />
           </Sequence>
         </TransitionOverlay>
       </AbsoluteFill>
