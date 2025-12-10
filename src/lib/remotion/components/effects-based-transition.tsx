@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { AbsoluteFill, useCurrentFrame, Sequence, OffthreadVideo, Img, interpolate } from 'remotion';
 import type { VideoItem, ImageItem } from '@/types/timeline';
 import type { Transition, WipeDirection, SlideDirection, FlipDirection } from '@/types/transition';
@@ -139,10 +139,20 @@ function getIrisMask(progress: number, isOutgoing: boolean): string {
  */
 const ClipContent: React.FC<{
   clip: EnrichedVisualItem;
-}> = ({ clip }) => {
+  /** Optional offset to apply to sourceStart (in frames) */
+  sourceStartOffset?: number;
+}> = ({ clip, sourceStartOffset = 0 }) => {
   if (clip.type === 'video') {
     const videoClip = clip as VideoItem;
-    const sourceStart = videoClip.sourceStart ?? videoClip.trimStart ?? videoClip.offset ?? 0;
+
+    // Guard against missing src - can happen during clip loading/removal
+    if (!videoClip.src) {
+      return null;
+    }
+
+    const baseSourceStart = videoClip.sourceStart ?? videoClip.trimStart ?? videoClip.offset ?? 0;
+    // Apply offset and clamp to 0 (can't go before video start)
+    const sourceStart = Math.max(0, baseSourceStart + sourceStartOffset);
     const playbackRate = videoClip.speed ?? 1;
 
     return (
@@ -162,6 +172,12 @@ const ClipContent: React.FC<{
     );
   } else if (clip.type === 'image') {
     const imageClip = clip as ImageItem;
+
+    // Guard against missing src
+    if (!imageClip.src) {
+      return null;
+    }
+
     return (
       <Img
         src={imageClip.src}
@@ -342,27 +358,11 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
   // We want to show the last `durationInFrames` frames of the left clip
   const leftClipContentOffset = -(leftClip.durationInFrames - transition.durationInFrames);
 
-  // Adjust right clip's sourceStart to align with normal rendering after transition ends
+  // Right clip sourceStart offset to align with normal rendering after transition ends.
   // Without this offset, transition shows frames 0 to (durationInFrames-1), then normal
   // rendering jumps back to frame halfDuration, causing visible frame repetition.
   // With the offset, transition shows frames that lead into where normal rendering continues.
-  const adjustedRightClip = useMemo(() => {
-    if (rightClip.type === 'video') {
-      const videoClip = rightClip as VideoItem & typeof rightClip;
-      const sourceStart = videoClip.sourceStart ?? videoClip.trimStart ?? videoClip.offset ?? 0;
-      // Offset by -halfDuration so last transition frame leads into first normal frame
-      const adjustedSourceStart = Math.max(0, sourceStart - halfDuration);
-      return {
-        ...videoClip,
-        sourceStart: adjustedSourceStart,
-        // Also adjust trimStart/offset if they exist to maintain consistency
-        ...(videoClip.trimStart != null ? { trimStart: Math.max(0, videoClip.trimStart - halfDuration) } : {}),
-        ...(videoClip.offset != null ? { offset: Math.max(0, videoClip.offset - halfDuration) } : {}),
-      };
-    }
-    // Images don't need frame offset adjustment
-    return rightClip;
-  }, [rightClip, halfDuration]);
+  const rightClipSourceOffset = -halfDuration;
 
   return (
     <Sequence
@@ -381,7 +381,7 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
         <AbsoluteFill style={{ backgroundColor: '#000' }} />
 
         {/* Incoming clip (right) - sits at bottom, gets revealed */}
-        {/* Uses adjusted sourceStart so frames align with normal rendering after transition */}
+        {/* Uses sourceStartOffset so frames align with normal rendering after transition */}
         <TransitionOverlay
           transition={transition}
           isOutgoing={false}
@@ -391,7 +391,7 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
             from={0}
             durationInFrames={transition.durationInFrames}
           >
-            <ClipContent clip={adjustedRightClip} />
+            <ClipContent clip={rightClip} sourceStartOffset={rightClipSourceOffset} />
           </Sequence>
         </TransitionOverlay>
 
