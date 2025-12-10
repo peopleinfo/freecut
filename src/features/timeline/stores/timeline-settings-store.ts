@@ -1,0 +1,42 @@
+import { create } from 'zustand';
+
+/**
+ * Timeline settings state - FPS, scroll position, snap, dirty tracking.
+ * These are UI/editor settings, not timeline content.
+ */
+
+export interface TimelineSettingsState {
+  fps: number;
+  scrollPosition: number;
+  snapEnabled: boolean;
+  isDirty: boolean;
+}
+
+export interface TimelineSettingsActions {
+  setFps: (fps: number) => void;
+  setScrollPosition: (position: number) => void;
+  setSnapEnabled: (enabled: boolean) => void;
+  toggleSnap: () => void;
+  setIsDirty: (dirty: boolean) => void;
+  markDirty: () => void;
+  markClean: () => void;
+}
+
+export const useTimelineSettingsStore = create<TimelineSettingsState & TimelineSettingsActions>()(
+  (set) => ({
+    // State
+    fps: 30,
+    scrollPosition: 0,
+    snapEnabled: true,
+    isDirty: false,
+
+    // Actions
+    setFps: (fps) => set({ fps }),
+    setScrollPosition: (position) => set({ scrollPosition: position }),
+    setSnapEnabled: (enabled) => set({ snapEnabled: enabled }),
+    toggleSnap: () => set((state) => ({ snapEnabled: !state.snapEnabled })),
+    setIsDirty: (dirty) => set({ isDirty: dirty }),
+    markDirty: () => set({ isDirty: true }),
+    markClean: () => set({ isDirty: false }),
+  })
+);

@@ -11,8 +11,6 @@
  */
 
 import { create } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
-import { shallow } from 'zustand/shallow';
 import { useTimelineStore } from './timeline-store';
 import type { TimelineItem, TimelineTrack } from '@/types/timeline';
 import type {
@@ -76,7 +74,7 @@ interface TransitionChainActions {
 type TransitionChainStore = TransitionChainState & TransitionChainActions;
 
 export const useTransitionChainStore = create<TransitionChainStore>()(
-  subscribeWithSelector((set, get) => ({
+  (set, get) => ({
     // Initial state (empty)
     transitionsByClipId: new Map(),
     transitionsByTrackId: new Map(),
@@ -139,7 +137,7 @@ export const useTransitionChainStore = create<TransitionChainStore>()(
       }
       return undefined;
     },
-  }))
+  })
 );
 
 /**
@@ -157,20 +155,30 @@ export function initTransitionChainSubscription(): () => void {
       timelineState.tracks
     );
 
-  // Subscribe to changes
-  const unsubscribe = useTimelineStore.subscribe(
-    (state: { items: TimelineItem[]; transitions: Transition[]; tracks: TimelineTrack[] }) => ({
-      items: state.items,
-      transitions: state.transitions,
-      tracks: state.tracks,
-    }),
-    (slice: { items: TimelineItem[]; transitions: Transition[]; tracks: TimelineTrack[] }) => {
+  // Track previous values for shallow comparison
+  let prevItems = timelineState.items;
+  let prevTransitions = timelineState.transitions;
+  let prevTracks = timelineState.tracks;
+
+  // Subscribe to changes with manual shallow comparison
+  const unsubscribe = useTimelineStore.subscribe(() => {
+    const state = useTimelineStore.getState();
+
+    // Only recompute if items, transitions, or tracks changed
+    if (
+      state.items !== prevItems ||
+      state.transitions !== prevTransitions ||
+      state.tracks !== prevTracks
+    ) {
+      prevItems = state.items;
+      prevTransitions = state.transitions;
+      prevTracks = state.tracks;
+
       useTransitionChainStore
         .getState()
-        .recompute(slice.items, slice.transitions, slice.tracks);
-    },
-    { equalityFn: shallow }
-  );
+        .recompute(state.items, state.transitions, state.tracks);
+    }
+  });
 
   return unsubscribe;
 }
