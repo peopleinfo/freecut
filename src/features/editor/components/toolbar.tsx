@@ -16,8 +16,10 @@ import {
   FolderArchive,
   ChevronDown,
   Github,
+  Keyboard,
 } from 'lucide-react';
 import { UnsavedChangesDialog } from './unsaved-changes-dialog';
+import { ShortcutsDialog } from './shortcuts-dialog';
 
 export interface ToolbarProps {
   projectId: string;
@@ -37,6 +39,7 @@ export interface ToolbarProps {
 export function Toolbar({ project, isDirty = false, onSave, onExport, onExportBundle }: ToolbarProps) {
   const navigate = useNavigate();
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [showShortcutsDialog, setShowShortcutsDialog] = useState(false);
 
   const handleBackClick = () => {
     if (isDirty) {
@@ -89,8 +92,24 @@ export function Toolbar({ project, isDirty = false, onSave, onExport, onExportBu
 
       <div className="flex-1" />
 
+      {/* Shortcuts Dialog */}
+      <ShortcutsDialog
+        open={showShortcutsDialog}
+        onOpenChange={setShowShortcutsDialog}
+      />
+
       {/* Save & Export */}
       <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setShowShortcutsDialog(true)}
+          data-tooltip="Keyboard Shortcuts"
+          data-tooltip-side="left"
+        >
+          <Keyboard className="w-4 h-4" />
+        </Button>
         <Button
           variant="outline"
           size="icon"
