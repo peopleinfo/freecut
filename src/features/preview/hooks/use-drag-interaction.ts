@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useState } from 'react';
+import { useCallback, useRef, useEffect, useState, useEffectEvent } from 'react';
 import type { Point } from '../types/gizmo';
 
 /**
@@ -144,20 +144,22 @@ export function useDragInteraction<TSnapshot = unknown>(
     setIsDragging(false);
   }, []);
 
+  // Escape key handler - using useEffectEvent so changes to onCancel don't re-register listener
+  const onEscapeKeyDown = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onCancel();
+      cleanup();
+    }
+  });
+
   // Handle escape key during drag
+  // With useEffectEvent, we only need to depend on isDragging
   useEffect(() => {
     if (!isDragging) return;
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCancel();
-        cleanup();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isDragging, onCancel, cleanup]);
+    window.addEventListener('keydown', onEscapeKeyDown);
+    return () => window.removeEventListener('keydown', onEscapeKeyDown);
+  }, [isDragging]);
 
   // Ensure cleanup on unmount
   useEffect(() => {
@@ -266,16 +268,17 @@ export function useEscapeCancel(
   isActive: boolean,
   onCancel: () => void
 ): void {
+  // Using useEffectEvent so changes to onCancel don't re-register listener
+  const onEscapeKeyDown = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onCancel();
+    }
+  });
+
   useEffect(() => {
     if (!isActive) return;
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCancel();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isActive, onCancel]);
+    window.addEventListener('keydown', onEscapeKeyDown);
+    return () => window.removeEventListener('keydown', onEscapeKeyDown);
+  }, [isActive]);
 }

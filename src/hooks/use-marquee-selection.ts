@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useEffectEvent } from 'react';
 
 /**
  * Marquee selection state
@@ -206,132 +206,129 @@ export function useMarqueeSelection({
   }, [containerRef]);
 
   // Handle mouse down - start marquee
-  const handleMouseDown = useCallback(
-    (e: MouseEvent) => {
-      if (!enabled || !containerRef.current || !boundsRef.current) return;
+  // Using useEffectEvent so changes to enabled, appendMode don't re-register listeners
+  const onMouseDown = useEffectEvent((e: MouseEvent) => {
+    if (!enabled || !containerRef.current || !boundsRef.current) return;
 
-      // Only trigger on left click
-      if (e.button !== 0) return;
+    // Only trigger on left click
+    if (e.button !== 0) return;
 
-      // Check if click is inside hit area bounds
-      const boundsEl = boundsRef.current;
-      const rect = boundsEl.getBoundingClientRect();
+    // Check if click is inside hit area bounds
+    const boundsEl = boundsRef.current;
+    const rect = boundsEl.getBoundingClientRect();
 
-      if (
-        e.clientX < rect.left ||
-        e.clientX > rect.right ||
-        e.clientY < rect.top ||
-        e.clientY > rect.bottom
-      ) {
-        return;
-      }
+    if (
+      e.clientX < rect.left ||
+      e.clientX > rect.right ||
+      e.clientY < rect.top ||
+      e.clientY > rect.bottom
+    ) {
+      return;
+    }
 
-      // Don't start marquee if clicking on an interactive element
-      const target = e.target as HTMLElement;
-      if (
-        target.tagName === 'BUTTON' ||
-        target.tagName === 'INPUT' ||
-        target.tagName === 'A' ||
-        target.closest('button') ||
-        target.closest('input') ||
-        target.closest('a') ||
-        target.closest('[role="button"]') ||
-        // Don't start marquee if clicking on a draggable timeline item
-        target.closest('[data-item-id]') ||
-        // Don't start marquee if clicking on a draggable media card
-        target.closest('[data-media-id]') ||
-        // Don't start marquee if clicking in the timeline ruler
-        target.closest('.timeline-ruler') ||
-        // Don't start marquee if clicking on the playhead handle
-        target.closest('[data-playhead-handle]') ||
-        // Don't start marquee if clicking on gizmo elements (handles, borders)
-        target.closest('[data-gizmo]')
-      ) {
-        return;
-      }
+    // Don't start marquee if clicking on an interactive element
+    const target = e.target as HTMLElement;
+    if (
+      target.tagName === 'BUTTON' ||
+      target.tagName === 'INPUT' ||
+      target.tagName === 'A' ||
+      target.closest('button') ||
+      target.closest('input') ||
+      target.closest('a') ||
+      target.closest('[role="button"]') ||
+      // Don't start marquee if clicking on a draggable timeline item
+      target.closest('[data-item-id]') ||
+      // Don't start marquee if clicking on a draggable media card
+      target.closest('[data-media-id]') ||
+      // Don't start marquee if clicking in the timeline ruler
+      target.closest('.timeline-ruler') ||
+      // Don't start marquee if clicking on the playhead handle
+      target.closest('[data-playhead-handle]') ||
+      // Don't start marquee if clicking on gizmo elements (handles, borders)
+      target.closest('[data-gizmo]')
+    ) {
+      return;
+    }
 
-      isDraggingRef.current = true;
-      hasMovedRef.current = false;
-      prevSelectedIdsRef.current = []; // Reset accumulated selection for new marquee
+    isDraggingRef.current = true;
+    hasMovedRef.current = false;
+    prevSelectedIdsRef.current = []; // Reset accumulated selection for new marquee
 
-      // Calculate position relative to the container (for marquee display)
-      const container = containerRef.current;
-      const containerRect = container.getBoundingClientRect();
-      const startX = e.clientX - containerRect.left + container.scrollLeft;
-      const startY = e.clientY - containerRect.top + container.scrollTop;
+    // Calculate position relative to the container (for marquee display)
+    const container = containerRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const startX = e.clientX - containerRect.left + container.scrollLeft;
+    const startY = e.clientY - containerRect.top + container.scrollTop;
 
-      // Store in ref (no re-render)
-      marqueeRef.current = { startX, startY, currentX: startX, currentY: startY };
+    // Store in ref (no re-render)
+    marqueeRef.current = { startX, startY, currentX: startX, currentY: startY };
 
-      // Clear selection if not in append mode
-      if (!appendMode) {
-        setSelectedIds([]);
-        prevSelectedIdsRef.current = [];
-      }
-    },
-    [enabled, containerRef, boundsRef, appendMode]
-  );
+    // Clear selection if not in append mode
+    if (!appendMode) {
+      setSelectedIds([]);
+      prevSelectedIdsRef.current = [];
+    }
+  });
 
   // Handle mouse move - update marquee using RAF for performance
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isDraggingRef.current || !containerRef.current) return;
+  // Using useEffectEvent so changes to threshold don't re-register listeners
+  const onMouseMove = useEffectEvent((e: MouseEvent) => {
+    if (!isDraggingRef.current || !containerRef.current) return;
 
-      const container = containerRef.current;
-      const rect = container.getBoundingClientRect();
+    const container = containerRef.current;
+    const rect = container.getBoundingClientRect();
 
-      // Account for scroll offset to get position in content space
-      const currentX = e.clientX - rect.left + container.scrollLeft;
-      const currentY = e.clientY - rect.top + container.scrollTop;
+    // Account for scroll offset to get position in content space
+    const currentX = e.clientX - rect.left + container.scrollLeft;
+    const currentY = e.clientY - rect.top + container.scrollTop;
 
-      // Check if we've moved past threshold
-      if (!hasMovedRef.current) {
-        const m = marqueeRef.current;
-        const deltaX = Math.abs(currentX - m.startX);
-        const deltaY = Math.abs(currentY - m.startY);
+    // Check if we've moved past threshold
+    if (!hasMovedRef.current) {
+      const m = marqueeRef.current;
+      const deltaX = Math.abs(currentX - m.startX);
+      const deltaY = Math.abs(currentY - m.startY);
 
-        if (deltaX > threshold || deltaY > threshold) {
-          hasMovedRef.current = true;
-          // Activate marquee (triggers one re-render)
-          setMarqueeState({
-            active: true,
-            startX: m.startX,
-            startY: m.startY,
-            currentX,
-            currentY,
-          });
-        } else {
-          return; // Don't activate yet
-        }
-      }
-
-      // Update ref (no re-render)
-      marqueeRef.current.currentX = currentX;
-      marqueeRef.current.currentY = currentY;
-
-      // Batch updates with RAF
-      if (rafIdRef.current === null) {
-        rafIdRef.current = requestAnimationFrame(() => {
-          rafIdRef.current = null;
-          const m = marqueeRef.current;
-
-          // Update React state for rendering
-          setMarqueeState((prev) => ({
-            ...prev,
-            currentX: m.currentX,
-            currentY: m.currentY,
-          }));
-
-          // Update selection
-          updateSelectionFromRefs();
+      if (deltaX > threshold || deltaY > threshold) {
+        hasMovedRef.current = true;
+        // Activate marquee (triggers one re-render)
+        setMarqueeState({
+          active: true,
+          startX: m.startX,
+          startY: m.startY,
+          currentX,
+          currentY,
         });
+      } else {
+        return; // Don't activate yet
       }
-    },
-    [containerRef, threshold, updateSelectionFromRefs]
-  );
+    }
+
+    // Update ref (no re-render)
+    marqueeRef.current.currentX = currentX;
+    marqueeRef.current.currentY = currentY;
+
+    // Batch updates with RAF
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        const m = marqueeRef.current;
+
+        // Update React state for rendering
+        setMarqueeState((prev) => ({
+          ...prev,
+          currentX: m.currentX,
+          currentY: m.currentY,
+        }));
+
+        // Update selection
+        updateSelectionFromRefs();
+      });
+    }
+  });
 
   // Handle mouse up - end marquee
-  const handleMouseUp = useCallback((e: MouseEvent) => {
+  // Using useEffectEvent for consistency with other handlers
+  const onMouseUp = useEffectEvent((e: MouseEvent) => {
     // Only process if we were dragging
     if (!isDraggingRef.current) return;
 
@@ -366,7 +363,7 @@ export function useMarqueeSelection({
         marqueeJustFinished = false;
       });
     }
-  }, []);
+  });
 
   // Cleanup RAF on unmount
   useEffect(() => {
@@ -381,20 +378,21 @@ export function useMarqueeSelection({
   // Listen at document level to support containers with pointer-events: none
   // Note: Don't check containerRef.current here - handlers check it themselves
   // This ensures listeners are registered even if refs aren't set yet on first render
+  // With useEffectEvent, we only need to depend on enabled
   useEffect(() => {
     if (!enabled) return;
 
     // Use capture phase to intercept before other handlers
-    document.addEventListener('mousedown', handleMouseDown, true);
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp, true);
+    document.addEventListener('mousedown', onMouseDown, true);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp, true);
 
     return () => {
-      document.removeEventListener('mousedown', handleMouseDown, true);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp, true);
+      document.removeEventListener('mousedown', onMouseDown, true);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp, true);
     };
-  }, [enabled, handleMouseDown, handleMouseMove, handleMouseUp]);
+  }, [enabled]);
 
   return {
     marqueeState,

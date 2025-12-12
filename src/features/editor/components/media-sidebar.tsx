@@ -1,4 +1,4 @@
-import { useCallback, memo } from 'react';
+import { useCallback, memo, Activity } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -414,7 +414,9 @@ export const MediaSidebar = memo(function MediaSidebar() {
           leftSidebarOpen ? 'w-72' : 'w-0'
         }`}
       >
-        <div className={`h-full flex flex-col w-72 ${leftSidebarOpen ? 'block' : 'hidden'}`}>
+        {/* Use Activity for React 19 performance optimization - defers updates when hidden */}
+        <Activity mode={leftSidebarOpen ? 'visible' : 'hidden'}>
+          <div className="h-full flex flex-col w-72">
           {/* Panel Header */}
           <div className="h-10 flex items-center px-3 border-b border-border flex-shrink-0">
             <span className="text-sm font-medium text-foreground">
@@ -662,7 +664,8 @@ export const MediaSidebar = memo(function MediaSidebar() {
           <div className={`flex-1 overflow-hidden ${activeTab === 'transitions' ? 'block' : 'hidden'}`}>
             <TransitionsPanel />
           </div>
-        </div>
+          </div>
+        </Activity>
       </div>
     </div>
   );

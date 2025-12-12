@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useEffectEvent } from 'react';
 import { waveformCache, type CachedWaveform } from '../services/waveform-cache';
 
 export interface UseWaveformOptions {
@@ -58,10 +58,10 @@ export function useWaveform({
   // Ref to track if generation is in progress
   const isGeneratingRef = useRef(false);
 
-  // Progress callback
-  const handleProgress = useCallback((p: number) => {
+  // Progress callback - using useEffectEvent so it doesn't need to be in effect deps
+  const onProgress = useEffectEvent((p: number) => {
     setProgress(p);
-  }, []);
+  });
 
   // Load waveform when visible and conditions are met
   useEffect(() => {
@@ -88,7 +88,7 @@ export function useWaveform({
 
     // Request waveform from cache (which will generate if needed)
     waveformCache
-      .getWaveform(mediaId, blobUrl, handleProgress)
+      .getWaveform(mediaId, blobUrl, onProgress)
       .then((result) => {
         setWaveform(result);
         setIsLoading(false);
@@ -107,7 +107,8 @@ export function useWaveform({
 
     // Don't abort on effect re-runs - let generation continue in background
     // The cache will hold the result for when we need it
-  }, [mediaId, blobUrl, isVisible, enabled, waveform, handleProgress]);
+    // Note: onProgress uses useEffectEvent so doesn't need to be in deps
+  }, [mediaId, blobUrl, isVisible, enabled, waveform]);
 
   // Cleanup on unmount
   useEffect(() => {

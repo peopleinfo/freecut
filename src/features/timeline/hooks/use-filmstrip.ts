@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useEffectEvent } from 'react';
 import { filmstripCache, type CachedFilmstrip } from '../services/filmstrip-cache';
 
 export interface UseFilmstripOptions {
@@ -59,10 +59,10 @@ export function useFilmstrip({
   // Ref to track if generation is in progress
   const isGeneratingRef = useRef(false);
 
-  // Progress callback
-  const handleProgress = useCallback((p: number) => {
+  // Progress callback - using useEffectEvent so it doesn't need to be in effect deps
+  const onProgress = useEffectEvent((p: number) => {
     setProgress(p);
-  }, []);
+  });
 
   // Subscribe to progressive updates
   useEffect(() => {
@@ -107,7 +107,7 @@ export function useFilmstrip({
 
     // Request filmstrip from cache (which will generate if needed)
     filmstripCache
-      .getFilmstrip(mediaId, blobUrl, duration, handleProgress)
+      .getFilmstrip(mediaId, blobUrl, duration, onProgress)
       .then((result) => {
         setFilmstrip(result);
         setIsLoading(false);
@@ -126,7 +126,8 @@ export function useFilmstrip({
 
     // Don't abort on effect re-runs - let generation continue in background
     // The cache will hold the result for when we need it
-  }, [mediaId, blobUrl, duration, isVisible, enabled, filmstrip?.isComplete, handleProgress]);
+    // Note: onProgress uses useEffectEvent so doesn't need to be in deps
+  }, [mediaId, blobUrl, duration, isVisible, enabled, filmstrip?.isComplete]);
 
   return {
     frames: filmstrip?.frames || null,

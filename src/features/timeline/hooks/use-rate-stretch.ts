@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useEffectEvent } from 'react';
 import type { TimelineItem } from '@/types/timeline';
 import type { SnapTarget } from '../types/drag';
 import { useTimelineStore } from '../stores/timeline-store';
@@ -135,96 +135,95 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
   );
 
   // Mouse move handler - only updates local state for visual feedback
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!stretchStateRef.current.isStretching || trackLocked) return;
+  // Using useEffectEvent so changes to fps, trackLocked, etc. don't re-register listeners
+  const onMouseMove = useEffectEvent((e: MouseEvent) => {
+    if (!stretchStateRef.current.isStretching || trackLocked) return;
 
-      const deltaX = e.clientX - stretchStateRef.current.startX;
-      const deltaTime = pixelsToTime(deltaX);
-      let deltaFrames = Math.round(deltaTime * fps);
+    const deltaX = e.clientX - stretchStateRef.current.startX;
+    const deltaTime = pixelsToTime(deltaX);
+    let deltaFrames = Math.round(deltaTime * fps);
 
-      const { handle, initialFrom, initialDuration, sourceDuration, isLoopingMedia } = stretchStateRef.current;
+    const { handle, initialFrom, initialDuration, sourceDuration, isLoopingMedia } = stretchStateRef.current;
 
-      // For looping media (GIFs): don't change duration, only track delta for speed calculation
-      // Dragging right = faster (positive delta), dragging left = slower (negative delta)
-      if (isLoopingMedia) {
-        // Update local state for speed calculation (duration stays same)
-        if (deltaFrames !== stretchStateRef.current.currentDelta) {
-          setStretchState(prev => ({ ...prev, currentDelta: deltaFrames }));
-        }
-        // No snap target visualization for GIFs since clip doesn't move
-        return;
-      }
-
-      // For videos/audio: original behavior - change duration
-      const limits = getDurationLimits(sourceDuration, isLoopingMedia);
-
-      // Calculate the target edge position and apply snapping
-      let targetEdgeFrame: number;
-      if (handle === 'start') {
-        // For start handle, we're moving the start position (compressing from left)
-        // newDuration = initialDuration - deltaFrames
-        // newFrom = initialFrom + (initialDuration - newDuration)
-        // The edge that moves is the new start position: initialFrom + deltaFrames (when delta > 0, edge moves right)
-        targetEdgeFrame = initialFrom + deltaFrames;
-      } else {
-        // For end handle, we're moving the end position
-        // newDuration = initialDuration + deltaFrames
-        // The edge that moves is the end: initialFrom + initialDuration + deltaFrames
-        targetEdgeFrame = initialFrom + initialDuration + deltaFrames;
-      }
-
-      // Find snap target for the edge being stretched
-      const { snappedFrame, snapTarget } = findSnapForFrame(targetEdgeFrame);
-
-      // If snapped, adjust deltaFrames accordingly while respecting speed limits
-      if (snapTarget) {
-        if (handle === 'start') {
-          // snappedFrame = initialFrom + newDelta
-          const newDelta = snappedFrame - initialFrom;
-          // Check if the resulting duration is within limits
-          const proposedDuration = initialDuration - newDelta;
-          if (proposedDuration >= limits.min && proposedDuration <= limits.max) {
-            deltaFrames = newDelta;
-          }
-        } else {
-          // snappedFrame = initialFrom + initialDuration + newDelta
-          const newDelta = snappedFrame - (initialFrom + initialDuration);
-          // Check if the resulting duration is within limits
-          const proposedDuration = initialDuration + newDelta;
-          if (proposedDuration >= limits.min && proposedDuration <= limits.max) {
-            deltaFrames = newDelta;
-          }
-        }
-      }
-
-      // Update local state for visual feedback
+    // For looping media (GIFs): don't change duration, only track delta for speed calculation
+    // Dragging right = faster (positive delta), dragging left = slower (negative delta)
+    if (isLoopingMedia) {
+      // Update local state for speed calculation (duration stays same)
       if (deltaFrames !== stretchStateRef.current.currentDelta) {
         setStretchState(prev => ({ ...prev, currentDelta: deltaFrames }));
       }
+      // No snap target visualization for GIFs since clip doesn't move
+      return;
+    }
 
-      // Update snap target visualization (only when changed)
-      const prevSnap = prevSnapTargetRef.current;
-      const snapChanged =
-        (prevSnap === null && snapTarget !== null) ||
-        (prevSnap !== null && snapTarget === null) ||
-        (prevSnap !== null && snapTarget !== null && (prevSnap.frame !== snapTarget.frame || prevSnap.type !== snapTarget.type));
+    // For videos/audio: original behavior - change duration
+    const limits = getDurationLimits(sourceDuration, isLoopingMedia);
 
-      if (snapChanged) {
-        prevSnapTargetRef.current = snapTarget ? { frame: snapTarget.frame, type: snapTarget.type } : null;
-        setDragState({
-          isDragging: true,
-          draggedItemIds: [item.id],
-          offset: { x: deltaX, y: 0 },
-          activeSnapTarget: snapTarget,
-        });
+    // Calculate the target edge position and apply snapping
+    let targetEdgeFrame: number;
+    if (handle === 'start') {
+      // For start handle, we're moving the start position (compressing from left)
+      // newDuration = initialDuration - deltaFrames
+      // newFrom = initialFrom + (initialDuration - newDuration)
+      // The edge that moves is the new start position: initialFrom + deltaFrames (when delta > 0, edge moves right)
+      targetEdgeFrame = initialFrom + deltaFrames;
+    } else {
+      // For end handle, we're moving the end position
+      // newDuration = initialDuration + deltaFrames
+      // The edge that moves is the end: initialFrom + initialDuration + deltaFrames
+      targetEdgeFrame = initialFrom + initialDuration + deltaFrames;
+    }
+
+    // Find snap target for the edge being stretched
+    const { snappedFrame, snapTarget } = findSnapForFrame(targetEdgeFrame);
+
+    // If snapped, adjust deltaFrames accordingly while respecting speed limits
+    if (snapTarget) {
+      if (handle === 'start') {
+        // snappedFrame = initialFrom + newDelta
+        const newDelta = snappedFrame - initialFrom;
+        // Check if the resulting duration is within limits
+        const proposedDuration = initialDuration - newDelta;
+        if (proposedDuration >= limits.min && proposedDuration <= limits.max) {
+          deltaFrames = newDelta;
+        }
+      } else {
+        // snappedFrame = initialFrom + initialDuration + newDelta
+        const newDelta = snappedFrame - (initialFrom + initialDuration);
+        // Check if the resulting duration is within limits
+        const proposedDuration = initialDuration + newDelta;
+        if (proposedDuration >= limits.min && proposedDuration <= limits.max) {
+          deltaFrames = newDelta;
+        }
       }
-    },
-    [pixelsToTime, fps, trackLocked, findSnapForFrame, setDragState, item.id]
-  );
+    }
+
+    // Update local state for visual feedback
+    if (deltaFrames !== stretchStateRef.current.currentDelta) {
+      setStretchState(prev => ({ ...prev, currentDelta: deltaFrames }));
+    }
+
+    // Update snap target visualization (only when changed)
+    const prevSnap = prevSnapTargetRef.current;
+    const snapChanged =
+      (prevSnap === null && snapTarget !== null) ||
+      (prevSnap !== null && snapTarget === null) ||
+      (prevSnap !== null && snapTarget !== null && (prevSnap.frame !== snapTarget.frame || prevSnap.type !== snapTarget.type));
+
+    if (snapChanged) {
+      prevSnapTargetRef.current = snapTarget ? { frame: snapTarget.frame, type: snapTarget.type } : null;
+      setDragState({
+        isDragging: true,
+        draggedItemIds: [item.id],
+        offset: { x: deltaX, y: 0 },
+        activeSnapTarget: snapTarget,
+      });
+    }
+  });
 
   // Mouse up handler - commits changes to store (single update)
-  const handleMouseUp = useCallback(() => {
+  // Using useEffectEvent so changes to item.id, rateStretchItem don't re-register listeners
+  const onMouseUp = useEffectEvent(() => {
     if (stretchStateRef.current.isStretching) {
       const { handle, initialFrom, initialDuration, sourceDuration, initialSpeed, currentDelta, isLoopingMedia } = stretchStateRef.current;
 
@@ -287,20 +286,21 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
         isLoopingMedia: false,
       });
     }
-  }, [item.id, rateStretchItem, setDragState]);
+  });
 
   // Setup and cleanup mouse event listeners
+  // With useEffectEvent, we only need to depend on stretchState.isStretching
   useEffect(() => {
     if (stretchState.isStretching) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
 
       return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
       };
     }
-  }, [stretchState.isStretching, handleMouseMove, handleMouseUp]);
+  }, [stretchState.isStretching]);
 
   // Start stretch drag
   const handleStretchStart = useCallback(

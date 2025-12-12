@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, useEffectEvent } from 'react';
 import { gifFrameCache, type CachedGifFrames } from '../services/gif-frame-cache';
 
 export interface UseGifFramesOptions {
@@ -54,10 +54,10 @@ export function useGifFrames({
   // Ref to track if extraction is in progress
   const isExtractingRef = useRef(false);
 
-  // Progress callback
-  const handleProgress = useCallback((p: number) => {
+  // Progress callback - using useEffectEvent so it doesn't need to be in effect deps
+  const onProgress = useEffectEvent((p: number) => {
     setProgress(p);
-  }, []);
+  });
 
   // Subscribe to progressive updates
   useEffect(() => {
@@ -102,7 +102,7 @@ export function useGifFrames({
 
     // Request GIF frames from cache (which will extract if needed)
     gifFrameCache
-      .getGifFrames(mediaId, blobUrl, handleProgress)
+      .getGifFrames(mediaId, blobUrl, onProgress)
       .then((result) => {
         setGifData(result);
         setIsLoading(false);
@@ -120,7 +120,8 @@ export function useGifFrames({
       });
 
     // Don't abort on effect re-runs - let extraction continue in background
-  }, [mediaId, blobUrl, isVisible, enabled, gifData?.isComplete, handleProgress]);
+    // Note: onProgress uses useEffectEvent so doesn't need to be in deps
+  }, [mediaId, blobUrl, isVisible, enabled, gifData?.isComplete]);
 
   // Memoized getFrameAtTime function
   const getFrameAtTime = useCallback(

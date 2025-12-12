@@ -96,3 +96,4 @@ npm run build   # Production build
 - **Playback:** Don't subscribe to `currentFrame` - read from store in callbacks (see `playback-optimization.md`)
 
 See `.claude/docs/` for comprehensive documentation on all topics.
+- remember to use https://react.dev/blog/2025/10/01/react-19-2 updates
