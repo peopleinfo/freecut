@@ -8,6 +8,7 @@ import { Toolbar } from './toolbar';
 import { MediaSidebar } from './media-sidebar';
 import { PropertiesSidebar } from './properties-sidebar';
 import { PreviewArea } from './preview-area';
+import { ProjectDebugPanel } from './project-debug-panel';
 import { Timeline } from '@/features/timeline/components/timeline';
 import { ExportDialog } from '@/features/export/components/export-dialog';
 import { useEditorHotkeys } from '@/hooks/use-editor-hotkeys';
@@ -267,6 +268,9 @@ export function Editor({ projectId, project }: EditorProps) {
 
       {/* Export Dialog */}
       <ExportDialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} />
+
+      {/* Debug Panel (dev mode only) */}
+      <ProjectDebugPanel projectId={projectId} />
     </div>
   );
 }

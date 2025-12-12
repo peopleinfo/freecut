@@ -2,7 +2,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app';
 import { filmstripCache } from '@/features/timeline/services/filmstrip-cache';
+import { initializeDebugUtils } from '@/lib/debug';
 import './index.css';
+
+// Initialize debug utilities in development mode
+initializeDebugUtils();
 
 // Cleanup filmstrip workers on page unload
 window.addEventListener('beforeunload', () => {

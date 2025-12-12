@@ -1,0 +1,333 @@
+/**
+ * Project Debug Panel
+ *
+ * Floating debug panel for project data operations.
+ * Only visible in development mode.
+ */
+
+import { useState, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { cn } from '@/lib/utils';
+import {
+  Bug,
+  Download,
+  Upload,
+  Clipboard,
+  ClipboardPaste,
+  FileJson,
+  Database,
+  CheckCircle,
+  XCircle,
+  ChevronDown,
+  X,
+} from 'lucide-react';
+
+interface DebugAction {
+  label: string;
+  icon: React.ReactNode;
+  action: () => Promise<void>;
+  description: string;
+}
+
+interface ProjectDebugPanelProps {
+  projectId: string;
+}
+
+export function ProjectDebugPanel({ projectId }: ProjectDebugPanelProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [status, setStatus] = useState<{
+    type: 'idle' | 'loading' | 'success' | 'error';
+    message?: string;
+  }>({ type: 'idle' });
+
+  // Only show in development mode
+  if (!import.meta.env.DEV) {
+    return null;
+  }
+
+  const showStatus = (type: 'success' | 'error', message: string) => {
+    setStatus({ type, message });
+    setTimeout(() => setStatus({ type: 'idle' }), 3000);
+  };
+
+  const runAction = async (fn: () => Promise<void>, successMsg: string) => {
+    setStatus({ type: 'loading' });
+    try {
+      await fn();
+      showStatus('success', successMsg);
+    } catch (error) {
+      showStatus('error', error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
+  const handleExportJson = useCallback(async () => {
+    const { downloadProjectJson } = await import(
+      '@/features/project-bundle/services/json-export-service'
+    );
+    await downloadProjectJson(projectId);
+  }, [projectId]);
+
+  const handleCopyToClipboard = useCallback(async () => {
+    const { copyProjectToClipboard } = await import(
+      '@/features/project-bundle/services/json-export-service'
+    );
+    await copyProjectToClipboard(projectId);
+  }, [projectId]);
+
+  const handleImportFromClipboard = useCallback(async () => {
+    const { importProjectFromClipboard } = await import(
+      '@/features/project-bundle/services/json-import-service'
+    );
+    const result = await importProjectFromClipboard();
+    console.log('[Debug] Imported project:', result.project.id);
+    // Reload to show new project
+    window.location.href = `/editor/${result.project.id}`;
+  }, []);
+
+  const handleImportFromFile = useCallback(async () => {
+    const { showImportFilePicker } = await import(
+      '@/features/project-bundle/services/json-import-service'
+    );
+    const result = await showImportFilePicker();
+    if (result) {
+      console.log('[Debug] Imported project:', result.project.id);
+      // Reload to show new project
+      window.location.href = `/editor/${result.project.id}`;
+    }
+  }, []);
+
+  const handleLogSnapshot = useCallback(async () => {
+    const { exportProjectJson, getSnapshotStats } = await import(
+      '@/features/project-bundle/services/json-export-service'
+    );
+    const snapshot = await exportProjectJson(projectId);
+    const stats = getSnapshotStats(snapshot);
+    console.log('[Debug] Project Snapshot:', snapshot);
+    console.log('[Debug] Stats:', stats);
+    console.table(stats);
+  }, [projectId]);
+
+  const handleLogDBStats = useCallback(async () => {
+    const { getDBStats } = await import('@/lib/storage/indexeddb');
+    const stats = await getDBStats();
+    console.log('[Debug] Database Stats:', stats);
+    console.table(stats);
+  }, []);
+
+  const handleValidateProject = useCallback(async () => {
+    const { exportProjectJson } = await import(
+      '@/features/project-bundle/services/json-export-service'
+    );
+    const { validateSnapshotData } = await import(
+      '@/features/project-bundle/services/json-import-service'
+    );
+    const snapshot = await exportProjectJson(projectId);
+    const result = await validateSnapshotData(snapshot);
+    console.log('[Debug] Validation Result:', result);
+    if (result.valid) {
+      console.log('%c VALID ', 'background: #00b894; color: white; font-weight: bold;');
+    } else {
+      console.log('%c INVALID ', 'background: #d63031; color: white; font-weight: bold;');
+      console.table(result.errors);
+    }
+    if (result.warnings.length > 0) {
+      console.log('%c WARNINGS ', 'background: #fdcb6e; color: black; font-weight: bold;');
+      console.table(result.warnings);
+    }
+  }, [projectId]);
+
+  const exportActions: DebugAction[] = [
+    {
+      label: 'Download JSON',
+      icon: <Download className="h-3.5 w-3.5" />,
+      action: () => runAction(handleExportJson, 'Downloaded .freecut.json'),
+      description: 'Download project as JSON file',
+    },
+    {
+      label: 'Copy to Clipboard',
+      icon: <Clipboard className="h-3.5 w-3.5" />,
+      action: () => runAction(handleCopyToClipboard, 'Copied to clipboard'),
+      description: 'Copy project JSON to clipboard',
+    },
+  ];
+
+  const importActions: DebugAction[] = [
+    {
+      label: 'Import from File',
+      icon: <Upload className="h-3.5 w-3.5" />,
+      action: () => runAction(handleImportFromFile, 'Imported successfully'),
+      description: 'Import project from JSON file',
+    },
+    {
+      label: 'Import from Clipboard',
+      icon: <ClipboardPaste className="h-3.5 w-3.5" />,
+      action: () => runAction(handleImportFromClipboard, 'Imported successfully'),
+      description: 'Import project from clipboard',
+    },
+  ];
+
+  const inspectActions: DebugAction[] = [
+    {
+      label: 'Log Snapshot',
+      icon: <FileJson className="h-3.5 w-3.5" />,
+      action: () => runAction(handleLogSnapshot, 'Logged to console'),
+      description: 'Log project snapshot to console',
+    },
+    {
+      label: 'Log DB Stats',
+      icon: <Database className="h-3.5 w-3.5" />,
+      action: () => runAction(handleLogDBStats, 'Logged to console'),
+      description: 'Log IndexedDB statistics',
+    },
+    {
+      label: 'Validate Schema',
+      icon: <CheckCircle className="h-3.5 w-3.5" />,
+      action: () => runAction(handleValidateProject, 'Validation complete'),
+      description: 'Validate project against schema',
+    },
+  ];
+
+  const ActionButton = ({ action }: { action: DebugAction }) => (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="w-full justify-start gap-2 h-8 text-xs"
+      onClick={action.action}
+      disabled={status.type === 'loading'}
+      title={action.description}
+    >
+      {action.icon}
+      {action.label}
+    </Button>
+  );
+
+  return (
+    <>
+      {/* Floating Toggle Button */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          'fixed bottom-4 right-4 z-50 p-2.5 rounded-full shadow-lg transition-all',
+          'bg-amber-500 hover:bg-amber-600 text-white',
+          'focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2',
+          isOpen && 'rotate-180'
+        )}
+        title="Toggle Debug Panel"
+      >
+        <Bug className="h-5 w-5" />
+      </button>
+
+      {/* Debug Panel */}
+      {isOpen && (
+        <div
+          className={cn(
+            'fixed bottom-16 right-4 z-50 w-64',
+            'bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl',
+            'text-zinc-100 text-sm'
+          )}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700">
+            <div className="flex items-center gap-2">
+              <Bug className="h-4 w-4 text-amber-500" />
+              <span className="font-medium">Debug Panel</span>
+            </div>
+            <button
+              onClick={() => setIsOpen(false)}
+              className="p-1 hover:bg-zinc-800 rounded"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Status Bar */}
+          {status.type !== 'idle' && (
+            <div
+              className={cn(
+                'px-3 py-1.5 text-xs flex items-center gap-2',
+                status.type === 'loading' && 'bg-blue-500/20 text-blue-300',
+                status.type === 'success' && 'bg-green-500/20 text-green-300',
+                status.type === 'error' && 'bg-red-500/20 text-red-300'
+              )}
+            >
+              {status.type === 'loading' && (
+                <div className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              )}
+              {status.type === 'success' && <CheckCircle className="h-3 w-3" />}
+              {status.type === 'error' && <XCircle className="h-3 w-3" />}
+              <span className="truncate">{status.message || 'Processing...'}</span>
+            </div>
+          )}
+
+          {/* Content */}
+          <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+            <CollapsibleTrigger asChild>
+              <button className="w-full px-3 py-2 flex items-center justify-between hover:bg-zinc-800/50 text-xs text-zinc-400">
+                <span>Project: {projectId.slice(0, 8)}...</span>
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 transition-transform',
+                    isExpanded && 'rotate-180'
+                  )}
+                />
+              </button>
+            </CollapsibleTrigger>
+
+            <CollapsibleContent>
+              <div className="px-2 pb-2 space-y-3">
+                {/* Export Section */}
+                <div>
+                  <div className="px-1 py-1 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                    Export
+                  </div>
+                  <div className="space-y-0.5">
+                    {exportActions.map((action) => (
+                      <ActionButton key={action.label} action={action} />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Import Section */}
+                <div>
+                  <div className="px-1 py-1 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                    Import
+                  </div>
+                  <div className="space-y-0.5">
+                    {importActions.map((action) => (
+                      <ActionButton key={action.label} action={action} />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Inspect Section */}
+                <div>
+                  <div className="px-1 py-1 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                    Inspect
+                  </div>
+                  <div className="space-y-0.5">
+                    {inspectActions.map((action) => (
+                      <ActionButton key={action.label} action={action} />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Console Hint */}
+                <div className="px-1 pt-2 border-t border-zinc-800">
+                  <p className="text-[10px] text-zinc-500">
+                    Also available via <code className="bg-zinc-800 px-1 rounded">window.__DEBUG__</code>
+                  </p>
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      )}
+    </>
+  );
+}
