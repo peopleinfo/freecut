@@ -15,6 +15,8 @@ export interface ClipContentProps {
   fps: number;
   isClipVisible: boolean;
   pixelsPerSecond: number;
+  /** Position of the clip's left edge in timeline pixels (for viewport culling) */
+  clipLeftPosition: number;
 }
 
 /**
@@ -31,6 +33,7 @@ export const ClipContent = memo(function ClipContent({
   fps,
   isClipVisible,
   pixelsPerSecond,
+  clipLeftPosition,
 }: ClipContentProps) {
   const sourceStart = (item.sourceStart ?? 0) / fps;
   const sourceDuration = (item.sourceDuration ?? item.durationInFrames) / fps;
@@ -53,6 +56,7 @@ export const ClipContent = memo(function ClipContent({
             fps={fps}
             isVisible={isClipVisible}
             pixelsPerSecond={pixelsPerSecond}
+            clipLeftPosition={clipLeftPosition}
             height={VIDEO_FILMSTRIP_HEIGHT}
             className="top-0"
           />

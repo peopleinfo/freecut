@@ -641,6 +641,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         fps={fps}
         isClipVisible={isClipVisible}
         pixelsPerSecond={pixelsPerSecond}
+        clipLeftPosition={left}
       />
 
       {/* Status indicators (keyframes, speed, broken media, mask) */}

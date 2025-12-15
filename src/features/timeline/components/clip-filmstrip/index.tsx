@@ -3,6 +3,7 @@ import { FilmstripSkeleton } from './filmstrip-skeleton';
 import { useFilmstrip, type FilmstripFrame } from '../../hooks/use-filmstrip';
 import { mediaLibraryService } from '@/features/media-library/services/media-library-service';
 import { THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from '../../services/filmstrip-cache';
+import { useTimelineScrollContextOptional } from '../../contexts/timeline-scroll-context';
 
 export interface ClipFilmstripProps {
   /** Media ID from the timeline item */
@@ -23,6 +24,8 @@ export interface ClipFilmstripProps {
   isVisible: boolean;
   /** Pixels per second from parent (avoids redundant zoom subscription) */
   pixelsPerSecond: number;
+  /** Position of the clip's left edge in timeline pixels (for viewport culling) */
+  clipLeftPosition: number;
   /** Optional height override */
   height?: number;
   /** Optional className for positioning */
@@ -103,14 +106,19 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
   fps: _fps,
   isVisible,
   pixelsPerSecond,
+  clipLeftPosition,
   height = THUMBNAIL_HEIGHT,
   className = 'top-1',
 }: ClipFilmstripProps) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
+  // Get scroll context for viewport-based tile culling
+  const { scrollLeft, viewportWidth } = useTimelineScrollContextOptional();
+
   // Defer zoom values to keep zoom slider responsive
   const deferredPixelsPerSecond = useDeferredValue(pixelsPerSecond);
   const deferredClipWidth = useDeferredValue(clipWidth);
+  const deferredClipLeftPosition = useDeferredValue(clipLeftPosition);
 
   // Load blob URL for the media
   useEffect(() => {
@@ -145,7 +153,8 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
     enabled: isVisible && !!blobUrl && sourceDuration > 0,
   });
 
-  // Calculate tiles - maps each tile position to the best frame
+  // Calculate visible tiles only - viewport culling for performance
+  // Only render tiles that are within the visible viewport + overscan buffer
   const tiles = useMemo(() => {
     if (!frames || frames.length === 0) return [];
 
@@ -153,8 +162,21 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
     const tileCount = Math.ceil(deferredClipWidth / THUMBNAIL_WIDTH);
     const result: { tileIndex: number; frame: FilmstripFrame; x: number }[] = [];
 
+    // Calculate visible range relative to this clip's position
+    // Overscan: render 2 extra tiles on each side for smooth scrolling
+    const overscan = THUMBNAIL_WIDTH * 2;
+    const visibleStart = scrollLeft - deferredClipLeftPosition - overscan;
+    const visibleEnd = scrollLeft - deferredClipLeftPosition + viewportWidth + overscan;
+
     for (let tile = 0; tile < tileCount; tile++) {
       const tileX = tile * THUMBNAIL_WIDTH;
+      const tileRight = tileX + THUMBNAIL_WIDTH;
+
+      // Skip tiles outside visible range
+      if (tileRight < visibleStart || tileX > visibleEnd) {
+        continue;
+      }
+
       const tileTime = effectiveStart + (tileX / deferredPixelsPerSecond) * speed;
       const frame = findClosestFrame(frames, tileTime);
 
@@ -164,7 +186,7 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
     }
 
     return result;
-  }, [frames, deferredClipWidth, deferredPixelsPerSecond, sourceStart, trimStart, speed]);
+  }, [frames, deferredClipWidth, deferredPixelsPerSecond, sourceStart, trimStart, speed, scrollLeft, viewportWidth, deferredClipLeftPosition]);
 
   if (error) {
     return null;

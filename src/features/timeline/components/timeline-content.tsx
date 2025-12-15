@@ -30,6 +30,7 @@ import { TimelineTrack } from './timeline-track';
 import { TimelineGuidelines } from './timeline-guidelines';
 import { TimelineSplitIndicator } from './timeline-split-indicator';
 import { MarqueeOverlay } from '@/components/marquee-overlay';
+import { TimelineScrollProvider } from '../contexts/timeline-scroll-context';
 
 export interface TimelineContentProps {
   duration: number; // Total timeline duration in seconds
@@ -653,25 +654,31 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
         velocityZoomRef.current = 0;
       }
 
-      // Ctrl/Cmd + scroll = zoom with momentum (anchored to cursor position)
+      // Ctrl/Cmd + scroll = discrete zoom in 10% increments (anchored to cursor position)
       if (event.ctrlKey || event.metaKey) {
         velocityXRef.current = 0;
         velocityYRef.current = 0;
+        velocityZoomRef.current = 0;
 
-        // Only capture cursor position at START of zoom gesture (not during continuous zoom)
-        // Use longer timeout (500ms) to avoid anchor jumping during natural gesture pauses
-        const zoomTimeDelta = now - lastZoomWheelTimeRef.current;
-        const isNewZoomGesture = zoomTimeDelta > 500;
-        if (isNewZoomGesture) {
-          const rect = container.getBoundingClientRect();
-          zoomCursorXRef.current = event.clientX - rect.left;
+        // Capture cursor position for anchor zoom
+        const rect = container.getBoundingClientRect();
+        zoomCursorXRef.current = event.clientX - rect.left;
+
+        const currentZoom = zoomLevelRef.current;
+        const ZOOM_STEP = 0.05; // 5% increments
+        const MIN_ZOOM = 0.01; // 1%
+        const MAX_ZOOM = 2; // 200%
+
+        let newZoom: number;
+        if (event.deltaY > 0) {
+          // Scroll down = zoom out
+          newZoom = Math.max(MIN_ZOOM, currentZoom - ZOOM_STEP);
+        } else {
+          // Scroll up = zoom in
+          newZoom = Math.min(MAX_ZOOM, currentZoom + ZOOM_STEP);
         }
-        lastZoomWheelTimeRef.current = now;
 
-        const zoomSmoothingFactor = 1 - ZOOM_SMOOTHING;
-        const delta = event.deltaY * ZOOM_SENSITIVITY;
-        velocityZoomRef.current = velocityZoomRef.current * zoomSmoothingFactor + delta * ZOOM_SMOOTHING;
-        startMomentumScroll();
+        applyZoomWithPlayheadCentering(newZoom);
         return;
       }
 
@@ -722,42 +729,44 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
         <TimelinePlayhead inRuler maxFrame={Math.floor(actualDuration * fps)} />
       </div>
 
-      {/* Track lanes */}
-      <div
-        ref={tracksContainerRef}
-        className="relative timeline-tracks"
-        style={{
-          width: `${timelineWidth}px`,
-          // CSS containment and will-change hints for scroll/paint optimization
-          contain: 'layout style paint',
-          willChange: 'contents',
-        }}
-        onMouseMove={handleMouseMoveForRazor}
-        onMouseLeave={handleMouseLeaveForRazor}
-      >
-        {tracks.map((track) => (
-          <TimelineTrack key={track.id} track={track} timelineWidth={timelineWidth} />
-        ))}
+      {/* Track lanes - wrapped in scroll provider for viewport culling */}
+      <TimelineScrollProvider scrollLeft={scrollLeft} viewportWidth={containerWidth}>
+        <div
+          ref={tracksContainerRef}
+          className="relative timeline-tracks"
+          style={{
+            width: `${timelineWidth}px`,
+            // CSS containment and will-change hints for scroll/paint optimization
+            contain: 'layout style paint',
+            willChange: 'contents',
+          }}
+          onMouseMove={handleMouseMoveForRazor}
+          onMouseLeave={handleMouseLeaveForRazor}
+        >
+          {tracks.map((track) => (
+            <TimelineTrack key={track.id} track={track} timelineWidth={timelineWidth} />
+          ))}
 
-        {/* Snap guidelines (shown during drag) */}
-        {isDragging && (
-          <TimelineGuidelines
-            activeSnapTarget={activeSnapTarget}
-          />
-        )}
+          {/* Snap guidelines (shown during drag) */}
+          {isDragging && (
+            <TimelineGuidelines
+              activeSnapTarget={activeSnapTarget}
+            />
+          )}
 
-        {/* Split indicator (shown in razor mode when hovering over an item) */}
-        {activeTool === 'razor' && hoveredItemElement && (
-          <TimelineSplitIndicator
-            cursorX={razorCursorX}
-            hoveredElement={hoveredItemElement}
-            tracksContainerRef={tracksContainerRef}
-          />
-        )}
+          {/* Split indicator (shown in razor mode when hovering over an item) */}
+          {activeTool === 'razor' && hoveredItemElement && (
+            <TimelineSplitIndicator
+              cursorX={razorCursorX}
+              hoveredElement={hoveredItemElement}
+              tracksContainerRef={tracksContainerRef}
+            />
+          )}
 
-        {/* Playhead line through all tracks */}
-        <TimelinePlayhead maxFrame={Math.floor(actualDuration * fps)} />
-      </div>
+          {/* Playhead line through all tracks */}
+          <TimelinePlayhead maxFrame={Math.floor(actualDuration * fps)} />
+        </div>
+      </TimelineScrollProvider>
     </div>
   );
 });
