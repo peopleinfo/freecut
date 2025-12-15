@@ -3,13 +3,24 @@
  *
  * Manages waveform data caching with:
  * - In-memory LRU cache for fast access
- * - IndexedDB persistence across sessions
+ * - OPFS multi-resolution persistence (faster than IndexedDB)
  * - Mediabunny-based waveform generation (hardware-accelerated)
+ * - Auto-migration from legacy IndexedDB storage
  */
 
 import type { WaveformData } from '@/types/storage';
-import { getWaveform, saveWaveform, deleteWaveform, reconnectDB } from '@/lib/storage/indexeddb';
 import { createLogger } from '@/lib/logger';
+import {
+  waveformOPFSStorage,
+  WAVEFORM_LEVELS,
+  chooseLevelForZoom,
+  type MultiResolutionWaveform,
+} from './waveform-opfs-storage';
+// Legacy IndexedDB imports for migration
+import {
+  getWaveform as getFromIndexedDB,
+  deleteWaveform as deleteFromIndexedDB,
+} from '@/lib/storage/indexeddb';
 
 const logger = createLogger('WaveformCache');
 
@@ -19,8 +30,8 @@ const mediabunnyModule = () => import('mediabunny');
 // Memory cache configuration
 const MAX_CACHE_SIZE_BYTES = 20 * 1024 * 1024; // 20MB
 
-// Samples per second for waveform generation
-const SAMPLES_PER_SECOND = 100;
+// Samples per second for waveform generation (highest resolution)
+const SAMPLES_PER_SECOND = WAVEFORM_LEVELS[0]; // 1000 samples/sec
 
 export interface CachedWaveform {
   peaks: Float32Array;
@@ -107,60 +118,92 @@ class WaveformCacheService {
   }
 
   /**
-   * Load waveform from IndexedDB and convert to memory cache format
+   * Load waveform from OPFS (with IndexedDB migration fallback)
    */
-  private async loadFromIndexedDB(mediaId: string): Promise<CachedWaveform | null> {
+  private async loadFromStorage(mediaId: string): Promise<CachedWaveform | null> {
+    // Try OPFS first (new format with multi-resolution)
     try {
-      const stored = await getWaveform(mediaId);
+      // Load the highest resolution level for now (level 0)
+      const level = await waveformOPFSStorage.getLevel(mediaId, 0);
+      if (level) {
+        const cached: CachedWaveform = {
+          peaks: level.peaks,
+          duration: level.peaks.length / level.sampleRate,
+          sampleRate: level.sampleRate,
+          channels: 1, // Mono after mixdown
+          sizeBytes: level.peaks.byteLength,
+          lastAccessed: Date.now(),
+        };
 
-      if (!stored || !stored.peaks) {
-        return null;
+        this.addToMemoryCache(mediaId, cached);
+        return cached;
       }
+    } catch (err) {
+      logger.warn('Failed to load waveform from OPFS:', err);
+    }
 
-      // Convert ArrayBuffer back to Float32Array
-      const peaks = new Float32Array(stored.peaks);
+    // Fallback: Try legacy IndexedDB and migrate
+    try {
+      const stored = await getFromIndexedDB(mediaId);
 
-      const cached: CachedWaveform = {
+      if (stored && stored.peaks) {
+        // Convert ArrayBuffer back to Float32Array
+        const peaks = new Float32Array(stored.peaks);
+
+        const cached: CachedWaveform = {
+          peaks,
+          duration: stored.duration,
+          sampleRate: stored.sampleRate,
+          channels: stored.channels,
+          sizeBytes: stored.peaks.byteLength,
+          lastAccessed: Date.now(),
+        };
+
+        // Add to memory cache
+        this.addToMemoryCache(mediaId, cached);
+
+        // Migrate to OPFS in background
+        this.migrateToOPFS(mediaId, peaks, stored.duration, stored.channels).catch(() => {});
+
+        return cached;
+      }
+    } catch (error) {
+      logger.warn(`Failed to load waveform from IndexedDB: ${mediaId}`, error);
+    }
+
+    return null;
+  }
+
+  /**
+   * Migrate waveform from IndexedDB to OPFS with multi-resolution
+   */
+  private async migrateToOPFS(
+    mediaId: string,
+    peaks: Float32Array,
+    duration: number,
+    channels: number
+  ): Promise<void> {
+    try {
+      // Generate multi-resolution levels from source peaks
+      const levels = waveformOPFSStorage.generateMultiResolution(
         peaks,
-        duration: stored.duration,
-        sampleRate: stored.sampleRate,
-        channels: stored.channels,
-        sizeBytes: stored.peaks.byteLength,
-        lastAccessed: Date.now(),
+        100, // Legacy IndexedDB stored at 100 samples/sec
+        duration
+      );
+
+      const multiRes: MultiResolutionWaveform = {
+        duration,
+        channels,
+        levels,
       };
 
-      // Add to memory cache
-      this.addToMemoryCache(mediaId, cached);
+      await waveformOPFSStorage.save(mediaId, multiRes);
 
-      return cached;
-    } catch (error) {
-      // Check if this is a missing object store error (database needs upgrade)
-      if (error instanceof Error && error.message.includes('object store')) {
-        logger.warn('IndexedDB schema outdated, attempting reconnection...');
-        try {
-          await reconnectDB();
-          // Retry once after reconnection
-          const stored = await getWaveform(mediaId);
-          if (stored && stored.peaks) {
-            const peaks = new Float32Array(stored.peaks);
-            const cached: CachedWaveform = {
-              peaks,
-              duration: stored.duration,
-              sampleRate: stored.sampleRate,
-              channels: stored.channels,
-              sizeBytes: stored.peaks.byteLength,
-              lastAccessed: Date.now(),
-            };
-            this.addToMemoryCache(mediaId, cached);
-            return cached;
-          }
-        } catch (retryError) {
-          logger.error('Failed to load waveform after reconnection:', retryError);
-        }
-      } else {
-        logger.error(`Failed to load waveform from IndexedDB: ${mediaId}`, error);
-      }
-      return null;
+      // Delete from IndexedDB after successful migration
+      await deleteFromIndexedDB(mediaId);
+      logger.debug(`Migrated waveform ${mediaId} from IndexedDB to OPFS`);
+    } catch (err) {
+      logger.warn(`Failed to migrate waveform ${mediaId}:`, err);
     }
   }
 
@@ -308,20 +351,23 @@ class WaveformCacheService {
       // Add to memory cache
       this.addToMemoryCache(mediaId, cached);
 
-      // Persist to IndexedDB
+      // Generate multi-resolution levels and persist to OPFS
       try {
-        const waveformData: WaveformData = {
-          id: mediaId,
-          mediaId,
-          peaks: peaks.buffer as ArrayBuffer,
+        const levels = waveformOPFSStorage.generateMultiResolution(
+          peaks,
+          SAMPLES_PER_SECOND,
+          duration
+        );
+
+        const multiRes: MultiResolutionWaveform = {
           duration,
-          sampleRate: SAMPLES_PER_SECOND,
           channels,
-          createdAt: Date.now(),
+          levels,
         };
-        await saveWaveform(waveformData);
+
+        await waveformOPFSStorage.save(mediaId, multiRes);
       } catch (saveError) {
-        logger.warn('Failed to persist waveform to IndexedDB:', saveError);
+        logger.warn('Failed to persist waveform to OPFS:', saveError);
       }
 
       onProgress?.(100);
@@ -352,10 +398,10 @@ class WaveformCacheService {
       return pending.promise;
     }
 
-    // Check IndexedDB
-    const dbCached = await this.loadFromIndexedDB(mediaId);
-    if (dbCached) {
-      return dbCached;
+    // Check OPFS/IndexedDB for persisted waveform
+    const storedCached = await this.loadFromStorage(mediaId);
+    if (storedCached) {
+      return storedCached;
     }
 
     // Generate new waveform
@@ -381,8 +427,8 @@ class WaveformCacheService {
       return;
     }
 
-    // Check IndexedDB asynchronously and generate if needed
-    this.loadFromIndexedDB(mediaId).then((cached) => {
+    // Check storage asynchronously and generate if needed
+    this.loadFromStorage(mediaId).then((cached) => {
       if (!cached && !this.pendingRequests.has(mediaId)) {
         // Generate in background (no progress callback)
         this.getWaveform(mediaId, blobUrl).catch((error) => {
@@ -413,8 +459,10 @@ class WaveformCacheService {
       this.memoryCache.delete(mediaId);
     }
 
-    // Clear from IndexedDB
-    await deleteWaveform(mediaId);
+    // Clear from OPFS
+    await waveformOPFSStorage.delete(mediaId);
+    // Also clear legacy IndexedDB if exists
+    await deleteFromIndexedDB(mediaId).catch(() => {});
   }
 
   /**
@@ -436,7 +484,43 @@ class WaveformCacheService {
     }
     this.activeExtractions.clear();
   }
+
+  /**
+   * Get waveform peaks for a specific time range at appropriate resolution
+   * Used for rendering only the visible portion of long audio files
+   */
+  async getWaveformRange(
+    mediaId: string,
+    startTime: number,
+    endTime: number,
+    pixelsPerSecond: number
+  ): Promise<{
+    peaks: Float32Array;
+    sampleRate: number;
+    startSample: number;
+  } | null> {
+    const levelIndex = chooseLevelForZoom(pixelsPerSecond);
+    return waveformOPFSStorage.getLevelRange(mediaId, levelIndex, startTime, endTime);
+  }
+
+  /**
+   * Get waveform at a specific resolution level
+   * Useful for zoom-optimized rendering
+   */
+  async getWaveformLevel(
+    mediaId: string,
+    pixelsPerSecond: number
+  ): Promise<{
+    peaks: Float32Array;
+    sampleRate: number;
+  } | null> {
+    const levelIndex = chooseLevelForZoom(pixelsPerSecond);
+    return waveformOPFSStorage.getLevel(mediaId, levelIndex);
+  }
 }
 
 // Singleton instance
 export const waveformCache = new WaveformCacheService();
+
+// Re-export utilities for consumers
+export { chooseLevelForZoom, WAVEFORM_LEVELS } from './waveform-opfs-storage';

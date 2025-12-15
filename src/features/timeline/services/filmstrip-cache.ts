@@ -13,14 +13,14 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('FilmstripCache');
 
-import {
-  deleteFilmstripsByMediaId,
-  getFilmstripByMediaId,
-  saveFilmstrip,
-} from '@/lib/storage/indexeddb';
-import type { FilmstripData } from '@/types/storage';
 import { THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from '@/features/timeline/constants';
 import { filmstripWorkerPool } from './filmstrip-worker-pool';
+import { filmstripOPFSStorage } from './filmstrip-opfs-storage';
+// Legacy IndexedDB imports for migration
+import {
+  deleteFilmstripsByMediaId as deleteFromIndexedDB,
+  getFilmstripByMediaId as getFromIndexedDB,
+} from '@/lib/storage/indexeddb';
 
 // Re-export for consumers that import from this file
 export { THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT };
@@ -273,21 +273,21 @@ class FilmstripCacheService {
             this.addToMemoryCache(mediaId, cached);
             this.notifyUpdate(mediaId, cached);
 
-            // Persist to IndexedDB for reload persistence
+            // Persist to OPFS for reload persistence (faster than IndexedDB)
             try {
-              const filmstripData: FilmstripData = {
-                id: `${mediaId}:high`,
+              const framesWithTimestamps = blobs.map((blob, i) => ({
+                timestamp: timestamps[i],
+                blob,
+              }));
+              await filmstripOPFSStorage.save(
                 mediaId,
-                density: 'high',
-                frames: blobs,
-                timestamps,
-                width: THUMBNAIL_WIDTH,
-                height: THUMBNAIL_HEIGHT,
-                createdAt: Date.now(),
-              };
-              await saveFilmstrip(filmstripData);
+                framesWithTimestamps,
+                THUMBNAIL_WIDTH,
+                THUMBNAIL_HEIGHT,
+                JPEG_QUALITY
+              );
             } catch (err) {
-              logger.warn('Failed to persist filmstrip to IndexedDB:', err);
+              logger.warn('Failed to persist filmstrip to OPFS:', err);
             }
 
             onProgress?.(100);
@@ -314,47 +314,118 @@ class FilmstripCacheService {
   }
 
   /**
-   * Load filmstrip from IndexedDB and convert blobs to ImageBitmaps
+   * Load filmstrip from OPFS (with IndexedDB migration fallback)
    */
-  private async loadFromIndexedDB(mediaId: string): Promise<CachedFilmstrip | null> {
+  private async loadFromStorage(mediaId: string): Promise<CachedFilmstrip | null> {
+    // Try OPFS first (new format)
     try {
-      const stored = await getFilmstripByMediaId(mediaId);
-      if (!stored || !stored.frames || stored.frames.length === 0) {
-        return null;
+      const opfsData = await filmstripOPFSStorage.getAllFrames(mediaId);
+      if (opfsData) {
+        // Validate dimensions
+        if (opfsData.header.width !== THUMBNAIL_WIDTH || opfsData.header.height !== THUMBNAIL_HEIGHT) {
+          logger.debug(`Filmstrip cache invalidated for ${mediaId}: dimensions changed`);
+          await filmstripOPFSStorage.delete(mediaId);
+          return null;
+        }
+
+        // Convert blobs to ImageBitmaps
+        const imageBitmaps: ImageBitmap[] = [];
+        const blobs: Blob[] = [];
+        const timestamps: number[] = [];
+        let sizeBytes = 0;
+
+        for (const frame of opfsData.frames) {
+          const bitmap = await createImageBitmap(frame.blob);
+          imageBitmaps.push(bitmap);
+          blobs.push(frame.blob);
+          timestamps.push(frame.timestamp);
+          sizeBytes += frame.blob.size;
+        }
+
+        return {
+          frames: imageBitmaps,
+          blobs,
+          timestamps,
+          width: opfsData.header.width,
+          height: opfsData.header.height,
+          sizeBytes,
+          lastAccessed: Date.now(),
+          isComplete: true,
+        };
       }
+    } catch (err) {
+      logger.warn('Failed to load filmstrip from OPFS:', err);
+    }
 
-      // Validate dimensions match current constants (invalidate if size changed)
-      if (stored.width !== THUMBNAIL_WIDTH || stored.height !== THUMBNAIL_HEIGHT) {
-        logger.debug(`Filmstrip cache invalidated for ${mediaId}: dimensions changed from ${stored.width}x${stored.height} to ${THUMBNAIL_WIDTH}x${THUMBNAIL_HEIGHT}`);
-        await deleteFilmstripsByMediaId(mediaId);
-        return null;
+    // Fallback: Try legacy IndexedDB and migrate
+    try {
+      const stored = await getFromIndexedDB(mediaId);
+      if (stored && stored.frames && stored.frames.length > 0) {
+        // Validate dimensions
+        if (stored.width !== THUMBNAIL_WIDTH || stored.height !== THUMBNAIL_HEIGHT) {
+          logger.debug(`Legacy filmstrip invalidated for ${mediaId}: dimensions changed`);
+          await deleteFromIndexedDB(mediaId);
+          return null;
+        }
+
+        // Convert blobs to ImageBitmaps
+        const imageBitmaps: ImageBitmap[] = [];
+        let sizeBytes = 0;
+
+        for (const blob of stored.frames) {
+          const bitmap = await createImageBitmap(blob);
+          imageBitmaps.push(bitmap);
+          sizeBytes += blob.size;
+        }
+
+        const cached: CachedFilmstrip = {
+          frames: imageBitmaps,
+          blobs: stored.frames,
+          timestamps: stored.timestamps,
+          width: stored.width,
+          height: stored.height,
+          sizeBytes,
+          lastAccessed: Date.now(),
+          isComplete: true,
+        };
+
+        // Migrate to OPFS in background
+        this.migrateToOPFS(mediaId, stored.frames, stored.timestamps).catch(() => {});
+
+        return cached;
       }
-
-      // Convert blobs to ImageBitmaps
-      const imageBitmaps: ImageBitmap[] = [];
-      let sizeBytes = 0;
-
-      for (const blob of stored.frames) {
-        const bitmap = await createImageBitmap(blob);
-        imageBitmaps.push(bitmap);
-        sizeBytes += blob.size;
-      }
-
-      const cached: CachedFilmstrip = {
-        frames: imageBitmaps,
-        blobs: stored.frames,
-        timestamps: stored.timestamps,
-        width: stored.width,
-        height: stored.height,
-        sizeBytes,
-        lastAccessed: Date.now(),
-        isComplete: true,
-      };
-
-      return cached;
     } catch (err) {
       logger.warn('Failed to load filmstrip from IndexedDB:', err);
-      return null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Migrate filmstrip from IndexedDB to OPFS
+   */
+  private async migrateToOPFS(
+    mediaId: string,
+    blobs: Blob[],
+    timestamps: number[]
+  ): Promise<void> {
+    try {
+      const framesWithTimestamps = blobs.map((blob, i) => ({
+        timestamp: timestamps[i],
+        blob,
+      }));
+      await filmstripOPFSStorage.save(
+        mediaId,
+        framesWithTimestamps,
+        THUMBNAIL_WIDTH,
+        THUMBNAIL_HEIGHT,
+        JPEG_QUALITY
+      );
+      // Delete from IndexedDB after successful migration
+      await deleteFromIndexedDB(mediaId);
+      logger.debug(`Migrated filmstrip ${mediaId} from IndexedDB to OPFS`);
+    } catch (err) {
+      logger.warn(`Failed to migrate filmstrip ${mediaId}:`, err);
     }
   }
 
@@ -380,8 +451,8 @@ class FilmstripCacheService {
       return pending.promise;
     }
 
-    // Check IndexedDB for persisted filmstrip
-    const stored = await this.loadFromIndexedDB(mediaId);
+    // Check OPFS/IndexedDB for persisted filmstrip
+    const stored = await this.loadFromStorage(mediaId);
     if (stored) {
       this.addToMemoryCache(mediaId, stored);
       this.notifyUpdate(mediaId, stored);
@@ -427,8 +498,10 @@ class FilmstripCacheService {
       this.memoryCache.delete(mediaId);
     }
 
-    // Clear from IndexedDB
-    await deleteFilmstripsByMediaId(mediaId);
+    // Clear from OPFS
+    await filmstripOPFSStorage.delete(mediaId);
+    // Also clear legacy IndexedDB if exists
+    await deleteFromIndexedDB(mediaId).catch(() => {});
   }
 
   /**

@@ -427,22 +427,16 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
     const effectiveContainerWidth = containerWidth > 0 ? containerWidth : 1920;
     const contentWidth = timeToPixels(contentDuration);
 
-    // Use the most up-to-date scroll position (ref is updated immediately, state is throttled)
-    // This ensures timeline doesn't shrink during zoom before state updates
-    const currentScroll = Math.max(scrollLeft, scrollLeftRef.current);
-    const currentViewEnd = currentScroll + effectiveContainerWidth;
-
-    // Only add buffer when content is wider than viewport (for smooth scroll to end)
+    // Only add buffer when content is wider than viewport
     // When content fits, use exact viewport width to avoid unnecessary scrollbar
     const baseWidth = contentWidth > effectiveContainerWidth
       ? contentWidth + 50
       : effectiveContainerWidth;
 
-    // Timeline must be at least as wide as current view to maintain zoom anchor
-    const width = Math.max(baseWidth, currentViewEnd);
-
-    return { actualDuration: contentDuration, timelineWidth: width };
-  }, [furthestItemEndFrame, fps, timeToPixels, containerWidth, scrollLeft]);
+    // Timeline width is based on content only - don't depend on scroll position
+    // This prevents feedback loops during zoom where scroll->width->scroll causes gradual shifts
+    return { actualDuration: contentDuration, timelineWidth: baseWidth };
+  }, [furthestItemEndFrame, fps, timeToPixels, containerWidth]);
 
   actualDurationRef.current = actualDuration;
 

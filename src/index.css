@@ -102,9 +102,9 @@
     font-family: 'IBM Plex Mono', 'Consolas', 'Monaco', monospace;
   }
 
-  /* Smooth scrolling */
+  /* Disable smooth scrolling globally - timeline needs instant response for zoom */
   * {
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
   }
 
   /* Professional scrollbar styling */
