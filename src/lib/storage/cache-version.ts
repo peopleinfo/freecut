@@ -23,7 +23,7 @@ const VERSION_PREFIX = 'cache-version-';
  * Bump version numbers here when format changes require cache invalidation
  */
 export const CACHE_VERSIONS = {
-  filmstrip: 5,    // OPFS filmstrip frames (v5: 4fps instead of 24fps)
+  filmstrip: 6,    // OPFS filmstrip frames (v6: 2fps, multi-worker)
   waveform: 2,     // OPFS waveform data
   thumbnail: 1,    // IndexedDB thumbnails
   media: 1,        // OPFS media files

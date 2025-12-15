@@ -13,7 +13,7 @@
 const FILMSTRIP_DIR = 'filmstrips';
 const IMAGE_FORMAT = 'image/webp';
 const IMAGE_QUALITY = 0.6; // Slightly lower for faster encoding
-const FRAME_RATE = 4; // 4fps is plenty for filmstrip thumbnails (was 24)
+const FRAME_RATE = 2; // 2fps for filmstrip thumbnails
 
 // Message types
 export interface ExtractRequest {
