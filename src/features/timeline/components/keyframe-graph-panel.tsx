@@ -237,6 +237,20 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
     setSelectedProperty(property);
   }, []);
 
+  // Handle scrubbing in graph editor - convert clip-relative frame to absolute frame
+  const handleScrub = useCallback(
+    (clipRelativeFrame: number) => {
+      if (!selectedItemWithKeyframes) return;
+      
+      // Convert clip-relative frame to absolute frame
+      const absoluteFrame = selectedItemWithKeyframes.item.from + clipRelativeFrame;
+      
+      // Update the playback store's current frame
+      usePlaybackStore.getState().setCurrentFrame(absoluteFrame);
+    },
+    [selectedItemWithKeyframes]
+  );
+
   // Don't show panel if no item with keyframes is selected and panel is not explicitly open
   const hasContent = !!selectedItemWithKeyframes;
 
@@ -324,6 +338,7 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
               onKeyframeMove={handleKeyframeMove}
               onSelectionChange={handleSelectionChange}
               onPropertyChange={handlePropertyChange}
+              onScrub={handleScrub}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground text-sm">

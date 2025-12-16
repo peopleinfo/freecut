@@ -50,6 +50,8 @@ interface ValueGraphEditorProps {
   onSelectionChange?: (keyframeIds: Set<string>) => void;
   /** Callback when property selection changes */
   onPropertyChange?: (property: AnimatableProperty | null) => void;
+  /** Callback when playhead is scrubbed (frame is clip-relative) */
+  onScrub?: (frame: number) => void;
   /** Whether the editor is disabled */
   disabled?: boolean;
   /** Additional class name */
@@ -73,11 +75,20 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
   onBezierHandleMove,
   onSelectionChange,
   onPropertyChange,
+  onScrub,
   disabled = false,
   className,
 }: ValueGraphEditorProps) {
   const padding = DEFAULT_GRAPH_PADDING;
   const svgRef = useRef<SVGSVGElement>(null);
+  
+  // Calculate heights for layout
+  // Toolbar: ~28px (min-h-7), Scrubber: ~32px (frame label + bar), gaps: ~4px (gap-1)
+  const toolbarHeight = 28;
+  const scrubberHeight = onScrub ? 32 : 0;
+  const gaps = 4; // gap-1 = 4px
+  const totalFixedHeight = toolbarHeight + scrubberHeight + gaps;
+  const graphHeight = Math.max(60, height - totalFixedHeight);
 
   // Get available properties
   const availableProperties = useMemo(
@@ -101,13 +112,13 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
   const calculateFittedViewport = useCallback((): GraphViewport => {
     return {
       width,
-      height,
+      height: graphHeight,
       startFrame: 0,
       endFrame: Math.max(totalFrames, 60),
       minValue: propertyRange?.min ?? 0,
       maxValue: propertyRange?.max ?? 1,
     };
-  }, [totalFrames, width, height, propertyRange]);
+  }, [totalFrames, width, graphHeight, propertyRange]);
 
   const [viewport, setViewport] = useState<GraphViewport>(() => calculateFittedViewport());
 
@@ -238,9 +249,9 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
   }, []);
 
   return (
-    <div className={cn('flex flex-col gap-2', className)}>
+    <div className={cn('flex flex-col gap-1 h-full overflow-hidden', className)} style={{ height }}>
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-2">
+      <div className="flex items-center justify-between px-2 flex-shrink-0 min-h-7">
         <div className="flex items-center gap-2">
           {/* Property selector */}
           <Select
@@ -334,9 +345,9 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
       <svg
         ref={svgRef}
         width={width}
-        height={height}
+        height={graphHeight}
         className={cn(
-          'border border-border rounded-md',
+          'border border-border rounded-md flex-shrink-0',
           disabled && 'opacity-50 pointer-events-none'
         )}
         onPointerMove={handlePointerMove}
@@ -377,6 +388,16 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
         <GraphPlayhead frame={currentFrame} viewport={viewport} padding={padding} />
       </svg>
 
+      {/* Timeline scrubber bar */}
+      {onScrub && (
+        <GraphScrubber
+          currentFrame={currentFrame}
+          totalFrames={totalFrames}
+          onScrub={onScrub}
+          disabled={disabled}
+        />
+      )}
+
       {/* Keyboard hints (shows when dragging) */}
       {isDragging && dragState?.type === 'keyframe' && (
         <div className="text-xs text-muted-foreground text-center space-x-3">
@@ -384,6 +405,109 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
           <span><kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Alt</kbd> fine adjust</span>
         </div>
       )}
+    </div>
+  );
+});
+
+/**
+ * Timeline scrubber component - horizontal progress bar for scrubbing through the clip.
+ */
+const GraphScrubber = memo(function GraphScrubber({
+  currentFrame,
+  totalFrames,
+  onScrub,
+  disabled = false,
+}: {
+  currentFrame: number;
+  totalFrames: number;
+  onScrub: (frame: number) => void;
+  disabled?: boolean;
+}) {
+  const barRef = useRef<HTMLDivElement>(null);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+
+  // Calculate progress percentage
+  const progress = totalFrames > 0 ? Math.min(100, Math.max(0, (currentFrame / totalFrames) * 100)) : 0;
+
+  // Convert x position to frame
+  const xToFrame = useCallback(
+    (clientX: number): number => {
+      const bar = barRef.current;
+      if (!bar) return 0;
+      
+      const rect = bar.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const percent = Math.max(0, Math.min(1, x / rect.width));
+      return Math.round(percent * (totalFrames - 1));
+    },
+    [totalFrames]
+  );
+
+  // Handle click/drag start
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (disabled) return;
+      e.preventDefault();
+      setIsScrubbing(true);
+      onScrub(xToFrame(e.clientX));
+    },
+    [disabled, onScrub, xToFrame]
+  );
+
+  // Handle drag
+  useEffect(() => {
+    if (!isScrubbing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      onScrub(xToFrame(e.clientX));
+    };
+
+    const handleMouseUp = () => {
+      setIsScrubbing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isScrubbing, onScrub, xToFrame]);
+
+  return (
+    <div className="flex-shrink-0 px-2">
+      {/* Frame indicator */}
+      <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-0.5">
+        <span>0</span>
+        <span className="text-foreground font-medium">Frame {currentFrame} / {totalFrames - 1}</span>
+        <span>{totalFrames - 1}</span>
+      </div>
+      
+      {/* Scrubber bar */}
+      <div
+        ref={barRef}
+        className={cn(
+          'relative h-3 bg-muted/50 rounded cursor-ew-resize overflow-hidden border border-border',
+          disabled && 'opacity-50 cursor-not-allowed'
+        )}
+        onMouseDown={handleMouseDown}
+      >
+        {/* Progress fill */}
+        <div
+          className="absolute inset-y-0 left-0 bg-primary/40 transition-none"
+          style={{ width: `${progress}%` }}
+        />
+        
+        {/* Playhead thumb */}
+        <div
+          className={cn(
+            'absolute top-1/2 -translate-y-1/2 w-2 h-full bg-primary rounded-sm',
+            'transition-none'
+          )}
+          style={{ left: `calc(${progress}% - 4px)` }}
+        />
+      </div>
     </div>
   );
 });

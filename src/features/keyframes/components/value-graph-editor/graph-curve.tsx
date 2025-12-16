@@ -185,6 +185,7 @@ export const GraphExtensionLines = memo(function GraphExtensionLines({
 
 /**
  * Playhead indicator on the graph.
+ * Shows current frame position as a vertical line with a triangular marker.
  */
 export const GraphPlayhead = memo(function GraphPlayhead({
   frame,
@@ -208,21 +209,33 @@ export const GraphPlayhead = memo(function GraphPlayhead({
   const x = graphLeft + ((frame - startFrame) / (endFrame - startFrame)) * graphWidth;
 
   return (
-    <g className="graph-playhead">
+    <g className="graph-playhead" style={{ pointerEvents: 'none' }}>
       <line
         x1={x}
         y1={graphTop}
         x2={x}
         y2={graphTop + graphHeight}
-        stroke="hsl(var(--destructive))"
+        stroke="#ef4444"
         strokeWidth={2}
-        strokeOpacity={0.8}
+        strokeOpacity={0.9}
       />
       {/* Playhead top marker */}
       <path
         d={`M ${x - 6} ${graphTop} L ${x + 6} ${graphTop} L ${x} ${graphTop + 8} Z`}
-        fill="hsl(var(--destructive))"
+        fill="#ef4444"
       />
+      {/* Frame number label */}
+      <text
+        x={x}
+        y={graphTop - 4}
+        textAnchor="middle"
+        fill="#ef4444"
+        fontSize={9}
+        fontFamily="monospace"
+        fontWeight="bold"
+      >
+        F{Math.round(frame)}
+      </text>
     </g>
   );
 });
