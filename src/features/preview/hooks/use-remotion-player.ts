@@ -162,10 +162,10 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
     if (!playerRef.current) return;
 
     let lastUpdateTime = 0;
-    // Minimal throttling during playback - UI updates at ~30fps
-    // After removing currentFrame subscriptions from Editor/TimelineShortcuts/SnapCalculator,
-    // we can afford near-realtime updates. Only TimecodeDisplay and TimelinePlayhead re-render now.
-    const THROTTLE_MS = 33;
+    // Throttle during playback to reduce store updates and prevent audio stuttering.
+    // 100ms (10fps) is sufficient for visual feedback during playback.
+    // Only TimecodeDisplay and TimelinePlayhead subscribe to currentFrame.
+    const THROTTLE_MS = 100;
 
     const handleFrameUpdate = (e: { detail: { frame: number } }) => {
       // Ignore updates right after we seeked
