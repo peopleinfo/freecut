@@ -68,13 +68,17 @@ export function extractAudioSegments(composition: RemotionInputProps): AudioSegm
         const videoItem = item as VideoItem;
         if (!videoItem.src) continue;
 
-        segments.push({
+        // Use sourceStart as primary - it contains the full source offset including:
+      // 1. Original position from split operations
+      // 2. Additional trim from IO markers
+      // Fall back to trimStart for backward compatibility
+      segments.push({
           itemId: item.id,
           trackId: track.id,
           src: videoItem.src,
           startFrame: item.from,
           durationFrames: item.durationInFrames,
-          sourceStartFrame: videoItem.trimStart ?? videoItem.sourceStart ?? 0,
+          sourceStartFrame: videoItem.sourceStart ?? videoItem.trimStart ?? 0,
           volume: item.volume ?? 0, // dB
           fadeInFrames: item.audioFadeIn ?? 0,
           fadeOutFrames: item.audioFadeOut ?? 0,
@@ -86,13 +90,15 @@ export function extractAudioSegments(composition: RemotionInputProps): AudioSegm
         const audioItem = item as AudioItem;
         if (!audioItem.src) continue;
 
+        // Use sourceStart as primary for consistency with video items
+        // This ensures split audio clips and IO markers work correctly
         segments.push({
           itemId: item.id,
           trackId: track.id,
           src: audioItem.src,
           startFrame: item.from,
           durationFrames: item.durationInFrames,
-          sourceStartFrame: item.trimStart ?? 0,
+          sourceStartFrame: audioItem.sourceStart ?? item.trimStart ?? 0,
           volume: item.volume ?? 0, // dB
           fadeInFrames: item.audioFadeIn ?? 0,
           fadeOutFrames: item.audioFadeOut ?? 0,

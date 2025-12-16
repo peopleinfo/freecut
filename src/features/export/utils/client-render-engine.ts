@@ -172,34 +172,51 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
     frameRate: fps,
   });
 
-  // Add audio track if we have audio data
+  // Prepare audio source and buffer (stored outside try block for access after start)
+  let audioSource: InstanceType<typeof AudioBufferSource> | null = null;
+  let audioBuffer: AudioBuffer | null = null;
+
   if (audioData) {
     try {
       // Create audio buffer from processed samples
-      const audioBuffer = createAudioBuffer(audioData);
+      audioBuffer = createAudioBuffer(audioData);
       
-      // Create audio source with the buffer
-      // Note: AudioBufferSource takes the buffer in its constructor
-      const audioSource = new AudioBufferSource({
+      // Create audio source for encoding
+      audioSource = new AudioBufferSource({
         codec: 'aac',
         bitrate: settings.audioBitrate ?? 192000,
       });
       
-      // Feed audio samples
-      // Note: This is a simplified approach - actual implementation may vary
-      // based on mediabunny's API for AudioBufferSource
+      // Add audio track to output (audio data fed after start())
       output.addAudioTrack(audioSource);
       log.info('Audio track added to output', {
         duration: audioBuffer.duration,
         channels: audioBuffer.numberOfChannels,
+        sampleRate: audioBuffer.sampleRate,
       });
     } catch (error) {
-      log.error('Failed to add audio track', { error });
+      log.error('Failed to setup audio track', { error });
+      audioSource = null;
+      audioBuffer = null;
     }
   }
 
   // Start the output
   await output.start();
+
+  // Feed audio buffer after output has started
+  // AudioBufferSource.add() must be called after output.start()
+  if (audioSource && audioBuffer) {
+    try {
+      await audioSource.add(audioBuffer);
+      log.info('Audio buffer fed to encoder', {
+        duration: audioBuffer.duration,
+        samples: audioBuffer.length,
+      });
+    } catch (error) {
+      log.error('Failed to feed audio to encoder', { error });
+    }
+  }
 
   onProgress({
     phase: 'rendering',
@@ -252,6 +269,16 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
       totalFrames,
       message: 'Finalizing video...',
     });
+
+    // Close audio source before finalizing (signals no more audio data)
+    if (audioSource) {
+      try {
+        audioSource.close();
+        log.info('Audio source closed');
+      } catch (error) {
+        log.error('Failed to close audio source', { error });
+      }
+    }
 
     // Finalize output
     await output.finalize();
@@ -622,11 +649,14 @@ async function createCompositionRenderer(
     if (!video || video.readyState < 2) return;
 
     // Calculate source time
+    // Use sourceStart as primary - it contains the full source offset including:
+    // 1. Original position from split operations
+    // 2. Additional trim from IO markers
     const localFrame = frame - item.from;
     const localTime = localFrame / fps;
-    const trimStart = item.trimStart ?? item.sourceStart ?? 0;
+    const sourceStart = item.sourceStart ?? item.trimStart ?? 0;
     const speed = item.speed ?? 1;
-    const sourceTime = trimStart / fps + localTime * speed;
+    const sourceTime = sourceStart / fps + localTime * speed;
     const clampedTime = Math.max(0, Math.min(sourceTime, video.duration - 0.01));
 
     // Seek if needed
