@@ -17,6 +17,7 @@ const ANIMATABLE_TRANSFORM_PROPERTIES: AnimatableProperty[] = [
   'height',
   'rotation',
   'opacity',
+  'cornerRadius',
 ];
 
 /**

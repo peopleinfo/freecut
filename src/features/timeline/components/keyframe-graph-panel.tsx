@@ -44,8 +44,6 @@ interface KeyframeGraphPanelProps {
   onToggle: () => void;
   /** Callback to close the panel */
   onClose: () => void;
-  /** Callback when panel height changes (for parent to adjust layout) */
-  onHeightChange?: (totalHeight: number) => void;
 }
 
 /**
@@ -57,7 +55,6 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
   isOpen,
   onToggle,
   onClose,
-  onHeightChange,
 }: KeyframeGraphPanelProps) {
   // Ref to measure container width
   const containerRef = useRef<HTMLDivElement>(null);
@@ -117,8 +114,9 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
 
     const handleMouseUp = () => {
       setIsResizing(false);
-      // Notify parent of final height
-      onHeightChange?.(GRAPH_PANEL_HEADER_HEIGHT + contentHeight + RESIZE_HANDLE_HEIGHT);
+      // Note: We intentionally do NOT call onHeightChange during resize
+      // The timeline panel should only resize when the graph panel is opened/closed,
+      // not when the user drags the resize handle within the existing space
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -128,7 +126,7 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing, contentHeight, onHeightChange]);
+  }, [isResizing]);
 
   // Selected items
   const selectedItemIds = useSelectionStore((s) => s.selectedItemIds);

@@ -715,7 +715,7 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
     <div
       ref={mergedRef}
       data-timeline-scroll-container
-      className="flex-1 overflow-auto relative bg-background/30 timeline-container"
+      className="flex-1 relative bg-background/30 timeline-container"
       style={{
         scrollBehavior: 'auto', // Disable smooth scrolling for instant zoom response
         willChange: 'scroll-position', // Hint to browser for optimization

@@ -178,10 +178,10 @@ export const Editor = memo(function Editor({ projectId, project }: EditorProps) 
 
   // Track whether graph panel is currently open to avoid storing expanded size as base
   const isGraphOpenRef = useRef(false);
-  // Track the current graph panel height for dynamic resizing
-  const graphPanelHeightRef = useRef(0);
 
   // Handle graph panel open/close - resize timeline panel accordingly
+  // Note: Resizing the graph panel via drag handle does NOT affect the overall timeline panel size.
+  // Only opening/closing the graph panel changes the timeline panel size.
   const handleGraphPanelOpenChange = useCallback((isOpen: boolean) => {
     const panel = timelinePanelRef.current;
     if (!panel) return;
@@ -197,34 +197,7 @@ export const Editor = memo(function Editor({ projectId, project }: EditorProps) 
       // Closing: restore to base size
       panel.resize(baseTimelineSizeRef.current);
       isGraphOpenRef.current = false;
-      graphPanelHeightRef.current = 0;
     }
-  }, []);
-
-  // Handle graph panel height change during resize
-  const handleGraphPanelHeightChange = useCallback((newHeight: number) => {
-    const panel = timelinePanelRef.current;
-    if (!panel || !isGraphOpenRef.current) return;
-
-    // Calculate the height difference and convert to percentage
-    const previousHeight = graphPanelHeightRef.current;
-    if (previousHeight === 0) {
-      // First resize - just store the height
-      graphPanelHeightRef.current = newHeight;
-      return;
-    }
-
-    const heightDelta = newHeight - previousHeight;
-    graphPanelHeightRef.current = newHeight;
-
-    // Convert pixel delta to approximate percentage (rough estimate based on viewport)
-    // This is approximate but works well enough for smooth resizing
-    const viewportHeight = window.innerHeight;
-    const percentDelta = (heightDelta / viewportHeight) * 100;
-
-    const currentSize = panel.getSize();
-    const newSize = Math.min(50, Math.max(15, currentSize + percentDelta));
-    panel.resize(newSize);
   }, []);
 
   return (
@@ -267,7 +240,6 @@ export const Editor = memo(function Editor({ projectId, project }: EditorProps) 
             <Timeline
               duration={timelineDuration}
               onGraphPanelOpenChange={handleGraphPanelOpenChange}
-              onGraphPanelHeightChange={handleGraphPanelHeightChange}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

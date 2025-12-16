@@ -85,4 +85,4 @@ export const GIZMO_ANIMATABLE_PROPS: AnimatableProperty[] = ['x', 'y', 'width', 
 /**
  * All animatable transform properties
  */
-export const ALL_ANIMATABLE_PROPS: AnimatableProperty[] = ['x', 'y', 'width', 'height', 'rotation', 'opacity'];
+export const ALL_ANIMATABLE_PROPS: AnimatableProperty[] = ['x', 'y', 'width', 'height', 'rotation', 'opacity', 'cornerRadius'];

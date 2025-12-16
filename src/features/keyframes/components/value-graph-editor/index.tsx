@@ -340,13 +340,21 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
   const [frameInputValue, setFrameInputValue] = useState<string>('');
   const [valueInputValue, setValueInputValue] = useState<string>('');
 
+  // Get decimal places for current property
+  const valueDecimals = propertyRange?.decimals ?? 2;
+
+  // Format value based on property's decimal setting
+  const formatValue = useCallback((value: number) => {
+    return valueDecimals === 0 ? String(Math.round(value)) : value.toFixed(valueDecimals);
+  }, [valueDecimals]);
+
   // Sync local input state when selected keyframe changes
   useEffect(() => {
     if (selectedKeyframe) {
       setFrameInputValue(String(selectedKeyframe.frame));
-      setValueInputValue(selectedKeyframe.value.toFixed(3));
+      setValueInputValue(formatValue(selectedKeyframe.value));
     }
-  }, [selectedKeyframe?.id, selectedKeyframe?.frame, selectedKeyframe?.value]);
+  }, [selectedKeyframe?.id, selectedKeyframe?.frame, selectedKeyframe?.value, formatValue]);
 
   // Commit frame value
   const commitFrameValue = useCallback(() => {
@@ -388,7 +396,7 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
     const newValue = Number(valueInputValue);
     if (isNaN(newValue)) {
       // Reset to current value if invalid
-      setValueInputValue(selectedKeyframe.value.toFixed(3));
+      setValueInputValue(formatValue(selectedKeyframe.value));
       return;
     }
     
@@ -400,7 +408,7 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
     
     // Skip if no change (with small epsilon for floating point)
     if (Math.abs(clampedValue - selectedKeyframe.value) < 0.0001) {
-      setValueInputValue(selectedKeyframe.value.toFixed(3));
+      setValueInputValue(formatValue(selectedKeyframe.value));
       return;
     }
     
@@ -412,7 +420,7 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
       clampedValue
     );
     onDragEnd?.();
-  }, [selectedKeyframe, displayProperty, itemId, valueInputValue, onKeyframeMove, onDragStart, onDragEnd]);
+  }, [selectedKeyframe, displayProperty, itemId, valueInputValue, onKeyframeMove, onDragStart, onDragEnd, formatValue]);
 
   // Handle key down for Enter to commit
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>, commitFn: () => void) => {
@@ -423,11 +431,11 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
       // Reset on escape
       if (selectedKeyframe) {
         setFrameInputValue(String(selectedKeyframe.frame));
-        setValueInputValue(selectedKeyframe.value.toFixed(3));
+        setValueInputValue(formatValue(selectedKeyframe.value));
       }
       e.currentTarget.blur();
     }
-  }, [selectedKeyframe]);
+  }, [selectedKeyframe, formatValue]);
 
   // Navigate to previous keyframe and select it
   const goToPrevKeyframe = useCallback(() => {
@@ -648,22 +656,22 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
           {/* Precise value inputs (shown when exactly one keyframe is selected) */}
           {selectedKeyframe && (
             <>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground">F:</span>
+              <div className="flex items-center gap-0.5">
+                <span className="text-[10px] text-muted-foreground">F:</span>
                 <Input
                   type="number"
                   value={frameInputValue}
                   onChange={(e) => setFrameInputValue(e.target.value)}
                   onBlur={commitFrameValue}
                   onKeyDown={(e) => handleInputKeyDown(e, commitFrameValue)}
-                  className="w-14 h-6 text-xs px-1.5 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  className="w-12 h-5 text-[10px] px-1 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   min={0}
                   max={totalFrames - 1}
                   disabled={disabled || !onKeyframeMove}
                 />
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground">V:</span>
+              <div className="flex items-center gap-0.5">
+                <span className="text-[10px] text-muted-foreground">V:</span>
                 <Input
                   type="number"
                   value={valueInputValue}
@@ -671,7 +679,7 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
                   onBlur={commitValueInput}
                   onKeyDown={(e) => handleInputKeyDown(e, commitValueInput)}
                   step={0.01}
-                  className="w-16 h-6 text-xs px-1.5 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  className="w-14 h-5 text-[10px] px-1 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   min={propertyRange?.min}
                   max={propertyRange?.max}
                   disabled={disabled || !onKeyframeMove}

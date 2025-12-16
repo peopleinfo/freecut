@@ -277,6 +277,7 @@ export function GizmoOverlay({
         height: transform.height,
         rotation: transform.rotation,
         opacity: transform.opacity,
+        cornerRadius: transform.cornerRadius ?? 0,
       };
 
       // Track which properties were auto-keyframed

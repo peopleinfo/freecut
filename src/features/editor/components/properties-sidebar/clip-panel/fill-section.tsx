@@ -99,6 +99,18 @@ export const FillSection = memo(function FillSection({
     [items, allKeyframes, currentFrame, addKeyframe, updateKeyframe]
   );
 
+  // Helper: Check if cornerRadius has keyframes and auto-keyframe on value change
+  const autoKeyframeCornerRadius = useCallback(
+    (itemId: string, value: number): boolean => {
+      const item = items.find((i) => i.id === itemId);
+      if (!item) return false;
+
+      const itemKeyframes = allKeyframes.find((k) => k.itemId === itemId);
+      return autoKeyframeProperty(item, itemKeyframes, 'cornerRadius', value, currentFrame, addKeyframe, updateKeyframe);
+    },
+    [items, allKeyframes, currentFrame, addKeyframe, updateKeyframe]
+  );
+
   // Live preview for opacity (during drag)
   const handleOpacityLiveChange = useCallback(
     (value: number) => {
@@ -142,13 +154,21 @@ export const FillSection = memo(function FillSection({
     [items, setTransformPreview]
   );
 
-  // Commit corner radius (on mouse up)
+  // Commit corner radius (on mouse up, with auto-keyframe support)
   const handleCornerRadiusChange = useCallback(
     (value: number) => {
-      onTransformChange(itemIds, { cornerRadius: value });
+      let allHandled = true;
+      for (const itemId of itemIds) {
+        if (!autoKeyframeCornerRadius(itemId, value)) {
+          allHandled = false;
+        }
+      }
+      if (!allHandled) {
+        onTransformChange(itemIds, { cornerRadius: value });
+      }
       queueMicrotask(() => clearPreview());
     },
-    [itemIds, onTransformChange, clearPreview]
+    [itemIds, onTransformChange, clearPreview, autoKeyframeCornerRadius]
   );
 
   // Reset opacity to 100%
@@ -212,6 +232,11 @@ export const FillSection = memo(function FillSection({
       {/* Corner Radius */}
       <PropertyRow label="Radius">
         <div className="flex items-center gap-1 w-full">
+          <KeyframeToggle
+            itemIds={itemIds}
+            property="cornerRadius"
+            currentValue={cornerRadius === 'mixed' ? 0 : cornerRadius}
+          />
           <NumberInput
             value={cornerRadius}
             onChange={handleCornerRadiusChange}

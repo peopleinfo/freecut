@@ -45,7 +45,7 @@ export interface CommitOptions {
  * Only includes properties that can be animated.
  */
 const ANIMATABLE_TRANSFORM_PROPS: (keyof TransformProperties & AnimatableProperty)[] = [
-  'x', 'y', 'width', 'height', 'rotation', 'opacity'
+  'x', 'y', 'width', 'height', 'rotation', 'opacity', 'cornerRadius'
 ];
 
 /**
@@ -105,10 +105,7 @@ export function commitTransformChanges(
     }
   }
 
-  // Handle non-animatable properties (cornerRadius, aspectRatioLocked)
-  if (changes.cornerRadius !== undefined) {
-    baseProps.cornerRadius = changes.cornerRadius;
-  }
+  // Handle non-animatable properties (aspectRatioLocked)
   if (changes.aspectRatioLocked !== undefined) {
     baseProps.aspectRatioLocked = changes.aspectRatioLocked;
   }
