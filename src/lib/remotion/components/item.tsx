@@ -655,14 +655,24 @@ export const Item = React.memo<ItemProps>(({ item, muted = false, masks = [] }) 
     const sourceEndPosition = trimBefore + sourceFramesNeeded;
     const sourceDuration = item.sourceDuration || 0;
 
-    // Validate using shared utilities
-    const isInvalidSeek = !isValidSeekPosition(trimBefore, sourceDuration || undefined);
-    const exceedsSource = !isWithinSourceBounds(trimBefore, item.durationInFrames, playbackRate, sourceDuration || undefined);
+    // Calculate the effective source segment this clip represents
+    // This is more accurate than sourceDuration for rate-stretched clips
+    // sourceEnd - sourceStart defines the actual source frames used
+    const effectiveSourceSegment = item.sourceEnd !== undefined && item.sourceStart !== undefined
+      ? item.sourceEnd - item.sourceStart
+      : sourceDuration;
+
+    // Only validate if we have valid source duration info
+    const hasValidSourceDuration = sourceDuration > 0 || effectiveSourceSegment > 0;
+
+    // Validate using shared utilities - skip if no valid duration info
+    const isInvalidSeek = hasValidSourceDuration && !isValidSeekPosition(trimBefore, sourceDuration || undefined);
+    const exceedsSource = hasValidSourceDuration && !isWithinSourceBounds(trimBefore, item.durationInFrames, playbackRate, sourceDuration || undefined);
 
     // Safety check: if sourceStart is unreasonably high (>1 hour) and no sourceDuration is set,
     // this indicates corrupted metadata from split/trim operations
     const MAX_REASONABLE_FRAMES = 30 * 60 * 60; // 1 hour at 30fps
-    const hasCorruptedMetadata = sourceDuration === 0 && trimBefore > MAX_REASONABLE_FRAMES;
+    const hasCorruptedMetadata = sourceDuration === 0 && effectiveSourceSegment === 0 && trimBefore > MAX_REASONABLE_FRAMES;
 
     if (hasCorruptedMetadata || isInvalidSeek) {
       console.error('[Remotion Item] Invalid source position detected:', {
@@ -670,6 +680,7 @@ export const Item = React.memo<ItemProps>(({ item, muted = false, masks = [] }) 
         sourceStart: item.sourceStart,
         trimBefore,
         sourceDuration,
+        effectiveSourceSegment,
         hasCorruptedMetadata,
         isInvalidSeek,
       });
@@ -685,11 +696,16 @@ export const Item = React.memo<ItemProps>(({ item, muted = false, masks = [] }) 
 
     // If clip would exceed source even after clamping, show error
     // This happens when durationInFrames * playbackRate > sourceDuration
-    if (exceedsSource && safeTrimBefore === 0 && sourceFramesNeeded > sourceDuration) {
+    // Skip this check if we don't have valid source duration info (can't validate)
+    // Also use effectiveSourceSegment as fallback for rate-stretched clips
+    const effectiveDuration = sourceDuration > 0 ? sourceDuration : effectiveSourceSegment;
+    if (exceedsSource && safeTrimBefore === 0 && effectiveDuration > 0 && sourceFramesNeeded > effectiveDuration) {
       console.error('[Remotion Item] Clip duration exceeds source duration:', {
         itemId: item.id,
         sourceFramesNeeded,
         sourceDuration,
+        effectiveSourceSegment,
+        effectiveDuration,
         durationInFrames: item.durationInFrames,
         playbackRate,
       });

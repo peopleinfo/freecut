@@ -265,6 +265,20 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
 
         newSpeed = getClampedSpeed(sourceDuration, newDuration);
 
+        // IMPORTANT: After rounding speed, verify the combination doesn't exceed source
+        // Due to rounding (e.g., 1.4484 -> 1.45), duration * speed might exceed sourceDuration
+        // If so, adjust duration down to ensure we stay within bounds
+        const sourceFramesNeeded = Math.round(newDuration * newSpeed);
+        if (sourceFramesNeeded > sourceDuration) {
+          // Reduce duration to fit within source at this rounded speed
+          newDuration = Math.floor(sourceDuration / newSpeed);
+          // Adjust position if we were stretching from start
+          if (handle === 'start') {
+            const adjustedDurationChange = initialDuration - newDuration;
+            newFrom = Math.round(initialFrom + adjustedDurationChange);
+          }
+        }
+
         // Only update store if there was actual change (compare rounded values)
         if (newDuration !== initialDuration) {
           rateStretchItem(item.id, newFrom, newDuration, newSpeed);
@@ -318,11 +332,21 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
       const currentSpeed = item.speed || 1;
       const isLoopingMedia = item.type === 'image'; // GIFs (images) can loop infinitely
 
-      // Calculate the actual source frames this clip segment represents
-      // This is durationInFrames * speed, NOT item.sourceDuration (which is the full source file)
-      // For split clips, using sourceDuration would give wrong initial speed calculation
-      // (e.g., split clip with 100 frames would show speed=3 if sourceDuration=300)
-      const sourceDuration = Math.round(item.durationInFrames * currentSpeed);
+      // Use the actual available source frames for this clip
+      // For trimmed/split clips, this is sourceEnd - sourceStart (the segment being used)
+      // For untrimmed clips, use sourceDuration (full source file)
+      // Fall back to durationInFrames * speed only if no source info is available
+      let sourceDuration: number;
+      if (item.sourceEnd !== undefined && item.sourceStart !== undefined) {
+        // Trimmed clip: use the actual source segment
+        sourceDuration = item.sourceEnd - item.sourceStart;
+      } else if (item.sourceDuration) {
+        // Untrimmed clip: use full source duration
+        sourceDuration = item.sourceDuration;
+      } else {
+        // Fallback: estimate from current state
+        sourceDuration = Math.round(item.durationInFrames * currentSpeed);
+      }
 
       setStretchState({
         isStretching: true,
@@ -374,6 +398,16 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
     }
 
     const previewSpeed = getClampedSpeed(sourceDuration, newDuration);
+
+    // Apply same rounding fix as onMouseUp - adjust duration if rounded speed exceeds source
+    const sourceFramesNeeded = Math.round(newDuration * previewSpeed);
+    if (sourceFramesNeeded > sourceDuration) {
+      newDuration = Math.floor(sourceDuration / previewSpeed);
+      if (handle === 'start') {
+        const adjustedDurationChange = initialDuration - newDuration;
+        newFrom = Math.round(initialFrom + adjustedDurationChange);
+      }
+    }
 
     return {
       from: newFrom,

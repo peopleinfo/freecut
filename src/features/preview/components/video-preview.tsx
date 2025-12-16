@@ -12,6 +12,9 @@ import { GizmoOverlay } from './gizmo-overlay';
 import type { RemotionInputProps } from '@/types/export';
 import { isMarqueeJustFinished } from '@/hooks/use-marquee-selection';
 
+// Preload media files ahead of the playhead to reduce buffering
+const PRELOAD_AHEAD_SECONDS = 5;
+
 interface VideoPreviewProps {
   project: {
     width: number;
@@ -213,6 +216,30 @@ export const VideoPreview = memo(function VideoPreview({ project, containerSize 
   // (e.g., during HMR or navigation) and try to use cached URLs.
   // Memory is reclaimed when the page is unloaded or media is deleted.
 
+  // Create a stable fingerprint for tracks to detect meaningful changes
+  // This prevents inputProps from changing when only transforms/positions change
+  const tracksFingerprint = useMemo(() => {
+    return resolvedTracks.map(track => ({
+      id: track.id,
+      items: track.items.map(item => {
+        // Extract src from media items only (video/audio/image have src)
+        const src = 'src' in item ? item.src : undefined;
+        return {
+          id: item.id,
+          type: item.type,
+          from: item.from,
+          durationInFrames: item.durationInFrames,
+          src,
+          mediaId: item.mediaId,
+          speed: item.speed,
+          volume: item.volume,
+          sourceStart: item.sourceStart,
+          sourceEnd: item.sourceEnd,
+        };
+      })
+    }));
+  }, [resolvedTracks]);
+
   // Memoize inputProps to prevent Player from re-rendering
   // Note: previewTransform is no longer passed here - TransformWrapper reads directly from store
   // Note: canvasBackgroundPreview is read directly in MainComposition to avoid inputProps changes
@@ -221,7 +248,64 @@ export const VideoPreview = memo(function VideoPreview({ project, containerSize 
     tracks: resolvedTracks as RemotionInputProps['tracks'],
     transitions,
     backgroundColor: project.backgroundColor,
-  }), [fps, resolvedTracks, transitions, project.backgroundColor]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Use fingerprint for stability
+  }), [fps, tracksFingerprint, transitions, project.backgroundColor]);
+
+  // Preload media files ahead of the current playhead to reduce buffering
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const preloadMedia = () => {
+      const currentFrame = usePlaybackStore.getState().currentFrame;
+      const preloadEndFrame = currentFrame + (fps * PRELOAD_AHEAD_SECONDS);
+
+      // Find media items that will be visible in the preload window
+      const mediaToPreload = new Set<string>();
+      for (const track of combinedTracks) {
+        for (const item of track.items) {
+          if (!item.mediaId) continue;
+          // Check if item overlaps with preload window
+          const itemEnd = item.from + item.durationInFrames;
+          if (item.from <= preloadEndFrame && itemEnd >= currentFrame) {
+            if (!resolvedUrls.has(item.mediaId)) {
+              mediaToPreload.add(item.mediaId);
+            }
+          }
+        }
+      }
+
+      // Preload in background (don't await)
+      for (const mediaId of mediaToPreload) {
+        resolveMediaUrl(mediaId).catch(() => {
+          // Silently ignore preload failures
+        });
+      }
+    };
+
+    // Initial preload
+    preloadMedia();
+
+    // Subscribe to playback state for continuous preloading during playback
+    const unsubscribe = usePlaybackStore.subscribe((state, prevState) => {
+      if (state.isPlaying && !prevState.isPlaying) {
+        // Started playing - set up preload interval
+        intervalId = setInterval(preloadMedia, 1000);
+      } else if (!state.isPlaying && prevState.isPlaying) {
+        // Stopped playing - clear interval
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [fps, combinedTracks, resolvedUrls]);
 
   // Calculate player size based on zoom mode
   const playerSize = useMemo(() => {

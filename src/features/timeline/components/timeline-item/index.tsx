@@ -1,5 +1,4 @@
 import { useRef, useEffect, useMemo, memo, useCallback, useState } from 'react';
-import { createPortal } from 'react-dom';
 import type { TimelineItem as TimelineItemType } from '@/types/timeline';
 import { useTimelineZoomContext } from '../../contexts/timeline-zoom-context';
 import { useTimelineStore } from '../../stores/timeline-store';
@@ -10,19 +9,17 @@ import { useTimelineTrim } from '../../hooks/use-timeline-trim';
 import { useRateStretch } from '../../hooks/use-rate-stretch';
 import { useClipVisibility } from '../../hooks/use-clip-visibility';
 import { DRAG_OPACITY } from '../../constants';
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuShortcut,
-  ContextMenuTrigger,
-} from '@/components/ui/context-menu';
 import { canJoinItems, canJoinMultipleItems } from '@/features/timeline/utils/clip-utils';
 import { cn } from '@/lib/utils';
 import { CLIP_HEIGHT } from '@/features/timeline/constants';
 import { ClipContent } from './clip-content';
 import { ClipIndicators } from './clip-indicators';
+import { TrimHandles } from './trim-handles';
+import { StretchHandles } from './stretch-handles';
+import { JoinIndicators } from './join-indicators';
+import { AnchorDragGhost, FollowerDragGhost } from './drag-ghosts';
+import { DragBlockedTooltip } from './drag-blocked-tooltip';
+import { ItemContextMenu } from './item-context-menu';
 
 // Width in pixels for edge hover detection (trim/rate-stretch handles)
 const EDGE_HOVER_ZONE = 8;
@@ -45,11 +42,6 @@ export interface TimelineItemProps {
  * - Drag to move (horizontal and vertical)
  * - Trim handles (start/end) for media trimming
  * - Grid snapping support
- *
- * Trim functionality:
- * - Start handle: trims from beginning, adjusts position and duration
- * - End handle: trims from end, adjusts duration only
- * - Stores trimStart, trimEnd, sourceStart, sourceEnd for each item
  */
 export const TimelineItem = memo(function TimelineItem({ item, timelineDuration = 30, trackLocked = false }: TimelineItemProps) {
   const { timeToPixels, pixelsToFrame, pixelsPerSecond } = useTimelineZoomContext();
@@ -117,9 +109,8 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   const wasDraggingRef = useRef(false);
 
   // Track drag participation via ref subscription - NO RE-RENDERS on drag state changes
-  // This is critical for performance: when dragging 10 items, we don't want 10 re-renders on release
   const isAnyDragActiveRef = useRef(false);
-  const dragWasActiveRef = useRef(false); // Track if drag recently ended - prevents click from clearing group selection
+  const dragWasActiveRef = useRef(false);
   const dragParticipationRef = useRef(0); // 0 = not participating, 1 = participating, 2 = participating + alt
   const rafIdRef = useRef<number | null>(null);
 
@@ -213,7 +204,6 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
       // Track when drag ends to prevent click from clearing group selection
       if (wasDragActive && !isDragActive) {
         dragWasActiveRef.current = true;
-        // Clear after a short delay to allow click event to check
         if (dragWasActiveTimeout) clearTimeout(dragWasActiveTimeout);
         dragWasActiveTimeout = setTimeout(() => {
           dragWasActiveRef.current = false;
@@ -243,10 +233,9 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
       cleanupDragStyles();
       if (dragWasActiveTimeout) clearTimeout(dragWasActiveTimeout);
     };
-  }, [item.id, isDragging]);
+  }, [item.id, isDragging, item.trackId, item.from, item.durationInFrames]);
 
-  // Computed values from refs for rendering (read-only, don't trigger re-renders)
-  // These are only accurate during render, not for effects
+  // Computed values from refs for rendering
   const isPartOfMultiDrag = dragParticipationRef.current > 0;
   const isAltDrag = dragParticipationRef.current === 2;
   const isPartOfDrag = isPartOfMultiDrag && !isDragging;
@@ -270,16 +259,10 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   // Determine if this item is being dragged (anchor or follower)
   const isBeingDragged = isDragging || isPartOfDrag;
 
-  // Ref for drag state to avoid callback recreation (prevents playback lag)
-  const isBeingDraggedRef = useRef(isBeingDragged);
-  isBeingDraggedRef.current = isBeingDragged;
-
-
   // Get visual feedback for rate stretch
   const stretchFeedback = isStretching ? getVisualFeedback() : null;
 
   // Check if this is a media item (video/audio/gif) that supports rate stretch
-  // GIFs are animated images that can have their playback speed adjusted
   const isGifImage = item.type === 'image' && item.label?.toLowerCase().endsWith('.gif');
   const isMediaItem = item.type === 'video' || item.type === 'audio' || isGifImage;
 
@@ -290,84 +273,77 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   const fps = useTimelineStore((s) => s.fps);
 
   // Calculate position and width (convert frames to seconds, then to pixels)
-  // Round both left AND right positions to prevent gaps/overlaps at certain zoom levels.
-  // We derive width from (right - left) to ensure adjacent clips share exact pixel boundaries.
   const left = Math.round(timeToPixels(item.from / fps));
   const right = Math.round(timeToPixels((item.from + item.durationInFrames) / fps));
   const width = right - left;
 
-  // Calculate trim visual feedback (convert frames to pixels for preview)
-  const minWidthPixels = timeToPixels(1 / fps); // Minimum 1 frame width
+  // Calculate trim visual feedback
+  const minWidthPixels = timeToPixels(1 / fps);
   const trimDeltaPixels = isTrimming ? timeToPixels(trimDelta / fps) : 0;
 
-  // Get source boundaries for clamping (in source frames)
+  // Get source boundaries for clamping
   const currentSourceStart = item.sourceStart || 0;
   const sourceDuration = item.sourceDuration || (item.durationInFrames * currentSpeed);
   const currentSourceEnd = item.sourceEnd || sourceDuration;
 
-  // Items that can extend infinitely (no source duration limit)
-  // - Images/GIFs: can loop
-  // - Text/Shapes/Adjustments: no source media, just duration
+  // Items that can extend infinitely
   const canExtendInfinitely = item.type === 'image' || item.type === 'text' || item.type === 'shape' || item.type === 'adjustment';
 
-  // Clamp visual feedback to prevent showing invalid states
-  let trimVisualLeft = left;
-  let trimVisualWidth = width;
+  // Calculate visual positions during trim/stretch
+  const { visualLeft, visualWidth } = useMemo(() => {
+    let trimVisualLeft = left;
+    let trimVisualWidth = width;
 
-  if (isTrimming) {
-    if (trimHandle === 'start') {
-      // Start handle: adjust both position and width
-      // For infinitely extensible items, only limit by timeline frame 0
-      // For media items, also clamp to source start
-      const maxExtendBySource = canExtendInfinitely ? Infinity : (currentSourceStart / currentSpeed);
-      const maxExtendByTimeline = item.from; // Can't go before frame 0
-      const maxExtendTimelineFrames = Math.min(maxExtendBySource, maxExtendByTimeline);
-      const maxExtendPixels = timeToPixels(maxExtendTimelineFrames / fps);
+    if (isTrimming) {
+      if (trimHandle === 'start') {
+        const maxExtendBySource = canExtendInfinitely ? Infinity : (currentSourceStart / currentSpeed);
+        const maxExtendByTimeline = item.from;
+        const maxExtendTimelineFrames = Math.min(maxExtendBySource, maxExtendByTimeline);
+        const maxExtendPixels = timeToPixels(maxExtendTimelineFrames / fps);
+        const maxTrimPixels = width - minWidthPixels;
 
-      // Prevent trimming more than available (keep at least 1 timeline frame)
-      const maxTrimPixels = width - minWidthPixels;
+        const clampedDelta = Math.max(
+          -maxExtendPixels,
+          Math.min(maxTrimPixels, trimDeltaPixels)
+        );
 
-      // Clamp delta considering both constraints
-      const clampedDelta = Math.max(
-        -maxExtendPixels, // Don't extend past source start or frame 0
-        Math.min(maxTrimPixels, trimDeltaPixels) // Don't trim too much
-      );
+        trimVisualLeft = Math.round(left + clampedDelta);
+        trimVisualWidth = Math.round(width - clampedDelta);
+      } else {
+        const maxExtendSourceFrames = canExtendInfinitely ? Infinity : (sourceDuration - currentSourceEnd);
+        const maxExtendTimelineFrames = maxExtendSourceFrames / currentSpeed;
+        const maxExtendPixels = canExtendInfinitely ? Infinity : timeToPixels(maxExtendTimelineFrames / fps);
+        const maxTrimPixels = width - minWidthPixels;
 
-      trimVisualLeft = Math.round(left + clampedDelta);
-      trimVisualWidth = Math.round(width - clampedDelta);
-    } else {
-      // End handle: adjust width only
-      // For infinitely extensible items, allow unlimited extension
-      // For media items, clamp to source duration
-      const maxExtendSourceFrames = canExtendInfinitely ? Infinity : (sourceDuration - currentSourceEnd);
-      const maxExtendTimelineFrames = maxExtendSourceFrames / currentSpeed;
-      const maxExtendPixels = canExtendInfinitely ? Infinity : timeToPixels(maxExtendTimelineFrames / fps);
+        const clampedDelta = Math.max(
+          -maxExtendPixels,
+          Math.min(maxTrimPixels, -trimDeltaPixels)
+        );
 
-      // Prevent trimming more than available (keep at least 1 timeline frame)
-      const maxTrimPixels = width - minWidthPixels;
-
-      // Clamp delta considering both constraints
-      const clampedDelta = Math.max(
-        -maxExtendPixels, // Don't extend past source end (or infinite for extensible items)
-        Math.min(maxTrimPixels, -trimDeltaPixels) // Don't trim too much (note: trimDelta is negative for extending)
-      );
-
-      trimVisualWidth = Math.round(width - clampedDelta);
+        trimVisualWidth = Math.round(width - clampedDelta);
+      }
     }
-  }
 
-  // Calculate stretch visual feedback
-  let stretchVisualLeft = trimVisualLeft;
-  let stretchVisualWidth = trimVisualWidth;
+    let stretchVisualLeft = trimVisualLeft;
+    let stretchVisualWidth = trimVisualWidth;
 
-  if (isStretching && stretchFeedback) {
-    // Use same left/right rounding approach for consistent boundaries
-    stretchVisualLeft = Math.round(timeToPixels(stretchFeedback.from / fps));
-    const stretchVisualRight = Math.round(timeToPixels((stretchFeedback.from + stretchFeedback.duration) / fps));
-    stretchVisualWidth = stretchVisualRight - stretchVisualLeft;
-  }
+    if (isStretching && stretchFeedback) {
+      stretchVisualLeft = Math.round(timeToPixels(stretchFeedback.from / fps));
+      const stretchVisualRight = Math.round(timeToPixels((stretchFeedback.from + stretchFeedback.duration) / fps));
+      stretchVisualWidth = stretchVisualRight - stretchVisualLeft;
+    }
 
-  // Get color based on item type (using timeline theme colors) - memoized
+    return {
+      visualLeft: isStretching ? stretchVisualLeft : isTrimming ? trimVisualLeft : left,
+      visualWidth: isStretching ? stretchVisualWidth : isTrimming ? trimVisualWidth : width,
+    };
+  }, [
+    left, width, isTrimming, trimHandle, isStretching, stretchFeedback,
+    canExtendInfinitely, currentSourceStart, currentSpeed, item.from,
+    timeToPixels, fps, minWidthPixels, trimDeltaPixels, sourceDuration, currentSourceEnd
+  ]);
+
+  // Get color based on item type - memoized
   const itemColorClasses = useMemo(() => {
     switch (item.type) {
       case 'video':
@@ -390,15 +366,8 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
 
-    // Don't allow interaction on locked tracks
-    if (trackLocked) {
-      return;
-    }
-
-    // Skip selection logic if a drag just ended - preserve group selection
-    if (dragWasActiveRef.current) {
-      return;
-    }
+    if (trackLocked) return;
+    if (dragWasActiveRef.current) return;
 
     // Razor tool: split item at click position
     if (activeToolRef.current === 'razor') {
@@ -406,35 +375,28 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
       const clickX = e.clientX - rect.left;
       const clickOffsetFrames = pixelsToFrame(clickX);
       const splitFrame = Math.round(item.from + clickOffsetFrames);
-
-      // Perform split - use getState() to avoid selector
       useTimelineStore.getState().splitItem(item.id, splitFrame);
       return;
     }
 
-    // Selection tool: handle item selection - read current selection from store
+    // Selection tool: handle item selection
     const { selectedItemIds, selectItems } = useSelectionStore.getState();
     if (e.metaKey || e.ctrlKey) {
-      // Multi-select: add to selection
       if (selectedItemIds.includes(item.id)) {
         selectItems(selectedItemIds.filter((id) => id !== item.id));
       } else {
         selectItems([...selectedItemIds, item.id]);
       }
     } else {
-      // Single select
       selectItems([item.id]);
     }
   }, [trackLocked, pixelsToFrame, item.from, item.id]);
 
-  // Handle mouse move to detect edge hover for trim/rate-stretch handles
-  // Use ref for activeTool to prevent callback recreation on mode changes (prevents playback lag)
-  // Use ref for hoveredEdge to avoid re-renders when value hasn't changed
+  // Handle mouse move for edge hover detection
   const hoveredEdgeRef = useRef(hoveredEdge);
   hoveredEdgeRef.current = hoveredEdge;
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    // Don't show trim handles while any clip is being dragged
     if (trackLocked || activeToolRef.current === 'razor' || isAnyDragActiveRef.current) {
       if (hoveredEdgeRef.current !== null) setHoveredEdge(null);
       return;
@@ -451,9 +413,9 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     } else {
       if (hoveredEdgeRef.current !== null) setHoveredEdge(null);
     }
-  }, [trackLocked]); // Stable - reads activeTool, isBeingDragged, and hoveredEdge from refs
+  }, [trackLocked]);
 
-  // Determine cursor class based on tool, state, and edge hover
+  // Cursor class based on state
   const cursorClass = trackLocked
     ? 'cursor-not-allowed opacity-60'
     : activeTool === 'razor'
@@ -464,8 +426,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     ? 'cursor-grabbing'
     : 'cursor-grab';
 
-  // Check if join is available when multiple items are selected
-  // Computed on demand via callback, not reactive - prevents re-renders on selection change
+  // Check if join is available for selected items - computed on demand
   const getCanJoinSelected = useCallback(() => {
     const selectedItemIds = useSelectionStore.getState().selectedItemIds;
     if (selectedItemIds.length < 2) return false;
@@ -477,7 +438,6 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   }, []);
 
   // Track item count on this track for neighbor detection
-  // Uses a lightweight count + boundaries check instead of full string signature
   const trackItemCount = useTimelineStore(
     useCallback(
       (s) => s.items.filter(i => i.trackId === item.trackId).length,
@@ -485,8 +445,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     )
   );
 
-  // Track neighbor speeds so join indicators update when neighbor's speed changes
-  // This is needed because canJoinItems checks if speeds match
+  // Track neighbor speeds for join indicator updates
   const neighborSpeeds = useTimelineStore(
     useCallback(
       (s) => {
@@ -502,7 +461,6 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
             other.trackId === item.trackId &&
             other.from === item.from + item.durationInFrames
         );
-        // Return a stable string key that changes when neighbor speeds change
         return `${left?.speed ?? 1}|${right?.speed ?? 1}`;
       },
       [item.id, item.trackId, item.from, item.durationInFrames]
@@ -510,7 +468,6 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   );
 
   // Neighbor calculation for join indicators
-  // Re-computes when this item changes OR when track items change OR when neighbor speeds change
   const { leftNeighbor, rightNeighbor, hasJoinableLeft, hasJoinableRight } = useMemo(() => {
     const state = useTimelineStore.getState();
     const items = state.items;
@@ -537,7 +494,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     };
   }, [item, trackItemCount, neighborSpeeds]);
 
-  // Handle join action for multiple selected clips
+  // Action handlers
   const handleJoinSelected = useCallback(() => {
     const selectedItemIds = useSelectionStore.getState().selectedItemIds;
     if (selectedItemIds.length >= 2) {
@@ -551,21 +508,18 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     }
   }, []);
 
-  // Handle join with left neighbor
   const handleJoinLeft = useCallback(() => {
     if (leftNeighbor) {
       useTimelineStore.getState().joinItems([leftNeighbor.id, item.id]);
     }
   }, [leftNeighbor, item.id]);
 
-  // Handle join with right neighbor
   const handleJoinRight = useCallback(() => {
     if (rightNeighbor) {
       useTimelineStore.getState().joinItems([item.id, rightNeighbor.id]);
     }
   }, [rightNeighbor, item.id]);
 
-  // Handle delete action
   const handleDelete = useCallback(() => {
     const selectedItemIds = useSelectionStore.getState().selectedItemIds;
     if (selectedItemIds.length > 0) {
@@ -573,7 +527,6 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     }
   }, []);
 
-  // Handle ripple delete action (delete + close gap)
   const handleRippleDelete = useCallback(() => {
     const selectedItemIds = useSelectionStore.getState().selectedItemIds;
     if (selectedItemIds.length > 0) {
@@ -581,259 +534,143 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     }
   }, []);
 
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Show blocked tooltip when trying to drag in rate-stretch mode
+    if (activeTool === 'rate-stretch' && !trackLocked && !isStretching) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const isOnEdge = x <= EDGE_HOVER_ZONE || x >= rect.width - EDGE_HOVER_ZONE;
+      if (!isOnEdge) {
+        setDragBlockedTooltip({ x: e.clientX, y: e.clientY });
+        return;
+      }
+    }
+    if (trackLocked || isTrimming || isStretching || activeTool === 'razor' || activeTool === 'rate-stretch' || hoveredEdge !== null) return;
+    handleDragStart(e);
+  }, [activeTool, trackLocked, isStretching, isTrimming, hoveredEdge, handleDragStart]);
+
   return (
     <>
-    <ContextMenu>
-      <ContextMenuTrigger asChild disabled={trackLocked}>
-    <div
-      ref={transformRef}
-      data-item-id={item.id}
-      className={`
-        absolute inset-y-0 rounded overflow-hidden
-        ${itemColorClasses}
-        ${cursorClass}
-        ${!isBeingDragged && !isStretching && !trackLocked && 'hover:brightness-110'}
-      `}
-      style={{
-        left: isStretching ? `${stretchVisualLeft}px` : isTrimming ? `${trimVisualLeft}px` : `${left}px`,
-        width: isStretching ? `${stretchVisualWidth}px` : isTrimming ? `${trimVisualWidth}px` : `${width}px`,
-        // Anchor item uses its own dragOffset, followers get updated via RAF
-        // During alt-drag, original stays in place (no transform) - only show ghost
-        transform: isDragging && !isAltDrag ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
-        opacity: isDragging && !isAltDrag ? DRAG_OPACITY : trackLocked ? 0.6 : 1,
-        pointerEvents: isDragging ? 'none' : 'auto',
-        // Elevate dragged clips above other clips in the timeline
-        zIndex: isBeingDragged ? 50 : undefined,
-        // Browser-native virtualization - skip rendering off-screen items without removing from DOM
-        contentVisibility: 'auto',
-        containIntrinsicSize: `0 ${CLIP_HEIGHT}px`,
-      }}
-      onClick={handleClick}
-      onMouseDown={(e) => {
-        // Show blocked tooltip when trying to drag in rate-stretch mode (not on stretch handles)
-        if (activeTool === 'rate-stretch' && !trackLocked && !isStretching) {
-          // Only show if not clicking on the stretch handle edges
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left;
-          const isOnEdge = x <= EDGE_HOVER_ZONE || x >= rect.width - EDGE_HOVER_ZONE;
-          if (!isOnEdge) {
-            setDragBlockedTooltip({ x: e.clientX, y: e.clientY });
-            return;
-          }
-        }
-        if (trackLocked || isTrimming || isStretching || activeTool === 'razor' || activeTool === 'rate-stretch' || hoveredEdge !== null) return;
-        handleDragStart(e);
-      }}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={() => setHoveredEdge(null)}
-    >
-      {/* Selection indicator - inset to prevent overlap with adjacent clips */}
-      {isSelected && !trackLocked && (
-        <div
-          className="absolute inset-0 rounded pointer-events-none z-20 ring-2 ring-inset ring-primary"
-        />
-      )}
-
-      {/* Clip visual content (filmstrip, waveform, text preview, etc.) */}
-      <ClipContent
-        item={item}
-        clipWidth={isStretching ? stretchVisualWidth : isTrimming ? trimVisualWidth : width}
-        fps={fps}
-        isClipVisible={isClipVisible}
-        pixelsPerSecond={pixelsPerSecond}
-      />
-
-      {/* Status indicators (keyframes, speed, broken media, mask) */}
-      <ClipIndicators
-        hasKeyframes={hasKeyframes}
-        currentSpeed={currentSpeed}
-        isStretching={isStretching}
-        stretchFeedback={stretchFeedback}
-        isBroken={isBroken}
-        hasMediaId={!!item.mediaId}
-        isMask={item.type === 'shape' ? item.isMask ?? false : false}
-        isShape={item.type === 'shape'}
-      />
-
-      {/* Trim handles - always rendered, visibility controlled via CSS to prevent DOM churn */}
-      {/* Left trim handle with context menu for join - w-2 (8px) matches EDGE_HOVER_ZONE */}
-      <ContextMenu>
-        <ContextMenuTrigger asChild disabled={trackLocked || !hasJoinableLeft}>
-          <div
-            className={cn(
-              "absolute left-0 top-0 bottom-0 w-2 bg-primary cursor-ew-resize transition-opacity duration-75",
-              !trackLocked && (!isAnyDragActiveRef.current || isTrimming) && activeTool === 'select' && (hoveredEdge === 'start' || (isTrimming && trimHandle === 'start'))
-                ? "opacity-100"
-                : "opacity-0 pointer-events-none"
-            )}
-            onMouseDown={(e) => handleTrimStart(e, 'start')}
-          />
-        </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuItem onClick={handleJoinLeft}>
-            Join
-            <ContextMenuShortcut>J</ContextMenuShortcut>
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-      {/* Right trim handle with context menu for join - w-2 (8px) matches EDGE_HOVER_ZONE */}
-      <ContextMenu>
-        <ContextMenuTrigger asChild disabled={trackLocked || !hasJoinableRight}>
-          <div
-            className={cn(
-              "absolute right-0 top-0 bottom-0 w-2 bg-primary cursor-ew-resize transition-opacity duration-75",
-              !trackLocked && (!isAnyDragActiveRef.current || isTrimming) && activeTool === 'select' && (hoveredEdge === 'end' || (isTrimming && trimHandle === 'end'))
-                ? "opacity-100"
-                : "opacity-0 pointer-events-none"
-            )}
-            onMouseDown={(e) => handleTrimStart(e, 'end')}
-          />
-        </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuItem onClick={handleJoinRight}>
-            Join
-            <ContextMenuShortcut>J</ContextMenuShortcut>
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-
-      {/* Rate stretch handles - always rendered, visibility controlled via CSS to prevent DOM churn */}
-      {/* Left stretch handle - w-2 (8px) matches EDGE_HOVER_ZONE */}
-      <div
-        className={cn(
-          "absolute left-0 top-0 bottom-0 w-2 bg-orange-500 cursor-ew-resize transition-opacity duration-75",
-          !trackLocked && (!isAnyDragActiveRef.current || isStretching) && activeTool === 'rate-stretch' && isMediaItem && (hoveredEdge === 'start' || (isStretching && stretchHandle === 'start'))
-            ? "opacity-100"
-            : "opacity-0 pointer-events-none"
-        )}
-        onMouseDown={(e) => handleStretchStart(e, 'start')}
-      />
-      {/* Right stretch handle - w-2 (8px) matches EDGE_HOVER_ZONE */}
-      <div
-        className={cn(
-          "absolute right-0 top-0 bottom-0 w-2 bg-orange-500 cursor-ew-resize transition-opacity duration-75",
-          !trackLocked && (!isAnyDragActiveRef.current || isStretching) && activeTool === 'rate-stretch' && isMediaItem && (hoveredEdge === 'end' || (isStretching && stretchHandle === 'end'))
-            ? "opacity-100"
-            : "opacity-0 pointer-events-none"
-        )}
-        onMouseDown={(e) => handleStretchStart(e, 'end')}
-      />
-
-      {/* Join indicator - glowing edge when clip can be joined with neighbor */}
-      {/* Always rendered, visibility controlled via CSS to prevent DOM churn */}
-      <div
-        className={cn(
-          "absolute left-0 top-0 bottom-0 w-px pointer-events-none transition-opacity duration-75",
-          hasJoinableLeft && !trackLocked && !dragAffectsJoin.left && hoveredEdge !== 'start' && !isTrimming && !isStretching
-            ? "opacity-100"
-            : "opacity-0"
-        )}
-        style={{ backgroundColor: 'var(--color-timeline-join)', boxShadow: '0 0 6px 1px var(--color-timeline-join)' }}
-        title="Can join with previous clip (J)"
-      />
-      <div
-        className={cn(
-          "absolute right-0 top-0 bottom-0 w-px pointer-events-none transition-opacity duration-75",
-          hasJoinableRight && !trackLocked && !dragAffectsJoin.right && hoveredEdge !== 'end' && !isTrimming && !isStretching
-            ? "opacity-100"
-            : "opacity-0"
-        )}
-        style={{ backgroundColor: 'var(--color-timeline-join)', boxShadow: '0 0 6px 1px var(--color-timeline-join)' }}
-        title="Can join with next clip (J)"
-      />
-
-    </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        {/* Show "Join Selected" when multiple clips are selected and joinable - computed on open */}
-        {getCanJoinSelected() && (
-          <>
-            <ContextMenuItem onClick={handleJoinSelected}>
-              Join Selected
-              <ContextMenuShortcut>J</ContextMenuShortcut>
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-          </>
-        )}
-        <ContextMenuItem
-          onClick={handleRippleDelete}
-          disabled={!isSelected}
-          className="text-destructive focus:text-destructive"
-        >
-          Ripple Delete
-          <ContextMenuShortcut>Ctrl+Del</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem
-          onClick={handleDelete}
-          disabled={!isSelected}
-          className="text-destructive focus:text-destructive"
-        >
-          Delete
-          <ContextMenuShortcut>Del</ContextMenuShortcut>
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-
-      {/* Alt-drag ghost for anchor item: always rendered, visibility controlled by CSS */}
-      <div
-        className={cn(
-          "absolute inset-y-0 rounded border-2 border-dashed border-primary bg-primary/20 pointer-events-none z-50",
-          !(isAltDrag && isDragging) && "hidden"
-        )}
-        style={{
-          left: `${left + dragOffset.x}px`,
-          width: `${width}px`,
-          transform: `translateY(${dragOffset.y}px)`,
-        }}
+      <ItemContextMenu
+        trackLocked={trackLocked}
+        isSelected={isSelected}
+        canJoinSelected={getCanJoinSelected()}
+        onJoinSelected={handleJoinSelected}
+        onRippleDelete={handleRippleDelete}
+        onDelete={handleDelete}
       >
-        {/* Duplication indicator on ghost */}
-        <div className="absolute -top-1 -right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center text-xs font-bold text-primary-foreground shadow-md">
-          +
-        </div>
-      </div>
-
-      {/* Alt-drag ghost for follower items: always rendered, visibility controlled by RAF */}
-      <div
-        ref={ghostRef}
-        className="absolute inset-y-0 rounded border-2 border-dashed border-primary bg-primary/20 pointer-events-none z-50"
-        style={{
-          left: `${left}px`,
-          width: `${width}px`,
-          display: 'none',
-        }}
-      >
-        {/* Duplication indicator on ghost */}
-        <div className="absolute -top-1 -right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center text-xs font-bold text-primary-foreground shadow-md">
-          +
-        </div>
-      </div>
-
-      {/* Drag blocked tooltip - shown when trying to drag in rate-stretch mode */}
-      {dragBlockedTooltip && createPortal(
         <div
-          className="pointer-events-none"
+          ref={transformRef}
+          data-item-id={item.id}
+          className={cn(
+            "absolute inset-y-0 rounded overflow-hidden",
+            itemColorClasses,
+            cursorClass,
+            !isBeingDragged && !isStretching && !trackLocked && 'hover:brightness-110'
+          )}
           style={{
-            position: 'fixed',
-            left: dragBlockedTooltip.x,
-            top: dragBlockedTooltip.y - 8,
-            transform: 'translate(-50%, -100%)',
-            zIndex: 9999,
+            left: `${visualLeft}px`,
+            width: `${visualWidth}px`,
+            transform: isDragging && !isAltDrag ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
+            opacity: isDragging && !isAltDrag ? DRAG_OPACITY : trackLocked ? 0.6 : 1,
+            pointerEvents: isDragging ? 'none' : 'auto',
+            zIndex: isBeingDragged ? 50 : undefined,
+            contentVisibility: 'auto',
+            containIntrinsicSize: `0 ${CLIP_HEIGHT}px`,
           }}
+          onClick={handleClick}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => setHoveredEdge(null)}
         >
-          <div className="overflow-hidden rounded-md bg-orange-500 px-3 py-1.5 text-xs text-white shadow-lg">
-            Can't move clips in rate stretch mode
-          </div>
-        </div>,
-        document.body
-      )}
+          {/* Selection indicator */}
+          {isSelected && !trackLocked && (
+            <div className="absolute inset-0 rounded pointer-events-none z-20 ring-2 ring-inset ring-primary" />
+          )}
+
+          {/* Clip visual content */}
+          <ClipContent
+            item={item}
+            clipWidth={visualWidth}
+            fps={fps}
+            isClipVisible={isClipVisible}
+            pixelsPerSecond={pixelsPerSecond}
+          />
+
+          {/* Status indicators */}
+          <ClipIndicators
+            hasKeyframes={hasKeyframes}
+            currentSpeed={currentSpeed}
+            isStretching={isStretching}
+            stretchFeedback={stretchFeedback}
+            isBroken={isBroken}
+            hasMediaId={!!item.mediaId}
+            isMask={item.type === 'shape' ? item.isMask ?? false : false}
+            isShape={item.type === 'shape'}
+          />
+
+          {/* Trim handles */}
+          <TrimHandles
+            trackLocked={trackLocked}
+            isAnyDragActive={isAnyDragActiveRef.current}
+            isTrimming={isTrimming}
+            trimHandle={trimHandle}
+            activeTool={activeTool}
+            hoveredEdge={hoveredEdge}
+            hasJoinableLeft={hasJoinableLeft}
+            hasJoinableRight={hasJoinableRight}
+            onTrimStart={handleTrimStart}
+            onJoinLeft={handleJoinLeft}
+            onJoinRight={handleJoinRight}
+          />
+
+          {/* Rate stretch handles */}
+          <StretchHandles
+            trackLocked={trackLocked}
+            isAnyDragActive={isAnyDragActiveRef.current}
+            isStretching={isStretching}
+            stretchHandle={stretchHandle}
+            activeTool={activeTool}
+            hoveredEdge={hoveredEdge}
+            isMediaItem={isMediaItem}
+            onStretchStart={handleStretchStart}
+          />
+
+          {/* Join indicators */}
+          <JoinIndicators
+            hasJoinableLeft={hasJoinableLeft}
+            hasJoinableRight={hasJoinableRight}
+            trackLocked={trackLocked}
+            dragAffectsJoin={dragAffectsJoin}
+            hoveredEdge={hoveredEdge}
+            isTrimming={isTrimming}
+            isStretching={isStretching}
+          />
+        </div>
+      </ItemContextMenu>
+
+      {/* Alt-drag ghosts */}
+      <AnchorDragGhost
+        isAltDrag={isAltDrag}
+        isDragging={isDragging}
+        left={left}
+        width={width}
+        dragOffset={dragOffset}
+      />
+      <FollowerDragGhost
+        ref={ghostRef}
+        left={left}
+        width={width}
+      />
+
+      {/* Drag blocked tooltip */}
+      <DragBlockedTooltip position={dragBlockedTooltip} />
     </>
   );
 }, (prevProps, nextProps) => {
-  // Custom equality check - only re-render when relevant props change
   const prevItem = prevProps.item;
   const nextItem = nextProps.item;
 
-  // Check shape-specific mask property
   const prevIsMask = prevItem.type === 'shape' ? prevItem.isMask : undefined;
   const nextIsMask = nextItem.type === 'shape' ? nextItem.isMask : undefined;
 
