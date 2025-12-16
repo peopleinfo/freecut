@@ -5,7 +5,7 @@
  * Integrates with the timeline to provide visual keyframe editing.
  */
 
-import { memo, useState, useCallback, useMemo } from 'react';
+import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ChevronUp, ChevronDown, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -20,8 +20,17 @@ import type { AnimatableProperty, KeyframeRef } from '@/types/keyframe';
 /** Height of the panel header bar in pixels */
 export const GRAPH_PANEL_HEADER_HEIGHT = 32;
 
+/** Height of the resize handle in pixels */
+const RESIZE_HANDLE_HEIGHT = 6;
+
 /** Default height of the graph content area in pixels */
 export const GRAPH_PANEL_CONTENT_HEIGHT = 200;
+
+/** Minimum content height */
+const MIN_CONTENT_HEIGHT = 100;
+
+/** Maximum content height */
+const MAX_CONTENT_HEIGHT = 500;
 
 interface KeyframeGraphPanelProps {
   /** Whether the panel is open */
@@ -30,23 +39,92 @@ interface KeyframeGraphPanelProps {
   onToggle: () => void;
   /** Callback to close the panel */
   onClose: () => void;
-  /** Width of the panel (defaults to full width) */
-  width?: number;
-  /** Height of the graph content area when expanded */
-  contentHeight?: number;
+  /** Callback when panel height changes (for parent to adjust layout) */
+  onHeightChange?: (totalHeight: number) => void;
 }
 
 /**
  * Collapsible panel showing the keyframe value graph editor.
  * Displays graph for the first selected item that has keyframes.
+ * Automatically uses full width of container.
  */
 export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
   isOpen,
   onToggle,
   onClose,
-  width,
-  contentHeight = GRAPH_PANEL_CONTENT_HEIGHT,
+  onHeightChange,
 }: KeyframeGraphPanelProps) {
+  // Ref to measure container width
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // Track content height (user can resize)
+  const [contentHeight, setContentHeight] = useState(GRAPH_PANEL_CONTENT_HEIGHT);
+
+  // Resize state
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartY = useRef(0);
+  const resizeStartHeight = useRef(0);
+
+  // Measure container width on mount and resize
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateWidth = () => {
+      setContainerWidth(container.clientWidth);
+    };
+
+    // Initial measurement
+    updateWidth();
+
+    // Use ResizeObserver to track size changes
+    const resizeObserver = new ResizeObserver(updateWidth);
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [isOpen]); // Re-measure when panel opens
+
+  // Handle resize drag
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    resizeStartY.current = e.clientY;
+    resizeStartHeight.current = contentHeight;
+  }, [contentHeight]);
+
+  // Handle resize move and end via document events
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Dragging up (negative deltaY) should increase height
+      const deltaY = resizeStartY.current - e.clientY;
+      const newHeight = Math.min(
+        MAX_CONTENT_HEIGHT,
+        Math.max(MIN_CONTENT_HEIGHT, resizeStartHeight.current + deltaY)
+      );
+      setContentHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      // Notify parent of final height
+      onHeightChange?.(GRAPH_PANEL_HEADER_HEIGHT + contentHeight + RESIZE_HANDLE_HEIGHT);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, contentHeight, onHeightChange]);
+
   // Selected items
   const selectedItemIds = useSelectionStore((s) => s.selectedItemIds);
 
@@ -167,19 +245,34 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
   }
 
   // Calculate total panel height for proper flex sizing
-  // When closed, show just the header; when open, show header + content
+  // When closed, show just the header; when open, show header + resize handle + content
   const panelHeight = isOpen
-    ? GRAPH_PANEL_HEADER_HEIGHT + contentHeight
+    ? GRAPH_PANEL_HEADER_HEIGHT + RESIZE_HANDLE_HEIGHT + contentHeight
     : GRAPH_PANEL_HEADER_HEIGHT;
 
   return (
     <div
       className={cn(
-        'flex-shrink-0 border-t border-border bg-background transition-all duration-200 overflow-hidden',
-        isOpen ? 'opacity-100' : 'opacity-90'
+        'flex-shrink-0 border-t border-border bg-background overflow-hidden',
+        isOpen ? 'opacity-100' : 'opacity-90',
+        !isResizing && 'transition-all duration-200'
       )}
       style={{ height: panelHeight }}
     >
+      {/* Resize handle - only visible when open */}
+      {isOpen && (
+        <div
+          className={cn(
+            'h-1.5 cursor-ns-resize flex items-center justify-center',
+            'bg-secondary/30 hover:bg-primary/30 transition-colors',
+            isResizing && 'bg-primary/50'
+          )}
+          onMouseDown={handleResizeStart}
+        >
+          <div className="w-8 h-0.5 rounded-full bg-muted-foreground/30" />
+        </div>
+      )}
+
       {/* Header bar - always visible */}
       <div
         className="h-8 flex items-center justify-between px-3 bg-secondary/30 border-b border-border cursor-pointer hover:bg-secondary/50"
@@ -217,8 +310,8 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
 
       {/* Graph editor content */}
       {isOpen && (
-        <div className="p-2" style={{ height: contentHeight }}>
-          {selectedItemWithKeyframes ? (
+        <div ref={containerRef} className="p-2" style={{ height: contentHeight }}>
+          {selectedItemWithKeyframes && containerWidth > 0 ? (
             <ValueGraphEditor
               itemId={selectedItemWithKeyframes.item.id}
               keyframesByProperty={keyframesByProperty}
@@ -226,7 +319,7 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
               selectedKeyframeIds={selectedKeyframeIds}
               currentFrame={relativeFrame}
               totalFrames={selectedItemWithKeyframes.item.durationInFrames}
-              width={width ? width - 16 : undefined} // Account for padding
+              width={containerWidth - 16} // Full width minus padding
               height={contentHeight - 16}
               onKeyframeMove={handleKeyframeMove}
               onSelectionChange={handleSelectionChange}
@@ -234,7 +327,7 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
             />
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-              Select an item with keyframes to view the graph
+              {selectedItemWithKeyframes ? 'Loading...' : 'Select an item with keyframes to view the graph'}
             </div>
           )}
         </div>

@@ -114,14 +114,9 @@ export const GraphKeyframe = memo(function GraphKeyframe({
           L ${point.x - halfSize} ${point.y}
           Z
         `}
-        fill={point.isSelected ? 'hsl(var(--primary))' : '#f97316'}
-        stroke="hsl(var(--background))"
+        fill={point.isDragging ? '#3b82f6' : point.isSelected ? '#3b82f6' : '#f97316'}
+        stroke="#1a1a1a"
         strokeWidth={2}
-        className={cn(
-          'transition-colors',
-          !disabled && 'hover:fill-[hsl(var(--primary))]',
-          point.isDragging && 'fill-[hsl(var(--primary))]'
-        )}
         style={{ pointerEvents: 'none' }}
       />
 

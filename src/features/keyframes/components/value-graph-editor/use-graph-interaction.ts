@@ -299,7 +299,12 @@ export function useGraphInteraction({
       // Handle keyframe dragging
       if (dragStartRef.current && dragState?.type === 'keyframe') {
         const { mouseX, mouseY, initialFrame, initialValue, point } = dragStartRef.current;
-        const { graphWidth, graphHeight, frameRange, valueRange } = graphDimensions;
+        
+        // Use fresh viewport dimensions (not cached) to handle resize during drag
+        const graphWidth = viewport.width - padding.left - padding.right;
+        const graphHeight = viewport.height - padding.top - padding.bottom;
+        const frameRange = viewport.endFrame - viewport.startFrame;
+        const valueRange = viewport.maxValue - viewport.minValue;
 
         const dx = event.clientX - mouseX;
         const dy = event.clientY - mouseY;
@@ -400,7 +405,7 @@ export function useGraphInteraction({
         );
       }
     },
-    [disabled, dragState, isDragging, graphDimensions]
+    [disabled, dragState, isDragging, viewport, padding, maxFrame, clampMinValue, clampMaxValue, graphDimensions]
   );
 
   // Handle pointer up (SVG level)

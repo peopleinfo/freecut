@@ -53,7 +53,8 @@ export const GraphCurve = memo(function GraphCurve({
     return points.join(' ');
   }, [startPoint, endPoint, easingConfig]);
 
-  const color = strokeColor || (isSelected ? 'hsl(var(--primary))' : '#f97316');
+  // Always use orange for curves (blue glow added when selected)
+  const color = strokeColor || '#f97316';
 
   return (
     <g className="graph-curve">
@@ -62,7 +63,7 @@ export const GraphCurve = memo(function GraphCurve({
         <path
           d={path}
           fill="none"
-          stroke="hsl(var(--primary))"
+          stroke="#3b82f6"
           strokeWidth={6}
           strokeLinecap="round"
           strokeLinejoin="round"

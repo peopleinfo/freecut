@@ -140,10 +140,11 @@ export interface GraphPadding {
 
 /**
  * Default padding values.
+ * Bottom padding needs extra space for frame labels.
  */
 export const DEFAULT_GRAPH_PADDING: GraphPadding = {
   top: 20,
   right: 20,
-  bottom: 30,
+  bottom: 40,
   left: 50,
 };

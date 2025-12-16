@@ -169,15 +169,43 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
     disabled,
   });
 
-  // Update points with drag state
-  const pointsWithDragState = useMemo(
-    () =>
-      points.map((point) => ({
-        ...point,
-        isDragging: dragState?.keyframeId === point.keyframe.id,
-      })),
-    [points, dragState]
-  );
+  // Update points with drag state and preview positions
+  const pointsWithDragState = useMemo(() => {
+    // If we're dragging and have preview values, update the dragged point's position
+    if (isDragging && dragState?.type === 'keyframe' && previewValues) {
+      const graphLeft = padding.left;
+      const graphTop = padding.top;
+      const graphWidth = viewport.width - padding.left - padding.right;
+      const graphHeight = viewport.height - padding.top - padding.bottom;
+      const frameRange = viewport.endFrame - viewport.startFrame;
+      const valueRange = viewport.maxValue - viewport.minValue;
+
+      return points.map((point) => {
+        const isThisDragging = dragState.keyframeId === point.keyframe.id;
+        if (isThisDragging) {
+          // Calculate new screen position from preview values
+          const newX = graphLeft + ((previewValues.frame - viewport.startFrame) / frameRange) * graphWidth;
+          const newY = graphTop + (1 - (previewValues.value - viewport.minValue) / valueRange) * graphHeight;
+          return {
+            ...point,
+            x: newX,
+            y: newY,
+            isDragging: true,
+          };
+        }
+        return {
+          ...point,
+          isDragging: false,
+        };
+      });
+    }
+
+    // Not dragging - just update isDragging flag
+    return points.map((point) => ({
+      ...point,
+      isDragging: dragState?.keyframeId === point.keyframe.id,
+    }));
+  }, [points, dragState, isDragging, previewValues, viewport, padding]);
 
   // Reset viewport (fit to content)
   const resetViewport = useCallback(() => {

@@ -18,6 +18,8 @@ export interface TimelineProps {
   duration: number; // Total timeline duration in seconds
   /** Callback when graph panel open state changes - used by parent to resize panel */
   onGraphPanelOpenChange?: (isOpen: boolean) => void;
+  /** Callback when graph panel height changes during resize */
+  onGraphPanelHeightChange?: (height: number) => void;
 }
 
 /**
@@ -30,7 +32,7 @@ export interface TimelineProps {
  *
  * Follows modular architecture with granular Zustand selectors
  */
-export const Timeline = memo(function Timeline({ duration, onGraphPanelOpenChange }: TimelineProps) {
+export const Timeline = memo(function Timeline({ duration, onGraphPanelOpenChange, onGraphPanelHeightChange }: TimelineProps) {
   const {
     tracks,
     addTrack,
@@ -365,6 +367,7 @@ export const Timeline = memo(function Timeline({ duration, onGraphPanelOpenChang
         isOpen={isGraphPanelOpen}
         onToggle={handleToggleGraphPanel}
         onClose={handleCloseGraphPanel}
+        onHeightChange={onGraphPanelHeightChange}
       />
     </div>
     </TimelineZoomProvider>
