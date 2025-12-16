@@ -1,5 +1,6 @@
 import type { TimelineTrack } from './timeline';
 import type { Transition } from './transition';
+import type { ItemKeyframes } from './keyframe';
 
 export interface ExportSettings {
   codec: 'h264' | 'h265' | 'vp8' | 'vp9' | 'prores';
@@ -18,4 +19,5 @@ export interface RemotionInputProps {
   tracks: TimelineTrack[];
   transitions?: Transition[]; // Transitions between clips
   backgroundColor?: string; // Hex color for canvas background
+  keyframes?: ItemKeyframes[]; // Keyframe animations for items
 }

@@ -11,6 +11,7 @@ import { resolveTransform } from '../utils/transform-resolver';
 import { getShapePath, rotatePath } from '../utils/shape-path';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
 import { ItemEffectWrapper, type AdjustmentLayerWithTrackOrder } from '../components/item-effect-wrapper';
+import { KeyframesProvider } from '../contexts/keyframes-context';
 
 /**
  * A visual item (video/image) with track rendering metadata
@@ -313,7 +314,7 @@ const StableMaskedGroup: React.FC<{
  * 3. Only items BELOW adjustment layer (higher track order) receive effects
  * 4. Adding/removing adjustment layers doesn't change DOM structure
  */
-export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, transitions = [], backgroundColor = '#000000' }) => {
+export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, transitions = [], backgroundColor = '#000000', keyframes }) => {
   const { fps, width: canvasWidth, height: canvasHeight } = useVideoConfig();
   // NOTE: useCurrentFrame() removed from here to prevent per-frame re-renders.
   // Frame-dependent logic is now isolated in FrameAwareMaskDefinitions and ClearingLayer.
@@ -481,81 +482,83 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, transiti
   }, [visibleAdjustmentLayers]);
 
   return (
-    <AbsoluteFill>
-      {/* SVG MASK DEFINITIONS - opacity controls activation, no DOM changes */}
-      {/* Uses FrameAwareMaskDefinitions to isolate per-frame re-renders */}
-      <FrameAwareMaskDefinitions
-        masks={activeMasks}
-        hasPotentialMasks={hasActiveMasks}
-        canvasWidth={canvasWidth}
-        canvasHeight={canvasHeight}
-        fps={fps}
-      />
-
-      {/* BACKGROUND LAYER */}
-      <AbsoluteFill style={{ backgroundColor: effectiveBackgroundColor, zIndex: -1 }} />
-
-      {/* AUDIO LAYER - rendered outside visual layers to prevent re-renders from mask/visual changes */}
-      {/* Audio uses item.id as key (not generateStableKey) to prevent remounts on speed changes */}
-      {/* Hidden tracks are muted but stay in DOM for stable structure */}
-      {audioItems.map((item) => (
-        <Sequence
-          key={item.id}
-          from={item.from}
-          durationInFrames={item.durationInFrames}
-        >
-          <Item item={item} muted={item.muted || !item.trackVisible} masks={[]} />
-        </Sequence>
-      ))}
-
-      {/* VIDEO LAYER - all videos in SINGLE wrapper for DOM stability */}
-      {/* ALL effects (CSS, glitch, halftone) applied per-item via ItemEffectWrapper */}
-      <StableMaskedGroup hasMasks={hasActiveMasks}>
-        <StableVideoSequence
-          items={videoItems as any}
-          premountFor={Math.round(fps * 1)}
-          renderItem={renderVideoItem as any}
+    <KeyframesProvider keyframes={keyframes}>
+      <AbsoluteFill>
+        {/* SVG MASK DEFINITIONS - opacity controls activation, no DOM changes */}
+        {/* Uses FrameAwareMaskDefinitions to isolate per-frame re-renders */}
+        <FrameAwareMaskDefinitions
+          masks={activeMasks}
+          hasPotentialMasks={hasActiveMasks}
+          canvasWidth={canvasWidth}
+          canvasHeight={canvasHeight}
+          fps={fps}
         />
 
-        {/* Effects-based transitions - visual effect centered on cut point */}
-        {/* These render ABOVE the normal clips during the transition window */}
-        <EffectsBasedTransitionsLayer
-          transitions={transitions}
-          itemsById={itemsById}
-          adjustmentLayers={visibleAdjustmentLayers}
-        />
-      </StableMaskedGroup>
+        {/* BACKGROUND LAYER */}
+        <AbsoluteFill style={{ backgroundColor: effectiveBackgroundColor, zIndex: -1 }} />
 
-      {/* NON-MEDIA LAYERS - all in single structure, per-item effects via ItemEffectWrapper */}
-      {/* No more above/below split - items never move between DOM parents */}
-      <StableMaskedGroup hasMasks={hasActiveMasks}>
-        {nonMediaByTrack
-          .filter((track) => track.items.length > 0)
-          .map((track) => {
-            const trackOrder = track.order ?? 0;
-            return (
-              <AbsoluteFill
-                key={track.id}
-                style={{
-                  zIndex: 1001 + (maxOrder - trackOrder),
-                  visibility: track.trackVisible ? 'visible' : 'hidden',
-                }}
-              >
-                {track.items.map((item) => (
-                  <Sequence key={item.id} from={item.from} durationInFrames={item.durationInFrames}>
-                    <ItemEffectWrapper
-                      itemTrackOrder={trackOrder}
-                      adjustmentLayers={visibleAdjustmentLayers}
-                      sequenceFrom={item.from}
-                    >
-                      <Item item={item} muted={false} masks={[]} />
-                    </ItemEffectWrapper>
-                  </Sequence>
-                ))}
-              </AbsoluteFill>
-            );
-          })}
-      </StableMaskedGroup>
-    </AbsoluteFill>
+        {/* AUDIO LAYER - rendered outside visual layers to prevent re-renders from mask/visual changes */}
+        {/* Audio uses item.id as key (not generateStableKey) to prevent remounts on speed changes */}
+        {/* Hidden tracks are muted but stay in DOM for stable structure */}
+        {audioItems.map((item) => (
+          <Sequence
+            key={item.id}
+            from={item.from}
+            durationInFrames={item.durationInFrames}
+          >
+            <Item item={item} muted={item.muted || !item.trackVisible} masks={[]} />
+          </Sequence>
+        ))}
+
+        {/* VIDEO LAYER - all videos in SINGLE wrapper for DOM stability */}
+        {/* ALL effects (CSS, glitch, halftone) applied per-item via ItemEffectWrapper */}
+        <StableMaskedGroup hasMasks={hasActiveMasks}>
+          <StableVideoSequence
+            items={videoItems as any}
+            premountFor={Math.round(fps * 1)}
+            renderItem={renderVideoItem as any}
+          />
+
+          {/* Effects-based transitions - visual effect centered on cut point */}
+          {/* These render ABOVE the normal clips during the transition window */}
+          <EffectsBasedTransitionsLayer
+            transitions={transitions}
+            itemsById={itemsById}
+            adjustmentLayers={visibleAdjustmentLayers}
+          />
+        </StableMaskedGroup>
+
+        {/* NON-MEDIA LAYERS - all in single structure, per-item effects via ItemEffectWrapper */}
+        {/* No more above/below split - items never move between DOM parents */}
+        <StableMaskedGroup hasMasks={hasActiveMasks}>
+          {nonMediaByTrack
+            .filter((track) => track.items.length > 0)
+            .map((track) => {
+              const trackOrder = track.order ?? 0;
+              return (
+                <AbsoluteFill
+                  key={track.id}
+                  style={{
+                    zIndex: 1001 + (maxOrder - trackOrder),
+                    visibility: track.trackVisible ? 'visible' : 'hidden',
+                  }}
+                >
+                  {track.items.map((item) => (
+                    <Sequence key={item.id} from={item.from} durationInFrames={item.durationInFrames}>
+                      <ItemEffectWrapper
+                        itemTrackOrder={trackOrder}
+                        adjustmentLayers={visibleAdjustmentLayers}
+                        sequenceFrom={item.from}
+                      >
+                        <Item item={item} muted={false} masks={[]} />
+                      </ItemEffectWrapper>
+                    </Sequence>
+                  ))}
+                </AbsoluteFill>
+              );
+            })}
+        </StableMaskedGroup>
+      </AbsoluteFill>
+    </KeyframesProvider>
   );
 };

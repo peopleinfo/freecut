@@ -154,6 +154,7 @@ export class RenderService {
           height: composition.height,
           tracks: tracksWithResolvedMedia,
           transitions: composition.transitions || [],
+          keyframes: composition.keyframes || [],
         },
       });
 
@@ -161,6 +162,7 @@ export class RenderService {
       console.log('[RenderService] Duration:', compositionData.durationInFrames, 'frames at', compositionData.fps, 'fps');
       console.log('[RenderService] Resolution:', compositionData.width, 'x', compositionData.height);
       console.log('[RenderService] Transitions:', composition.transitions?.length || 0);
+      console.log('[RenderService] Keyframes:', composition.keyframes?.length || 0);
 
       // Update total frames from composition
       jobManager.updateJob(jobId, { totalFrames: compositionData.durationInFrames });
@@ -205,6 +207,7 @@ export class RenderService {
           height: composition.height,
           tracks: tracksWithResolvedMedia,
           transitions: composition.transitions || [],
+          keyframes: composition.keyframes || [],
         },
         onProgress: ({ renderedFrames, encodedFrames }) => {
           const progress = Math.round((renderedFrames / compositionData.durationInFrames) * 100);

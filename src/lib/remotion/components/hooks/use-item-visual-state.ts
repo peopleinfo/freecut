@@ -21,6 +21,7 @@ import {
 } from '@/features/effects/utils/effect-to-css';
 import { getScanlinesStyle, getGlitchFilterString } from '@/features/effects/utils/glitch-algorithms';
 import { getShapePath, rotatePath } from '../../utils/shape-path';
+import { useItemKeyframesFromContext } from '../../contexts/keyframes-context';
 import type { MaskInfo } from '../item';
 import type React from 'react';
 
@@ -103,14 +104,17 @@ export function useItemVisualState(
     useCallback((s) => s.preview?.[item.id], [item.id])
   );
 
-  // Get keyframes for this item (granular selector)
-  const itemKeyframes = useTimelineStore(
+  // Get keyframes for this item
+  // First try context (render mode with inputProps), then fall back to store (preview mode)
+  const contextKeyframes = useItemKeyframesFromContext(item.id);
+  const storeKeyframes = useTimelineStore(
     useCallback(
-      (s: { keyframes: { itemId: string }[] }) =>
-        s.keyframes.find((k: { itemId: string }) => k.itemId === item.id),
+      (s) => s.keyframes.find((k) => k.itemId === item.id),
       [item.id]
     )
   );
+  // Prefer context keyframes (render mode) over store keyframes (preview mode)
+  const itemKeyframes = contextKeyframes ?? storeKeyframes;
 
   // === TRANSFORM COMPUTATION ===
   const { transform, transformStyle, fadeOpacity, finalOpacity } = useMemo(() => {

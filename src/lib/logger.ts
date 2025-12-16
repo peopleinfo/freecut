@@ -29,7 +29,10 @@ class Logger {
   constructor(config?: Partial<LoggerConfig>) {
     this.config = {
       // In development, show all logs. In production, only warnings and errors.
-      level: import.meta.env.DEV ? LogLevel.DEBUG : LogLevel.WARN,
+      // Safe check for import.meta.env to support both Vite and webpack (Remotion SSR) bundlers
+      level: (typeof import.meta !== 'undefined' && typeof import.meta.env !== 'undefined' && import.meta.env.DEV)
+        ? LogLevel.DEBUG
+        : LogLevel.WARN,
       prefix: '',
       ...config,
     };

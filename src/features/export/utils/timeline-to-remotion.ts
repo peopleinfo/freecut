@@ -1,6 +1,7 @@
 import type { TimelineTrack, TimelineItem } from '@/types/timeline';
 import type { Transition } from '@/types/transition';
 import type { RemotionInputProps } from '@/types/export';
+import type { ItemKeyframes } from '@/types/keyframe';
 
 /**
  * Convert timeline data to Remotion input props
@@ -24,7 +25,8 @@ export function convertTimelineToRemotion(
   width: number,
   height: number,
   inPoint?: number | null,
-  outPoint?: number | null
+  outPoint?: number | null,
+  keyframes?: ItemKeyframes[]
 ): RemotionInputProps {
   // Determine if we're exporting a specific in/out range
   const hasInOutRange = inPoint !== null && inPoint !== undefined &&
@@ -125,6 +127,11 @@ export function convertTimelineToRemotion(
     t => processedItemIds.has(t.leftClipId) && processedItemIds.has(t.rightClipId)
   );
 
+  // Filter keyframes to only include items that are in the export
+  const processedKeyframes = keyframes?.filter(
+    kf => processedItemIds.has(kf.itemId)
+  );
+
   return {
     fps,
     durationInFrames,
@@ -132,5 +139,6 @@ export function convertTimelineToRemotion(
     height,
     tracks: sortedTracks,
     transitions: processedTransitions,
+    keyframes: processedKeyframes,
   };
 }
