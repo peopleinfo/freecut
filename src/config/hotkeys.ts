@@ -68,6 +68,7 @@ export const HOTKEYS = {
 
   // Keyframes
   ADD_KEYFRAME: 'k',
+  CLEAR_KEYFRAMES: 'shift+k',
 } as const;
 
 export type HotkeyKey = keyof typeof HOTKEYS;
@@ -139,6 +140,7 @@ export const HOTKEY_DESCRIPTIONS: Record<HotkeyKey, string> = {
 
   // Keyframes
   ADD_KEYFRAME: 'Add keyframe at playhead',
+  CLEAR_KEYFRAMES: 'Clear all keyframes from selected items',
 };
 
 /**

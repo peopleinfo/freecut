@@ -59,16 +59,23 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     )
   );
 
-  // Granular selector: check if this item has keyframes
-  const hasKeyframes = useTimelineStore(
+  // Granular selector: check if this item has keyframes and get keyframed properties
+  const itemKeyframeData = useTimelineStore(
     useCallback(
       (s) => {
         const itemKeyframes = s.keyframes.find((k) => k.itemId === item.id);
-        return itemKeyframes ? itemKeyframes.properties.some((p) => p.keyframes.length > 0) : false;
+        if (!itemKeyframes) return { hasKeyframes: false, properties: [] };
+        const propertiesWithKeyframes = itemKeyframes.properties.filter((p) => p.keyframes.length > 0);
+        return {
+          hasKeyframes: propertiesWithKeyframes.length > 0,
+          properties: propertiesWithKeyframes,
+        };
       },
       [item.id]
     )
   );
+  const hasKeyframes = itemKeyframeData.hasKeyframes;
+  const keyframedProperties = itemKeyframeData.properties;
 
   // Use refs for actions to avoid selector re-renders - read from store in callbacks
   const activeTool = useSelectionStore((s) => s.activeTool);
@@ -524,6 +531,18 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     }
   }, []);
 
+  const handleClearAllKeyframes = useCallback(() => {
+    import('@/features/editor/components/clear-keyframes-dialog').then(({ useClearKeyframesDialogStore }) => {
+      useClearKeyframesDialogStore.getState().openClearAll([item.id]);
+    });
+  }, [item.id]);
+
+  const handleClearPropertyKeyframes = useCallback((property: 'x' | 'y' | 'width' | 'height' | 'rotation' | 'opacity' | 'cornerRadius') => {
+    import('@/features/editor/components/clear-keyframes-dialog').then(({ useClearKeyframesDialogStore }) => {
+      useClearKeyframesDialogStore.getState().openClearProperty([item.id], property);
+    });
+  }, [item.id]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     // Show blocked tooltip when trying to drag in rate-stretch mode
     if (activeTool === 'rate-stretch' && !trackLocked && !isStretching) {
@@ -545,9 +564,12 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         trackLocked={trackLocked}
         isSelected={isSelected}
         canJoinSelected={getCanJoinSelected()}
+        keyframedProperties={keyframedProperties}
         onJoinSelected={handleJoinSelected}
         onRippleDelete={handleRippleDelete}
         onDelete={handleDelete}
+        onClearAllKeyframes={handleClearAllKeyframes}
+        onClearPropertyKeyframes={handleClearPropertyKeyframes}
       >
         <div
           ref={transformRef}

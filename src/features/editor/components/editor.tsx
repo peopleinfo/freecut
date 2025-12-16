@@ -15,6 +15,7 @@ import { PreviewArea } from './preview-area';
 import { ProjectDebugPanel } from './project-debug-panel';
 import { Timeline } from '@/features/timeline/components/timeline';
 import { ExportDialog } from '@/features/export/components/export-dialog';
+import { ClearKeyframesDialog } from './clear-keyframes-dialog';
 import { useEditorHotkeys } from '@/hooks/use-editor-hotkeys';
 import { useTimelineShortcuts } from '@/features/timeline/hooks/use-timeline-shortcuts';
 import { useTransitionBreakageNotifications } from '@/features/timeline/hooks/use-transition-breakage-notifications';
@@ -246,6 +247,9 @@ export const Editor = memo(function Editor({ projectId, project }: EditorProps) 
 
       {/* Export Dialog */}
       <ExportDialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} />
+
+      {/* Clear Keyframes Confirmation Dialog */}
+      <ClearKeyframesDialog />
 
       {/* Debug Panel (dev mode only) */}
       <ProjectDebugPanel projectId={projectId} />

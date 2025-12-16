@@ -607,6 +607,33 @@ export function useTimelineShortcuts(callbacks: TimelineShortcutCallbacks = {}) 
     [selectedItemIds]
   );
 
+  // Keyframes: Shift+K - Clear all keyframes for selected items (with confirmation)
+  useHotkeys(
+    HOTKEYS.CLEAR_KEYFRAMES,
+    (event) => {
+      if (selectedItemIds.length === 0) return;
+
+      event.preventDefault();
+
+      // Filter to only items that have keyframes
+      const storeKeyframes = useTimelineStore.getState().keyframes;
+      const itemsWithKeyframes = selectedItemIds.filter((itemId) => {
+        const itemKeyframes = storeKeyframes.find((k) => k.itemId === itemId);
+        return itemKeyframes?.properties.some((p) => p.keyframes.length > 0);
+      });
+
+      if (itemsWithKeyframes.length === 0) return;
+
+      // Open confirmation dialog
+      // Import dynamically to avoid circular dependencies
+      import('@/features/editor/components/clear-keyframes-dialog').then(({ useClearKeyframesDialogStore }) => {
+        useClearKeyframesDialogStore.getState().openClearAll(itemsWithKeyframes);
+      });
+    },
+    HOTKEY_OPTIONS,
+    [selectedItemIds]
+  );
+
   // Clipboard: Ctrl+C - Copy selected transition properties or timeline items
   useHotkeys(
     HOTKEYS.COPY,
