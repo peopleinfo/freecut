@@ -644,8 +644,11 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
   // This ensures transition video elements have enough time to buffer before becoming visible
   const premountFrames = Math.round(fps * 2);
 
-  // Use higher z-index to ensure effects layer covers normal clips during transition
-  const effectsZIndex = Math.max(leftClip.zIndex, rightClip.zIndex) + 2000;
+  // Calculate z-index that respects track order
+  // Z-index scheme: (maxOrder - trackOrder) * 1000 is the base for each track
+  // Videos use base, non-media uses base + 100, transitions use base + 200
+  // This ensures track order is the primary factor - items on higher tracks are always on top
+  const effectsZIndex = Math.max(leftClip.zIndex, rightClip.zIndex) + 200;
 
   // Calculate left clip's content offset to show its ending frames during transition
   // We want to show the last `durationInFrames` frames of the left clip

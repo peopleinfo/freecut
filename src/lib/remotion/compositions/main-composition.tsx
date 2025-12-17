@@ -339,13 +339,15 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, transiti
   const visibleTrackIds = useMemo(() => new Set(visibleTracks.map((t) => t.id)), [visibleTracks]);
 
   // Get all video and image items for transitions and rendering
+  // Z-index scheme: (maxOrder - trackOrder) * 1000 gives each track a z-index band
+  // This ensures track order is the primary factor for layering
   const allVisualItems: EnrichedVisualItem[] = useMemo(() =>
     tracks.flatMap((track) =>
       track.items
         .filter((item) => item.type === 'video' || item.type === 'image')
         .map((item) => ({
           ...item,
-          zIndex: maxOrder - (track.order ?? 0),
+          zIndex: (maxOrder - (track.order ?? 0)) * 1000,
           muted: track.muted ?? false,
           trackOrder: track.order ?? 0,
           trackVisible: visibleTrackIds.has(track.id),
@@ -539,7 +541,8 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, transiti
                 <AbsoluteFill
                   key={track.id}
                   style={{
-                    zIndex: 1001 + (maxOrder - trackOrder),
+                    // Non-media z-index: base + 100 (videos use base, transitions use base + 200)
+                    zIndex: (maxOrder - trackOrder) * 1000 + 100,
                     visibility: track.trackVisible ? 'visible' : 'hidden',
                   }}
                 >

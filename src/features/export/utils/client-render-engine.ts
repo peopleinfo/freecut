@@ -590,47 +590,60 @@ async function createCompositionRenderer(
         return true;
       };
 
-      // PASS 1: Render media items (video/image) - these go BEHIND transitions
-      for (const track of sortedTracks) {
-        if (track.visible === false) continue;
-
-        for (const item of track.items ?? []) {
-          if (!shouldRenderItem(item)) continue;
-          // Only render media items in first pass
-          if (item.type !== 'video' && item.type !== 'image') continue;
-          await renderItemWithEffects(item, track.order ?? 0);
-        }
+      // Build map of track ID → track order for transition lookup
+      const trackOrderMap = new Map<string, number>();
+      for (const track of tracks) {
+        trackOrderMap.set(track.id, track.order ?? 0);
       }
 
-      // Render transitions (between media and non-media items)
+      // Group transitions by their track order
+      const transitionsByTrackOrder = new Map<number, ActiveTransition[]>();
       for (const activeTransition of activeTransitions) {
-        await renderTransitionToCanvas(
-          contentCtx,
-          activeTransition,
-          frame,
-          canvasSettings,
-          videoElements,
-          imageElements,
-          keyframesMap,
-          adjustmentLayers
-        );
-        
-        // Debug: Check content after transition
-        if (frame === activeTransition.transitionStart) {
-          const afterData = contentCtx.getImageData(Math.floor(canvas.width/2), Math.floor(canvas.height/2), 1, 1).data;
-          log.info(`TRANSITION RENDERED: frame=${frame} progress=${activeTransition.progress.toFixed(3)} centerPixel=(${afterData[0]},${afterData[1]},${afterData[2]},${afterData[3]})`);
+        // Get track order from the transition's trackId or from the clips
+        const transitionTrackId = activeTransition.transition.trackId;
+        const trackOrder = transitionTrackId
+          ? (trackOrderMap.get(transitionTrackId) ?? 0)
+          : 0;
+
+        if (!transitionsByTrackOrder.has(trackOrder)) {
+          transitionsByTrackOrder.set(trackOrder, []);
         }
+        transitionsByTrackOrder.get(trackOrder)!.push(activeTransition);
       }
 
-      // PASS 2: Render non-media items (text/shape) - these go ON TOP of transitions
+      // Render tracks in order (bottom to top), with transitions at their track position
+      // Track order: higher values render first (behind), lower values render last (on top)
       for (const track of sortedTracks) {
         if (track.visible === false) continue;
+        const trackOrder = track.order ?? 0;
 
+        // Render all items on this track (respecting track order as primary)
         for (const item of track.items ?? []) {
           if (!shouldRenderItem(item)) continue;
-          // Only render non-media items in second pass
-          if (item.type === 'video' || item.type === 'image') continue;
-          await renderItemWithEffects(item, track.order ?? 0);
+          await renderItemWithEffects(item, trackOrder);
+        }
+
+        // Render transitions that belong to this track (after the track's items)
+        const trackTransitions = transitionsByTrackOrder.get(trackOrder);
+        if (trackTransitions) {
+          for (const activeTransition of trackTransitions) {
+            await renderTransitionToCanvas(
+              contentCtx,
+              activeTransition,
+              frame,
+              canvasSettings,
+              videoElements,
+              imageElements,
+              keyframesMap,
+              adjustmentLayers
+            );
+
+            // Debug: Check content after transition
+            if (frame === activeTransition.transitionStart) {
+              const afterData = contentCtx.getImageData(Math.floor(canvas.width/2), Math.floor(canvas.height/2), 1, 1).data;
+              log.info(`TRANSITION RENDERED: frame=${frame} trackOrder=${trackOrder} progress=${activeTransition.progress.toFixed(3)} centerPixel=(${afterData[0]},${afterData[1]},${afterData[2]},${afterData[3]})`);
+            }
+          }
         }
       }
 
