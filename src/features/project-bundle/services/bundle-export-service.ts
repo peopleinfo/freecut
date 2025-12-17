@@ -14,7 +14,7 @@ import {
   BUNDLE_VERSION,
   BUNDLE_EXTENSION,
 } from '../types/bundle';
-import { getProject, getProjectMediaIds } from '@/lib/storage/indexeddb';
+import { getProject, getProjectMediaIds, getThumbnail } from '@/lib/storage/indexeddb';
 import { mediaLibraryService } from '@/features/media-library/services/media-library-service';
 import { computeContentHashFromBuffer } from '@/features/media-library/utils/content-hash';
 
@@ -167,7 +167,23 @@ export async function exportProjectBundle(
     true
   );
 
-  // Step 7: Compute manifest checksum and add manifest.json
+  // Step 7: Add project cover thumbnail if exists
+  if (project.thumbnailId) {
+    try {
+      const thumbnailData = await getThumbnail(project.thumbnailId);
+      if (thumbnailData?.blob) {
+        const thumbnailBuffer = await thumbnailData.blob.arrayBuffer();
+        const thumbnailFile = new ZipPassThrough('cover.jpg');
+        zip.add(thumbnailFile);
+        thumbnailFile.push(new Uint8Array(thumbnailBuffer), true);
+      }
+    } catch (err) {
+      // Thumbnail is optional, continue without it
+      console.warn('Could not export project thumbnail:', err);
+    }
+  }
+
+  // Step 8: Compute manifest checksum and add manifest.json
   const manifestForHash = { ...manifest, checksum: '' };
   const manifestHashBuffer = await crypto.subtle.digest(
     'SHA-256',
@@ -184,7 +200,7 @@ export async function exportProjectBundle(
     true
   );
 
-  // Step 8: Finalize ZIP
+  // Step 9: Finalize ZIP
   zip.end();
 
   onProgress?.({ percent: 100, stage: 'complete' });

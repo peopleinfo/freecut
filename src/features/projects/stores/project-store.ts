@@ -51,6 +51,10 @@ export interface ProjectActions {
   deleteProject: (id: string) => Promise<void>;
   duplicateProject: (id: string) => Promise<Project>;
 
+  // Project folder management
+  setProjectRootFolder: (id: string, handle: FileSystemDirectoryHandle) => Promise<void>;
+  clearProjectRootFolder: (id: string) => Promise<void>;
+
   // State management
   setCurrentProject: (project: Project | null) => void;
   setSearchQuery: (query: string) => void;
@@ -285,6 +289,78 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
             const errorMessage =
               error instanceof Error ? error.message : 'Failed to duplicate project';
             set({ error: errorMessage, isLoading: false });
+            throw error;
+          }
+        },
+
+        // Project folder management
+        setProjectRootFolder: async (id: string, handle: FileSystemDirectoryHandle) => {
+          const previousProjects = get().projects;
+          const currentProject = get().currentProject;
+
+          // Optimistic update
+          const folderName = handle.name;
+          const updateProjectInList = (project: Project) => ({
+            ...project,
+            rootFolderHandle: handle,
+            rootFolderName: folderName,
+            updatedAt: Date.now(),
+          });
+
+          if (currentProject?.id === id) {
+            set({ currentProject: updateProjectInList(currentProject) });
+          }
+
+          const projectIndex = previousProjects.findIndex((p) => p.id === id);
+          if (projectIndex !== -1) {
+            const optimisticProjects = [...previousProjects];
+            optimisticProjects[projectIndex] = updateProjectInList(previousProjects[projectIndex]!);
+            set({ projects: optimisticProjects });
+          }
+
+          try {
+            await updateProjectDB(id, {
+              rootFolderHandle: handle,
+              rootFolderName: folderName,
+            });
+          } catch (error) {
+            // Rollback on error
+            set({ projects: previousProjects, currentProject });
+            throw error;
+          }
+        },
+
+        clearProjectRootFolder: async (id: string) => {
+          const previousProjects = get().projects;
+          const currentProject = get().currentProject;
+
+          // Optimistic update
+          const updateProjectInList = (project: Project) => ({
+            ...project,
+            rootFolderHandle: undefined,
+            rootFolderName: undefined,
+            updatedAt: Date.now(),
+          });
+
+          if (currentProject?.id === id) {
+            set({ currentProject: updateProjectInList(currentProject) });
+          }
+
+          const projectIndex = previousProjects.findIndex((p) => p.id === id);
+          if (projectIndex !== -1) {
+            const optimisticProjects = [...previousProjects];
+            optimisticProjects[projectIndex] = updateProjectInList(previousProjects[projectIndex]!);
+            set({ projects: optimisticProjects });
+          }
+
+          try {
+            await updateProjectDB(id, {
+              rootFolderHandle: undefined,
+              rootFolderName: undefined,
+            });
+          } catch (error) {
+            // Rollback on error
+            set({ projects: previousProjects, currentProject });
             throw error;
           }
         },

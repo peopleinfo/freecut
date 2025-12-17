@@ -66,10 +66,22 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
   const brokenMediaIds = useMediaLibraryStore((s) => s.brokenMediaIds);
   const openMissingMediaDialog = useMediaLibraryStore((s) => s.openMissingMediaDialog);
 
-  // Load media items when project changes
+  // Load media items on mount and when project changes
+  // Important: Always load on mount because HMR preserves store state (isLoading: true)
+  // but remounts components, so the effect may not re-trigger if currentProjectId is unchanged
   useEffect(() => {
-    loadMediaItems();
-  }, [currentProjectId, loadMediaItems]); // Reload when project context changes
+    if (currentProjectId) {
+      loadMediaItems();
+    }
+  }, [currentProjectId, loadMediaItems]);
+
+  // Also load on mount specifically (handles HMR case where deps haven't changed)
+  useEffect(() => {
+    if (currentProjectId) {
+      loadMediaItems();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Intentionally empty - run only on mount
 
   // Track focus and clear selection when clicking outside the media library
   useEffect(() => {

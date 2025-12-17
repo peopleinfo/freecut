@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('MissingMediaDialog');
@@ -19,8 +19,10 @@ import {
   X,
   AlertTriangle,
   Search,
+  Folder,
 } from 'lucide-react';
 import { useMediaLibraryStore } from '../stores/media-library-store';
+import { useProjectStore } from '@/features/projects/stores/project-store';
 
 export function MissingMediaDialog() {
   const showDialog = useMediaLibraryStore((s) => s.showMissingMediaDialog);
@@ -30,9 +32,16 @@ export function MissingMediaDialog() {
   const relinkMediaBatch = useMediaLibraryStore((s) => s.relinkMediaBatch);
   const markMediaHealthy = useMediaLibraryStore((s) => s.markMediaHealthy);
 
+  // Project folder for smart relinking
+  const currentProject = useProjectStore((s) => s.currentProject);
+  const projectRootFolderHandle = currentProject?.rootFolderHandle;
+  const projectRootFolderName = currentProject?.rootFolderName;
+
   const [relinking, setRelinking] = useState<string | null>(null);
   const [locatingFolder, setLocatingFolder] = useState(false);
+  const [scanningProjectFolder, setScanningProjectFolder] = useState(false);
   const [relinkedIds, setRelinkedIds] = useState<Set<string>>(new Set());
+  const [autoScanned, setAutoScanned] = useState(false);
 
   const brokenItems = useMemo(
     () =>
@@ -46,6 +55,81 @@ export function MissingMediaDialog() {
     (b) => b.errorType === 'permission_denied'
   );
   const fileMissing = brokenItems.filter((b) => b.errorType === 'file_missing');
+
+  // Helper to scan a directory for matching files
+  const scanDirectoryForMatches = useCallback(async (
+    dirHandle: FileSystemDirectoryHandle,
+    itemsToMatch: typeof brokenItems
+  ): Promise<Array<{ mediaId: string; handle: FileSystemFileHandle }>> => {
+    const foundRelinks: Array<{
+      mediaId: string;
+      handle: FileSystemFileHandle;
+    }> = [];
+
+    // Scan directory for matching filenames
+    for await (const entry of dirHandle.values()) {
+      if (entry.kind === 'file') {
+        const matchingBroken = itemsToMatch.find(
+          (b) => b.fileName.toLowerCase() === entry.name.toLowerCase()
+        );
+        if (matchingBroken) {
+          foundRelinks.push({
+            mediaId: matchingBroken.mediaId,
+            handle: entry as FileSystemFileHandle,
+          });
+        }
+      }
+    }
+
+    return foundRelinks;
+  }, []);
+
+  // Auto-scan project folder when dialog opens
+  const handleScanProjectFolder = useCallback(async () => {
+    if (!projectRootFolderHandle || brokenItems.length === 0) return;
+
+    setScanningProjectFolder(true);
+    try {
+      // Request permission if needed
+      const permission = await projectRootFolderHandle.queryPermission({ mode: 'read' });
+      if (permission !== 'granted') {
+        const newPermission = await projectRootFolderHandle.requestPermission({ mode: 'read' });
+        if (newPermission !== 'granted') {
+          logger.warn('Permission denied for project folder');
+          return;
+        }
+      }
+
+      const foundRelinks = await scanDirectoryForMatches(projectRootFolderHandle, brokenItems);
+
+      if (foundRelinks.length > 0) {
+        const { success } = await relinkMediaBatch(foundRelinks);
+        setRelinkedIds((prev) => new Set([...prev, ...success]));
+        logger.info(`Auto-relinked ${success.length} files from project folder`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name !== 'AbortError') {
+        logger.error('Project folder scan failed:', error);
+      }
+    } finally {
+      setScanningProjectFolder(false);
+    }
+  }, [projectRootFolderHandle, brokenItems, relinkMediaBatch, scanDirectoryForMatches]);
+
+  // Auto-scan project folder when dialog opens (only once per dialog open)
+  useEffect(() => {
+    if (showDialog && projectRootFolderHandle && brokenItems.length > 0 && !autoScanned) {
+      setAutoScanned(true);
+      handleScanProjectFolder();
+    }
+  }, [showDialog, projectRootFolderHandle, brokenItems.length, autoScanned, handleScanProjectFolder]);
+
+  // Reset auto-scan flag when dialog closes
+  useEffect(() => {
+    if (!showDialog) {
+      setAutoScanned(false);
+    }
+  }, [showDialog]);
 
   const handleRelinkSingle = async (mediaId: string) => {
     setRelinking(mediaId);
@@ -87,25 +171,7 @@ export function MissingMediaDialog() {
         mode: 'read',
       });
 
-      const foundRelinks: Array<{
-        mediaId: string;
-        handle: FileSystemFileHandle;
-      }> = [];
-
-      // Scan directory for matching filenames
-      for await (const entry of dirHandle.values()) {
-        if (entry.kind === 'file') {
-          const matchingBroken = brokenItems.find(
-            (b) => b.fileName.toLowerCase() === entry.name.toLowerCase()
-          );
-          if (matchingBroken) {
-            foundRelinks.push({
-              mediaId: matchingBroken.mediaId,
-              handle: entry as FileSystemFileHandle,
-            });
-          }
-        }
-      }
+      const foundRelinks = await scanDirectoryForMatches(dirHandle, brokenItems);
 
       if (foundRelinks.length > 0) {
         const { success } = await relinkMediaBatch(foundRelinks);
@@ -169,6 +235,23 @@ export function MissingMediaDialog() {
             )}
           </div>
 
+          {/* Project folder scan button (if project folder is set) */}
+          {projectRootFolderHandle && (
+            <Button
+              variant="default"
+              className="w-full"
+              onClick={handleScanProjectFolder}
+              disabled={scanningProjectFolder}
+            >
+              {scanningProjectFolder ? (
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Folder className="w-4 h-4 mr-2" />
+              )}
+              Scan Project Folder ({projectRootFolderName})
+            </Button>
+          )}
+
           {/* Locate Folder button */}
           <Button
             variant="outline"
@@ -181,7 +264,7 @@ export function MissingMediaDialog() {
             ) : (
               <FolderOpen className="w-4 h-4 mr-2" />
             )}
-            Locate Folder (auto-match by filename)
+            {projectRootFolderHandle ? 'Browse Another Folder...' : 'Locate Folder (auto-match by filename)'}
           </Button>
 
           {/* List of broken media */}

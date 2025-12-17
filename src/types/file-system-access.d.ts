@@ -79,9 +79,23 @@ interface Window {
 }
 
 /**
- * Extends FileSystemDirectoryHandle with async iterable methods
+ * Extends FileSystemDirectoryHandle with async iterable methods and permissions
  */
 interface FileSystemDirectoryHandle {
+  /**
+   * Query the current permission state of this handle
+   */
+  queryPermission(
+    descriptor?: FileSystemPermissionDescriptor
+  ): Promise<PermissionState>;
+
+  /**
+   * Request permission to access this handle
+   */
+  requestPermission(
+    descriptor?: FileSystemPermissionDescriptor
+  ): Promise<PermissionState>;
+
   /**
    * Returns an async iterator of [name, handle] pairs
    */

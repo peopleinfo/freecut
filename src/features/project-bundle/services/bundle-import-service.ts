@@ -177,15 +177,21 @@ export async function importProjectBundle(
   onProgress?.({ percent: 85, stage: 'linking' });
 
   const newProjectId = crypto.randomUUID();
+  const importNote = `Imported from Project ${bundleProject.name}`;
   const project: Project = {
     id: newProjectId,
     name: projectName,
-    description: bundleProject.description,
+    description: bundleProject.description
+      ? `${bundleProject.description}\n\n${importNote}`
+      : importNote,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     duration: bundleProject.duration,
     thumbnail: bundleProject.thumbnail,
     metadata: bundleProject.metadata,
+    // Store the project folder handle for smarter relinking and path display
+    rootFolderHandle: projectDir,
+    rootFolderName: projectName,
     timeline: bundleProject.timeline
       ? {
           tracks: bundleProject.timeline.tracks,
@@ -210,7 +216,32 @@ export async function importProjectBundle(
 
   await createProject(project);
 
-  // Step 7: Associate all imported media with the project
+  // Step 7: Restore project cover thumbnail if exists in bundle
+  const coverData = files['cover.jpg'];
+  if (coverData) {
+    try {
+      const blob = new Blob([new Uint8Array(coverData)], { type: 'image/jpeg' });
+      const thumbnailId = `project:${newProjectId}:cover`;
+      await saveThumbnail({
+        id: thumbnailId,
+        mediaId: newProjectId, // Use project ID as mediaId for cover thumbnails
+        blob,
+        timestamp: Date.now(),
+        width: 320, // Default thumbnail dimensions
+        height: 180,
+      });
+      // Update project with thumbnailId
+      project.thumbnailId = thumbnailId;
+      // Note: Project already created above, need to update it
+      const { updateProject } = await import('@/lib/storage/indexeddb');
+      await updateProject(newProjectId, { thumbnailId });
+    } catch (err) {
+      // Thumbnail restoration is optional, continue without it
+      console.warn('Could not restore project thumbnail:', err);
+    }
+  }
+
+  // Step 8: Associate all imported media with the project
   onProgress?.({ percent: 95, stage: 'linking' });
 
   for (const [_originalId, newMediaId] of mediaIdMap) {

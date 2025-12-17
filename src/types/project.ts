@@ -12,6 +12,17 @@ export interface Project {
   thumbnailUrl?: string; // @deprecated External URL
   metadata: ProjectResolution;
   timeline?: ProjectTimeline;
+  /**
+   * Root folder handle for the project's media files.
+   * Set when importing a bundle or manually by the user.
+   * Used for smarter relinking and showing relative paths.
+   */
+  rootFolderHandle?: FileSystemDirectoryHandle;
+  /**
+   * Display name for the root folder (since handles don't expose full paths).
+   * Updated when rootFolderHandle is set.
+   */
+  rootFolderName?: string;
 }
 
 export interface ProjectTimeline {

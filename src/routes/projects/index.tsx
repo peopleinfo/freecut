@@ -46,6 +46,7 @@ function ProjectsIndex() {
   // Import state - two-step flow
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
+  const [projectNameFromFile, setProjectNameFromFile] = useState<string | null>(null);
   const [destinationDir, setDestinationDir] = useState<FileSystemDirectoryHandle | null>(null);
   const [destinationName, setDestinationName] = useState<string | null>(null);
   const [useProjectsFolder, setUseProjectsFolder] = useState(true); // Create FreeCutProjects subfolder
@@ -55,6 +56,24 @@ function ProjectsIndex() {
   const [isImporting, setIsImporting] = useState(false);
 
   const PROJECTS_FOLDER_NAME = 'FreeCutProjects';
+
+  // Extract project name from bundle filename
+  // Handles both "myproject.freecut.zip" and browser-renamed "myproject.freecut (1).zip"
+  const extractProjectName = (fileName: string): string => {
+    // Remove .zip extension first
+    let name = fileName.replace(/\.zip$/i, '');
+    // Remove browser duplicate suffix like " (1)", " (2)", etc.
+    name = name.replace(/\s*\(\d+\)$/, '');
+    // Remove .freecut suffix
+    name = name.replace(/\.freecut$/i, '');
+    return name;
+  };
+
+  // Check if file is a valid bundle (handles browser-renamed files like "project.freecut (1).zip")
+  const isValidBundleFile = (fileName: string): boolean => {
+    // Match: anything.freecut.zip or anything.freecut (N).zip
+    return /\.freecut(\s*\(\d+\))?\.zip$/i.test(fileName);
+  };
 
   const isLoading = useProjectsLoading();
   const error = useProjectsError();
@@ -78,17 +97,16 @@ function ProjectsIndex() {
     // Reset file input for next selection
     event.target.value = '';
 
-    // Validate file extension (support both new and legacy formats)
-    const validExtensions = [BUNDLE_EXTENSION];
-    const hasValidExtension = validExtensions.some((ext) => file.name.endsWith(ext));
-    if (!hasValidExtension) {
+    // Validate file extension (handles browser-renamed files like "project.freecut (1).zip")
+    if (!isValidBundleFile(file.name)) {
       setImportError(`Please select a valid ${BUNDLE_EXTENSION} file`);
       setImportDialogOpen(true);
       return;
     }
 
-    // Store file and show destination selection dialog
+    // Store file and extract project name, then show destination selection dialog
     setPendingImportFile(file);
+    setProjectNameFromFile(extractProjectName(file.name));
     setDestinationDir(null);
     setDestinationName(null);
     setImportError(null);
@@ -176,11 +194,21 @@ function ProjectsIndex() {
     if (isImporting) return; // Don't close while importing
     setImportDialogOpen(false);
     setPendingImportFile(null);
+    setProjectNameFromFile(null);
     setDestinationDir(null);
     setDestinationName(null);
     setImportError(null);
     setImportProgress(null);
     setIsImporting(false);
+  };
+
+  // Compute full destination path for display
+  const getFullDestinationPath = (): string => {
+    if (!destinationName) return '';
+    const parts = [destinationName];
+    if (useProjectsFolder) parts.push(PROJECTS_FOLDER_NAME);
+    if (projectNameFromFile) parts.push(projectNameFromFile);
+    return parts.join('/');
   };
 
   // Format file size for display
@@ -249,7 +277,7 @@ function ProjectsIndex() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".freecut.zip"
+              accept=".zip"
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -402,9 +430,12 @@ function ProjectsIndex() {
                   <p className="text-xs text-destructive">{importError}</p>
                 )}
                 {destinationDir && !importError && (
-                  <p className="text-xs text-muted-foreground">
-                    Media will be saved to: {destinationName}/{useProjectsFolder ? `${PROJECTS_FOLDER_NAME}/` : ''}[project name]
-                  </p>
+                  <div className="p-3 bg-muted/50 rounded-lg border border-border">
+                    <p className="text-xs text-muted-foreground mb-1">Media will be saved to:</p>
+                    <p className="text-sm font-semibold text-foreground break-all">
+                      {getFullDestinationPath()}
+                    </p>
+                  </div>
                 )}
               </div>
 
