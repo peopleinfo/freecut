@@ -39,9 +39,12 @@ interface VideoGroup {
 }
 
 /**
- * Groups video items by their origin key (mediaId-originId-speed) AND adjacency.
+ * Groups video items by their origin key (mediaId-originId) AND adjacency.
  * Only adjacent clips (one ends where another begins) are grouped together.
  * Clips that have been dragged apart are placed in separate groups.
+ *
+ * NOTE: Speed is intentionally NOT part of the key. Changing speed should not
+ * cause component remounts, as this breaks Web Audio API connections.
  */
 function groupByOrigin(items: EnrichedVideoItem[]): VideoGroup[] {
   // First, collect items by their origin key
@@ -49,7 +52,10 @@ function groupByOrigin(items: EnrichedVideoItem[]): VideoGroup[] {
 
   for (const item of items) {
     const originId = item.originId || item.id;
-    const key = `${item.mediaId}-${originId}-${item.speed || 1}`;
+    // NOTE: Do NOT include speed in the key - changing speed should NOT cause remount
+    // Remounting breaks Web Audio API connections, causing audio to go silent
+    // Speed changes are handled dynamically via playbackRate prop
+    const key = `${item.mediaId}-${originId}`;
 
     const existing = byOriginKey.get(key);
     if (existing) {
