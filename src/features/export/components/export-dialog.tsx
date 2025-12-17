@@ -9,10 +9,21 @@ import {
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Download, Loader2, X, CheckCircle2, AlertCircle, Monitor, Cloud } from 'lucide-react';
+import {
+  Monitor,
+  Cloud,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  X,
+  Download,
+  Film,
+  Clock,
+  HardDrive,
+} from 'lucide-react';
 import type { ExportSettings } from '@/types/export';
 import { useRender } from '../hooks/use-render';
 import { useClientRender } from '../hooks/use-client-render';
@@ -24,19 +35,30 @@ export interface ExportDialogProps {
 }
 
 type RenderMode = 'client' | 'server';
+type DialogView = 'settings' | 'progress' | 'complete' | 'error' | 'cancelled';
+
+function formatTime(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60);
+  return `${minutes}m ${remainingSeconds}s`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
 
 /**
  * Generate resolution options based on project dimensions.
- * Maintains aspect ratio and provides scaled-down options.
  */
 function getResolutionOptions(projectWidth: number, projectHeight: number) {
-  // Scale factors: 100%, ~66% (720p equivalent), ~50% (540p equivalent)
   const scales = [1, 0.666, 0.5];
 
   return scales.map((scale) => {
     const w = Math.round(projectWidth * scale);
     const h = Math.round(projectHeight * scale);
-    // Ensure even dimensions (required by most codecs)
     const width = w % 2 === 0 ? w : w + 1;
     const height = h % 2 === 0 ? h : h + 1;
 
@@ -50,7 +72,6 @@ function getResolutionOptions(projectWidth: number, projectHeight: number) {
 }
 
 export function ExportDialog({ open, onClose }: ExportDialogProps) {
-  // Get project canvas dimensions
   const projectWidth = useProjectStore((s) => s.currentProject?.metadata.width ?? 1920);
   const projectHeight = useProjectStore((s) => s.currentProject?.metadata.height ?? 1080);
 
@@ -60,7 +81,11 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
     resolution: { width: projectWidth, height: projectHeight },
   });
 
-  // Generate resolution options based on project dimensions
+  const [renderMode, setRenderMode] = useState<RenderMode>('client');
+  const [view, setView] = useState<DialogView>('settings');
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
   const resolutionOptions = useMemo(
     () => getResolutionOptions(projectWidth, projectHeight),
     [projectWidth, projectHeight]
@@ -74,19 +99,12 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
     }));
   }, [projectWidth, projectHeight]);
 
-  const [renderMode, setRenderMode] = useState<RenderMode>('client');
-
-  // Server-side render hook
+  // Render hooks
   const serverRender = useRender();
-
-  // Client-side render hook
   const clientRender = useClientRender();
-
-  // Select active render based on mode
   const activeRender = renderMode === 'client' ? clientRender : serverRender;
 
   const {
-    isExporting,
     progress,
     renderedFrames,
     totalFrames,
@@ -97,52 +115,80 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
     downloadVideo,
   } = activeRender;
 
-  // Server-specific state
   const isUploading = renderMode === 'server' && serverRender.isUploading;
 
-  // Handle dialog close
-  const handleClose = () => {
-    if (!isExporting) {
-      onClose();
+  // Track elapsed time
+  useEffect(() => {
+    if (view === 'progress' && !startTime) {
+      setStartTime(Date.now());
     }
+    if (view === 'settings') {
+      setStartTime(null);
+      setElapsedSeconds(0);
+    }
+  }, [view, startTime]);
+
+  useEffect(() => {
+    if (!startTime || view !== 'progress') return;
+
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [startTime, view]);
+
+  // Watch status changes to update view
+  useEffect(() => {
+    if (status === 'completed') {
+      setView('complete');
+    } else if (status === 'failed') {
+      setView('error');
+    } else if (status === 'cancelled') {
+      setView('cancelled');
+    }
+  }, [status]);
+
+  // Handle close
+  const handleClose = () => {
+    if (view === 'progress') return; // Prevent closing during export
+    setView('settings');
+    serverRender.resetState();
+    clientRender.resetState();
+    onClose();
   };
 
   // Start export
   const handleStartExport = async () => {
+    setView('progress');
     await startExport(settings);
   };
 
-  // Reset state when dialog closes
+  // Handle mode change
+  const handleModeChange = (mode: RenderMode) => {
+    serverRender.resetState();
+    clientRender.resetState();
+    setRenderMode(mode);
+  };
+
+  // Reset when dialog closes
   useEffect(() => {
     if (!open) {
+      setView('settings');
       serverRender.resetState();
       clientRender.resetState();
+      setStartTime(null);
+      setElapsedSeconds(0);
     }
   }, [open, serverRender, clientRender]);
 
-  // Reset both when switching modes
-  const handleModeChange = (mode: RenderMode) => {
-    if (!isExporting) {
-      serverRender.resetState();
-      clientRender.resetState();
-      setRenderMode(mode);
-    }
-  };
-
-  const isCompleted = status === 'completed';
-  const isFailed = status === 'failed';
-  const isCancelled = status === 'cancelled';
-
-  // Get available codecs based on render mode
   const getCodecOptions = () => {
     if (renderMode === 'client') {
-      // Client-side: WebCodecs-based, limited options
       return [
         { value: 'h264', label: 'H.264 (MP4)' },
         { value: 'vp9', label: 'VP9 (WebM)' },
       ];
     } else {
-      // Server-side: Full FFmpeg support
       return [
         { value: 'h264', label: 'H.264 (MP4)' },
         { value: 'h265', label: 'H.265 (HEVC)' },
@@ -152,17 +198,76 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
     }
   };
 
+  const preventClose = view === 'progress' || view === 'complete';
+  const fileSize = renderMode === 'client' ? clientRender.result?.fileSize : undefined;
+
+  // Dynamic title and description
+  const getTitle = () => {
+    switch (view) {
+      case 'settings':
+        return 'Export Video';
+      case 'progress':
+        return (
+          <span className="flex items-center gap-2">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            Exporting video...
+          </span>
+        );
+      case 'complete':
+        return (
+          <span className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-green-500" />
+            Export complete!
+          </span>
+        );
+      case 'error':
+        return (
+          <span className="flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-destructive" />
+            Export failed
+          </span>
+        );
+      case 'cancelled':
+        return (
+          <span className="flex items-center gap-2">
+            <X className="h-5 w-5 text-muted-foreground" />
+            Export cancelled
+          </span>
+        );
+    }
+  };
+
+  const getDescription = () => {
+    switch (view) {
+      case 'settings':
+        return 'Configure export settings and render your video';
+      case 'progress':
+        return renderMode === 'client' ? 'Rendering in your browser' : 'Processing on server';
+      case 'complete':
+        return 'Your video is ready to download';
+      case 'error':
+        return 'Something went wrong during export';
+      case 'cancelled':
+        return 'The export was cancelled';
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px]">
+    <Dialog open={open} onOpenChange={handleClose} modal>
+      <DialogContent
+        className="sm:max-w-[500px] overflow-hidden"
+        hideCloseButton={preventClose}
+        onPointerDownOutside={(e) => preventClose && e.preventDefault()}
+        onEscapeKeyDown={(e) => preventClose && e.preventDefault()}
+      >
         <DialogHeader>
-          <DialogTitle>Export Video</DialogTitle>
-          <DialogDescription>Configure export settings and render your video</DialogDescription>
+          <DialogTitle>{getTitle()}</DialogTitle>
+          <DialogDescription>{getDescription()}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {/* Render Mode Tabs - only show when not exporting */}
-          {!isExporting && !isCompleted && !isFailed && !isCancelled && (
+        {/* Settings View */}
+        {view === 'settings' && (
+          <div className="space-y-6 py-4">
             <Tabs value={renderMode} onValueChange={(v) => handleModeChange(v as RenderMode)}>
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="client" className="flex items-center gap-2">
@@ -193,12 +298,8 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
                 </Alert>
               </TabsContent>
             </Tabs>
-          )}
 
-          {/* Settings Form */}
-          {!isExporting && !isCompleted && !isFailed && !isCancelled && (
             <div className="space-y-4">
-              {/* Codec */}
               <div className="space-y-2">
                 <Label htmlFor="codec">Codec</Label>
                 <Select
@@ -218,7 +319,6 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
                 </Select>
               </div>
 
-              {/* Quality */}
               <div className="space-y-2">
                 <Label htmlFor="quality">Quality</Label>
                 <Select
@@ -237,7 +337,6 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
                 </Select>
               </div>
 
-              {/* Resolution */}
               <div className="space-y-2">
                 <Label htmlFor="resolution">Resolution</Label>
                 <Select
@@ -262,110 +361,140 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
                 </Select>
               </div>
             </div>
-          )}
 
-          {/* Upload Progress (server mode only) */}
-          {isUploading && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Uploading media files...</span>
-                <Loader2 className="h-4 w-4 animate-spin" />
-              </div>
-              <Progress value={0} className="h-2" />
-            </div>
-          )}
-
-          {/* Render Progress */}
-          {isExporting && !isUploading && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">
-                  {status === 'preparing' && 'Preparing...'}
-                  {status === 'rendering' && `Rendering... ${renderedFrames && totalFrames ? `${renderedFrames}/${totalFrames} frames` : ''}`}
-                  {status === 'encoding' && 'Encoding...'}
-                  {status === 'finalizing' && 'Finalizing...'}
-                  {status === 'processing' && `Rendering... ${renderedFrames && totalFrames ? `${renderedFrames}/${totalFrames} frames` : ''}`}
-                </span>
-                <span className="font-medium">{progress}%</span>
-              </div>
-              <Progress value={progress} className="h-2" />
-              {renderMode === 'client' && (
-                <p className="text-xs text-muted-foreground">
-                  Rendering in browser - this may take a while for longer videos
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Success */}
-          {isCompleted && (
-            <Alert className="border-green-500 bg-green-50 dark:bg-green-950">
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-600">
-                Video rendered successfully! Click download to save.
-                {renderMode === 'client' && clientRender.result && (
-                  <span className="block mt-1 text-xs">
-                    File size: {(clientRender.result.fileSize / (1024 * 1024)).toFixed(2)} MB
-                  </span>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* Error */}
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {/* Cancelled */}
-          {isCancelled && (
-            <Alert>
-              <X className="h-4 w-4" />
-              <AlertDescription>Render cancelled</AlertDescription>
-            </Alert>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex justify-end gap-2">
-          {!isExporting && !isCompleted && (
-            <>
+            <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
               <Button onClick={handleStartExport}>
                 {renderMode === 'client' ? 'Render in Browser' : 'Start Export'}
               </Button>
-            </>
-          )}
+            </div>
+          </div>
+        )}
 
-          {isExporting && (
-            <Button variant="outline" onClick={cancelExport}>
-              Cancel Render
-            </Button>
-          )}
+        {/* Progress View */}
+        {view === 'progress' && (
+          <div className="space-y-4 py-4 overflow-hidden">
+            <div className="space-y-4 min-w-0">
+              <div className="space-y-2 min-w-0">
+                <div className="w-full overflow-hidden">
+                  <Progress value={progress} className="h-2 w-full" />
+                </div>
+                <div className="flex items-center justify-between text-sm gap-2">
+                  <span className="text-muted-foreground truncate">
+                    {isUploading && 'Uploading media files...'}
+                    {!isUploading && status === 'preparing' && 'Preparing...'}
+                    {!isUploading && (status === 'rendering' || status === 'processing') && 'Rendering frames...'}
+                    {!isUploading && status === 'encoding' && 'Encoding...'}
+                    {!isUploading && status === 'finalizing' && 'Finalizing...'}
+                  </span>
+                  <span className="font-medium tabular-nums flex-shrink-0">{Math.round(progress)}%</span>
+                </div>
+              </div>
 
-          {isCompleted && (
-            <>
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                {renderedFrames !== undefined && totalFrames !== undefined && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Film className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <span className="text-muted-foreground">Frames:</span>
+                    <span className="font-medium tabular-nums">{renderedFrames}/{totalFrames}</span>
+                  </div>
+                )}
+                {elapsedSeconds > 0 && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <span className="text-muted-foreground">Elapsed:</span>
+                    <span className="font-medium tabular-nums">{formatTime(elapsedSeconds)}</span>
+                  </div>
+                )}
+              </div>
+
+              {renderMode === 'client' && (
+                <p className="text-xs text-muted-foreground">
+                  Keep this tab open while rendering. Longer videos may take several minutes.
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={cancelExport}>
+                Cancel Export
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Complete View */}
+        {view === 'complete' && (
+          <div className="space-y-4 py-4">
+            <Alert className="border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-700 dark:text-green-400">
+                Video exported successfully!
+              </AlertDescription>
+            </Alert>
+
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {fileSize && (
+                <div className="flex items-center gap-2 text-sm">
+                  <HardDrive className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">File size:</span>
+                  <span className="font-medium">{formatFileSize(fileSize)}</span>
+                </div>
+              )}
+              {elapsedSeconds > 0 && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Time taken:</span>
+                  <span className="font-medium">{formatTime(elapsedSeconds)}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={handleClose}>
                 Close
               </Button>
               <Button onClick={downloadVideo}>
                 <Download className="mr-2 h-4 w-4" />
-                Download Video
+                Download
               </Button>
-            </>
-          )}
+            </div>
+          </div>
+        )}
 
-          {(isFailed || isCancelled) && (
-            <Button variant="outline" onClick={handleClose}>
-              Close
-            </Button>
-          )}
-        </div>
+        {/* Error View */}
+        {view === 'error' && (
+          <div className="space-y-4 py-4">
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={handleClose}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Cancelled View */}
+        {view === 'cancelled' && (
+          <div className="space-y-4 py-4">
+            <Alert>
+              <X className="h-4 w-4" />
+              <AlertDescription>The export process was cancelled.</AlertDescription>
+            </Alert>
+
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={handleClose}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

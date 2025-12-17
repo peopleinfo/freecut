@@ -15,6 +15,7 @@ import { PreviewArea } from './preview-area';
 import { ProjectDebugPanel } from './project-debug-panel';
 import { Timeline } from '@/features/timeline/components/timeline';
 import { ExportDialog } from '@/features/export/components/export-dialog';
+import { BundleExportDialog } from '@/features/project-bundle/components/bundle-export-dialog';
 import { ClearKeyframesDialog } from './clear-keyframes-dialog';
 import { useEditorHotkeys } from '@/hooks/use-editor-hotkeys';
 import { useTimelineShortcuts } from '@/features/timeline/hooks/use-timeline-shortcuts';
@@ -54,6 +55,7 @@ const GRAPH_PANEL_SIZE_INCREASE = 12; // ~12% extra height
 
 export const Editor = memo(function Editor({ projectId, project }: EditorProps) {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [bundleExportDialogOpen, setBundleExportDialogOpen] = useState(false);
 
   // Guard against concurrent saves (e.g., spamming Ctrl+S)
   const isSavingRef = useRef(false);
@@ -138,28 +140,8 @@ export const Editor = memo(function Editor({ projectId, project }: EditorProps) 
     setExportDialogOpen(true);
   };
 
-  const handleExportBundle = async () => {
-    try {
-      // Dynamically import to avoid loading bundle service until needed
-      const { exportProjectBundle, downloadBundle } = await import(
-        '@/features/project-bundle/services/bundle-export-service'
-      );
-
-      // Save timeline first to ensure latest changes are included
-      await handleSave();
-
-      logger.debug('Exporting project bundle...');
-      const result = await exportProjectBundle(projectId, (progress) => {
-        logger.debug(`Export progress: ${progress.percent}% - ${progress.stage}`);
-      });
-
-      // Trigger download
-      downloadBundle(result);
-      logger.debug(`Project bundle exported: ${result.filename} (${result.mediaCount} media files)`);
-    } catch (error) {
-      logger.error('Failed to export project bundle:', error);
-      // TODO: Show error toast notification
-    }
+  const handleExportBundle = () => {
+    setBundleExportDialogOpen(true);
   };
 
   // Enable keyboard shortcuts
@@ -247,6 +229,14 @@ export const Editor = memo(function Editor({ projectId, project }: EditorProps) 
 
       {/* Export Dialog */}
       <ExportDialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} />
+
+      {/* Bundle Export Dialog */}
+      <BundleExportDialog
+        open={bundleExportDialogOpen}
+        onClose={() => setBundleExportDialogOpen(false)}
+        projectId={projectId}
+        onBeforeExport={handleSave}
+      />
 
       {/* Clear Keyframes Confirmation Dialog */}
       <ClearKeyframesDialog />

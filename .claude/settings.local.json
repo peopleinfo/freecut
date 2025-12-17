@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(if not exist \"E:\\freecut\\src\\features\\project-bundle\\components\" mkdir \"E:\\freecut\\src\\features\\project-bundle\\components\")"
     ]
   }
 }

@@ -1,6 +1,5 @@
 export { ExportDialog } from './components/export-dialog';
 export { ExportSettingsComponent } from './components/export-settings';
-export { ExportProgress } from './components/export-progress';
 export { useRender } from './hooks/use-render';
 export { useClientRender } from './hooks/use-client-render';
 export { renderAPI } from './api/render-api';
