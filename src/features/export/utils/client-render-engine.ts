@@ -744,7 +744,9 @@ async function createCompositionRenderer(
     const sourceStart = item.sourceStart ?? item.trimStart ?? 0;
     const speed = item.speed ?? 1;
     // Apply source frame offset (used for transitions to center playback)
-    const adjustedSourceStart = Math.max(0, sourceStart + sourceFrameOffset);
+    // Don't clamp adjustedSourceStart - allow negative values and let final clamp handle it
+    // This ensures the offset takes effect even for clips with low sourceStart
+    const adjustedSourceStart = sourceStart + sourceFrameOffset;
     const sourceTime = adjustedSourceStart / fps + localTime * speed;
     const clampedTime = Math.max(0, Math.min(sourceTime, video.duration - 0.01));
 
@@ -918,18 +920,17 @@ async function createCompositionRenderer(
     const transitionLocalFrame = frame - transitionStart;
     const halfDuration = Math.floor(transition.durationInFrames / 2);
 
-    // For left clip: apply content offset to show ending frames during transition
-    // Matches Remotion's leftClipContentOffset = -(leftClip.durationInFrames - transition.durationInFrames)
-    // This ensures left clip shows its last N frames during transition, ending at its final frame
-    const leftContentOffset = -(leftClip.durationInFrames - transition.durationInFrames);
-    // Convert content offset to source frame offset
-    const leftSourceOffset = leftContentOffset;
+    // For left clip: calculate effective frame to show ending frames during transition
+    // At transitionLocalFrame 0, show leftClip's (durationInFrames - transition.durationInFrames)th frame
+    // This matches Remotion's approach where left clip Sequence uses from={leftClipContentOffset}
+    const leftLocalFrameInClip = leftClip.durationInFrames - transition.durationInFrames + transitionLocalFrame;
+    const leftEffectiveFrame = leftClip.from + leftLocalFrameInClip;
 
     const leftCanvas = new OffscreenCanvas(canvas.width, canvas.height);
     const leftCtx = leftCanvas.getContext('2d')!;
     const leftKeyframes = keyframesMap.get(leftClip.id);
-    const leftTransform = getAnimatedTransform(leftClip, leftKeyframes, frame, canvas);
-    await renderItem(leftCtx, leftClip, leftTransform, frame, canvas, videoElements, imageElements, leftSourceOffset);
+    const leftTransform = getAnimatedTransform(leftClip, leftKeyframes, leftEffectiveFrame, canvas);
+    await renderItem(leftCtx, leftClip, leftTransform, leftEffectiveFrame, canvas, videoElements, imageElements, 0);
 
     // For right clip: use effective frame for timeline position
     // Apply -halfDuration offset to source time to prevent rewind at transition end
@@ -945,17 +946,16 @@ async function createCompositionRenderer(
 
     // Debug: Log both clips' timing at key progress points
     if (isFirstFrame || Math.abs(progress - 0.5) < 0.02 || progress >= 0.99) {
-      const leftLocalFrame = frame - leftClip.from;
+      const leftLocalFrame = leftEffectiveFrame - leftClip.from;
       const leftSourceStart = (leftClip as any).sourceStart ?? (leftClip as any).trimStart ?? 0;
-      const leftAdjustedStart = Math.max(0, leftSourceStart + leftSourceOffset);
-      const leftSourceTime = leftAdjustedStart / fps + leftLocalFrame / fps;
+      const leftSourceTime = leftSourceStart / fps + leftLocalFrame / fps;
 
       const rightLocalFrame = rightEffectiveFrame - rightClip.from;
       const rightSourceStart = (rightClip as any).sourceStart ?? (rightClip as any).trimStart ?? 0;
-      const rightAdjustedStart = Math.max(0, rightSourceStart + rightSourceOffset);
+      const rightAdjustedStart = rightSourceStart + rightSourceOffset; // No clamping for debug
       const rightSourceTime = rightAdjustedStart / fps + rightLocalFrame / fps;
 
-      console.log(`[TRANSITION-FRAMES] progress=${progress.toFixed(2)} frame=${frame} | LEFT: sourceTime=${leftSourceTime.toFixed(2)}s (offset=${leftSourceOffset}) | RIGHT: sourceTime=${rightSourceTime.toFixed(2)}s (offset=${rightSourceOffset})`);
+      console.log(`[TRANSITION-FRAMES] progress=${progress.toFixed(2)} frame=${frame} transitionLocal=${transitionLocalFrame} | LEFT: localInClip=${leftLocalFrameInClip} effectiveFrame=${leftEffectiveFrame} sourceTime=${leftSourceTime.toFixed(2)}s | RIGHT: localFrame=${rightLocalFrame} sourceTime=${rightSourceTime.toFixed(2)}s (offset=${rightSourceOffset})`);
     }
 
     // Render transition
