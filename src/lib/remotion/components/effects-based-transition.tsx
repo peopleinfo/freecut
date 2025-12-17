@@ -206,22 +206,6 @@ const ClipContent: React.FC<{
 }> = ({ clip, sourceStartOffset = 0, canvasWidth, canvasHeight, fps, adjustmentLayers, clipGlobalFrom, debugLabel }) => {
   const frame = useCurrentFrame();
 
-  // Debug logging for transition clips (log once using a ref)
-  const hasLoggedRef = React.useRef(false);
-  if (debugLabel && !hasLoggedRef.current) {
-    hasLoggedRef.current = true;
-    console.log(`[Transition ${debugLabel}]`, {
-      clipId: clip.id,
-      clipType: clip.type,
-      hasSrc: !!(clip as any).src,
-      localFrame: frame,
-      sourceStartOffset,
-      clipGlobalFrom,
-      sourceStart: (clip as any).sourceStart,
-      sourceEnd: (clip as any).sourceEnd,
-      sourceDuration: (clip as any).sourceDuration,
-    });
-  }
   // Convert local frame to global frame for adjustment layer timing
   const globalFrame = frame + clipGlobalFrom;
 
@@ -665,21 +649,6 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
   const leftClipGlobalFrom = transitionStart + leftClipContentOffset;
   // Right clip starts at transitionStart in the timeline context
   const rightClipGlobalFrom = transitionStart;
-
-  // Debug logging for transition setup
-  console.log('[Transition Setup]', {
-    transitionId: transition.id,
-    presentation: transition.presentation,
-    duration: transition.durationInFrames,
-    leftClipId: leftClip.id,
-    rightClipId: rightClip.id,
-    leftClipDuration: leftClip.durationInFrames,
-    rightClipDuration: rightClip.durationInFrames,
-    leftClipContentOffset,
-    rightClipSourceOffset,
-    cutPoint,
-    transitionStart,
-  });
 
   return (
     <Sequence

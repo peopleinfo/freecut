@@ -222,10 +222,7 @@ export async function runMigrationIfNeeded(
   onProgress?: (progress: MigrationProgress) => void
 ): Promise<MigrationResult | null> {
   if (await needsMigration()) {
-    console.log('Running v3 content-addressable storage migration...');
-    const result = await migrateToContentAddressable(onProgress);
-    console.log('Migration complete:', result);
-    return result;
+    return migrateToContentAddressable(onProgress);
   }
 
   return null;

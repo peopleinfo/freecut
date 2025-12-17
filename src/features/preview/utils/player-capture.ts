@@ -55,7 +55,6 @@ export async function capturePlayerFrame(
     }
 
     const containerRect = container.getBoundingClientRect();
-    console.log('[PlayerCapture] Container size:', containerRect.width, 'x', containerRect.height);
 
     // Create output canvas at container size first, then scale down
     const captureCanvas = document.createElement('canvas');
@@ -74,7 +73,6 @@ export async function capturePlayerFrame(
 
     // Find all video elements and draw them first (background layer)
     const videos = container.querySelectorAll('video');
-    console.log('[PlayerCapture] Found', videos.length, 'video elements');
 
     for (const video of videos) {
       if (video.readyState >= 2) {
@@ -86,7 +84,6 @@ export async function capturePlayerFrame(
 
           // Draw video at its actual position and size
           ctx.drawImage(video, x, y, videoRect.width, videoRect.height);
-          console.log('[PlayerCapture] Drew video at', x, y, 'size', videoRect.width, 'x', videoRect.height);
         } catch (e) {
           console.warn('[PlayerCapture] Failed to draw video:', e);
         }
@@ -115,10 +112,7 @@ export async function capturePlayerFrame(
 
     outputCtx.drawImage(captureCanvas, 0, 0, opts.width, opts.height);
 
-    const dataUrl = outputCanvas.toDataURL(opts.format, opts.quality);
-    console.log('[PlayerCapture] Generated thumbnail:', dataUrl.substring(0, 50) + '...');
-
-    return dataUrl;
+    return outputCanvas.toDataURL(opts.format, opts.quality);
   } catch (error) {
     console.error('[PlayerCapture] Failed to capture frame:', error);
     return null;

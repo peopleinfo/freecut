@@ -100,7 +100,6 @@ export function useRemotionPlayer(playerRef: RefObject<PlayerRef>) {
     // Always sync initial frame (even if 0) since we now know timeline is loaded
     lastSyncedFrameRef.current = initialFrame;
     playerRef.current.seekTo(initialFrame);
-    console.log('[Remotion Sync] Initial sync to frame:', initialFrame);
 
     const unsubscribe = usePlaybackStore.subscribe((state, prevState) => {
       if (!playerRef.current) return;

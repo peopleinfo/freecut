@@ -3,16 +3,7 @@ import type {
   OPFSWorkerResponse,
   UploadProgress,
 } from '../workers/opfs-worker';
-
-/**
- * Format bytes to human-readable string
- */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
+import { formatBytes } from '@/utils/format-utils';
 
 /**
  * OPFS Service - Wrapper for OPFS worker communication

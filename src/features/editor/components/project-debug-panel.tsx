@@ -114,7 +114,6 @@ export function ProjectDebugPanel({ projectId }: ProjectDebugPanelProps) {
       '@/features/project-bundle/services/json-import-service'
     );
     const result = await importProjectFromClipboard();
-    console.log('[Debug] Imported project:', result.project.id);
     // Reload to show new project
     window.location.href = `/editor/${result.project.id}`;
   }, []);
@@ -125,7 +124,6 @@ export function ProjectDebugPanel({ projectId }: ProjectDebugPanelProps) {
     );
     const result = await showImportFilePicker();
     if (result) {
-      console.log('[Debug] Imported project:', result.project.id);
       // Reload to show new project
       window.location.href = `/editor/${result.project.id}`;
     }
@@ -137,15 +135,12 @@ export function ProjectDebugPanel({ projectId }: ProjectDebugPanelProps) {
     );
     const snapshot = await exportProjectJson(projectId);
     const stats = getSnapshotStats(snapshot);
-    console.log('[Debug] Project Snapshot:', snapshot);
-    console.log('[Debug] Stats:', stats);
     console.table(stats);
   }, [projectId]);
 
   const handleLogDBStats = useCallback(async () => {
     const { getDBStats } = await import('@/lib/storage/indexeddb');
     const stats = await getDBStats();
-    console.log('[Debug] Database Stats:', stats);
     console.table(stats);
   }, []);
 
@@ -158,15 +153,10 @@ export function ProjectDebugPanel({ projectId }: ProjectDebugPanelProps) {
     );
     const snapshot = await exportProjectJson(projectId);
     const result = await validateSnapshotData(snapshot);
-    console.log('[Debug] Validation Result:', result);
-    if (result.valid) {
-      console.log('%c VALID ', 'background: #00b894; color: white; font-weight: bold;');
-    } else {
-      console.log('%c INVALID ', 'background: #d63031; color: white; font-weight: bold;');
+    if (!result.valid) {
       console.table(result.errors);
     }
     if (result.warnings.length > 0) {
-      console.log('%c WARNINGS ', 'background: #fdcb6e; color: black; font-weight: bold;');
       console.table(result.warnings);
     }
   }, [projectId]);
@@ -177,12 +167,8 @@ export function ProjectDebugPanel({ projectId }: ProjectDebugPanelProps) {
     );
     const { createProject } = await import('@/lib/storage/indexeddb');
 
-    const { project, snapshot } = generateFixture(selectedFixture);
+    const { project } = generateFixture(selectedFixture);
     await createProject(project);
-
-    console.log('[Debug] Generated fixture:', selectedFixture);
-    console.log('[Debug] Project:', project);
-    console.log('[Debug] Snapshot:', snapshot);
 
     // Navigate to the new project
     window.location.href = `/editor/${project.id}`;
@@ -205,14 +191,12 @@ export function ProjectDebugPanel({ projectId }: ProjectDebugPanelProps) {
       '@/features/project-bundle/services/test-fixtures'
     );
 
-    const { project, snapshot } = generateFixture(selectedFixture);
+    const { project } = generateFixture(selectedFixture);
     const fixtureInfo = getAvailableFixtures().find((f) => f.type === selectedFixture);
 
-    console.log('%c FIXTURE: ' + selectedFixture + ' ', 'background: #8b5cf6; color: white; font-weight: bold;');
-    console.log('[Debug] Info:', fixtureInfo);
-    console.log('[Debug] Project:', project);
-    console.log('[Debug] Snapshot:', snapshot);
-    console.log('[Debug] Timeline Stats:', {
+    console.table({
+      fixture: selectedFixture,
+      name: fixtureInfo?.name,
       tracks: project.timeline?.tracks.length ?? 0,
       items: project.timeline?.items.length ?? 0,
       transitions: project.timeline?.transitions?.length ?? 0,

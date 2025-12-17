@@ -81,66 +81,35 @@ function createDebugAPI(): ProjectDebugAPI {
   return {
     // Export functions
     exportProject: async (projectId, options) => {
-      console.log(`[DEBUG] Exporting project: ${projectId}`);
-      const snapshot = await exportProjectJson(projectId, options);
-      console.log(`[DEBUG] Export complete:`, getSnapshotStats(snapshot));
-      return snapshot;
+      return exportProjectJson(projectId, options);
     },
 
     exportProjectString: async (projectId, options) => {
-      console.log(`[DEBUG] Exporting project as string: ${projectId}`);
       return exportProjectJsonString(projectId, options);
     },
 
     downloadProject: async (projectId, options) => {
-      console.log(`[DEBUG] Downloading project: ${projectId}`);
       await downloadProjectJson(projectId, options);
-      console.log(`[DEBUG] Download triggered`);
     },
 
     copyProjectToClipboard: async (projectId, options) => {
-      console.log(`[DEBUG] Copying project to clipboard: ${projectId}`);
       await copyProjectToClipboard(projectId, options);
-      console.log(`[DEBUG] Copied to clipboard`);
     },
 
     // Import functions
     importFromJson: async (json, options) => {
-      console.log(`[DEBUG] Importing project from JSON`);
       const result = await importProjectFromJsonString(json, options);
-      console.log(`[DEBUG] Import complete:`, {
-        projectId: result.project.id,
-        matched: result.matchedMedia.length,
-        unmatched: result.unmatchedMedia.length,
-        warnings: result.warnings,
-      });
       return result.project;
     },
 
     importFromClipboard: async (options) => {
-      console.log(`[DEBUG] Importing project from clipboard`);
       const result = await importProjectFromClipboard(options);
-      console.log(`[DEBUG] Import complete:`, {
-        projectId: result.project.id,
-        matched: result.matchedMedia.length,
-        unmatched: result.unmatchedMedia.length,
-      });
       return result.project;
     },
 
     importFromFile: async (options) => {
-      console.log(`[DEBUG] Opening file picker for import`);
       const result = await showImportFilePicker(options);
-      if (result) {
-        console.log(`[DEBUG] Import complete:`, {
-          projectId: result.project.id,
-          matched: result.matchedMedia.length,
-          unmatched: result.unmatchedMedia.length,
-        });
-        return result.project;
-      }
-      console.log(`[DEBUG] Import cancelled`);
-      return null;
+      return result?.project ?? null;
     },
 
     // Validation functions
@@ -203,13 +172,7 @@ function createDebugAPI(): ProjectDebugAPI {
       const { generateFixture } = await import(
         '@/features/project-bundle/services/test-fixtures'
       );
-      console.log(`[DEBUG] Generating fixture: ${type}`);
-      const result = generateFixture(type, options);
-      console.log(`[DEBUG] Fixture generated:`, {
-        tracks: result.project.timeline?.tracks.length ?? 0,
-        items: result.project.timeline?.items.length ?? 0,
-      });
-      return result;
+      return generateFixture(type, options);
     },
 
     createFixtureProject: async (type, options) => {
@@ -217,11 +180,8 @@ function createDebugAPI(): ProjectDebugAPI {
         '@/features/project-bundle/services/test-fixtures'
       );
       const { createProject } = await import('@/lib/storage/indexeddb');
-
-      console.log(`[DEBUG] Creating fixture project: ${type}`);
       const { project } = generateFixture(type, options);
       await createProject(project);
-      console.log(`[DEBUG] Fixture project created: ${project.id}`);
       return project;
     },
 
@@ -243,47 +203,8 @@ function createDebugAPI(): ProjectDebugAPI {
 export function initializeDebugUtils(): void {
   if (import.meta.env.DEV) {
     const api = createDebugAPI();
-
     // Extend window type
     (window as unknown as { __DEBUG__: ProjectDebugAPI }).__DEBUG__ = api;
-
-    console.log(
-      '%c[FreeCut Debug] Debug utilities available at window.__DEBUG__',
-      'color: #00b894; font-weight: bold;'
-    );
-    console.log(
-      '%cAvailable functions:',
-      'color: #6c5ce7;',
-      Object.keys(api).filter((k) => typeof api[k as keyof ProjectDebugAPI] === 'function')
-    );
-    console.log(
-      '%cExample usage:',
-      'color: #fdcb6e;',
-      `
-  // Export current project
-  const snapshot = await __DEBUG__.exportProject('project-id');
-
-  // Download as file
-  await __DEBUG__.downloadProject('project-id');
-
-  // Copy to clipboard
-  await __DEBUG__.copyProjectToClipboard('project-id');
-
-  // Import from clipboard
-  const project = await __DEBUG__.importFromClipboard();
-
-  // Validate JSON
-  const result = await __DEBUG__.validateSnapshot(jsonData);
-
-  // Get DB stats
-  const stats = await __DEBUG__.getDBStats();
-
-  // Generate test fixtures
-  const fixtures = await __DEBUG__.listFixtures();
-  const { project, snapshot } = await __DEBUG__.generateFixture('complex');
-  const newProject = await __DEBUG__.createFixtureProject('multi-track');
-`
-    );
   }
 }
 

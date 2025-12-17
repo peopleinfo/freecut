@@ -8,6 +8,7 @@
 import type { ShapeItem } from '@/types/timeline';
 import type { ResolvedTransform } from '@/types/transform';
 import { getShapePath, rotatePath } from '@/lib/remotion/utils/shape-path';
+import { svgPathToPath2D } from './canvas-masks';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('CanvasShapes');
@@ -18,14 +19,6 @@ const log = createLogger('CanvasShapes');
 export interface ShapeCanvasSettings {
   width: number;
   height: number;
-}
-
-/**
- * Convert an SVG path string to a Path2D object.
- * Path2D natively supports SVG path data strings.
- */
-export function svgPathToPath2D(svgPath: string): Path2D {
-  return new Path2D(svgPath);
 }
 
 /**
@@ -116,69 +109,6 @@ export function renderShape(
         shapeId: shape.id,
         cornerRadius: transform.cornerRadius,
       });
-    }
-  } finally {
-    ctx.restore();
-  }
-}
-
-/**
- * Render a shape with gradient fill (if supported in future).
- * Currently renders solid fill with warning.
- */
-export function renderShapeWithGradient(
-  ctx: OffscreenCanvasRenderingContext2D,
-  shape: ShapeItem,
-  transform: ResolvedTransform,
-  canvas: ShapeCanvasSettings,
-  gradientType: 'linear' | 'radial',
-  gradientStops: Array<{ offset: number; color: string }>
-): void {
-  ctx.save();
-
-  try {
-    const path = getShapePath2D(shape, transform, canvas);
-
-    // Calculate gradient bounds
-    const centerX = canvas.width / 2 + transform.x;
-    const centerY = canvas.height / 2 + transform.y;
-    const halfWidth = transform.width / 2;
-    const halfHeight = transform.height / 2;
-
-    let gradient: CanvasGradient;
-
-    if (gradientType === 'linear') {
-      gradient = ctx.createLinearGradient(
-        centerX - halfWidth,
-        centerY,
-        centerX + halfWidth,
-        centerY
-      );
-    } else {
-      gradient = ctx.createRadialGradient(
-        centerX,
-        centerY,
-        0,
-        centerX,
-        centerY,
-        Math.max(halfWidth, halfHeight)
-      );
-    }
-
-    // Add color stops
-    for (const stop of gradientStops) {
-      gradient.addColorStop(stop.offset, stop.color);
-    }
-
-    ctx.fillStyle = gradient;
-    ctx.globalAlpha = transform.opacity;
-    ctx.fill(path);
-
-    // Stroke if needed
-    if (shape.strokeWidth && shape.strokeWidth > 0 && shape.strokeColor) {
-      ctx.strokeStyle = shape.strokeColor;
-      ctx.lineWidth = shape.strokeWidth;
-      ctx.stroke(path);
     }
   } finally {
     ctx.restore();

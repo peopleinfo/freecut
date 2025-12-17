@@ -129,31 +129,6 @@ export function loadFonts(fontNames: string[]): string[] {
 }
 
 /**
- * Get the CSS fontFamily for a loaded font.
- * Returns the font name as-is if not loaded yet.
- *
- * @param fontName - The font name
- * @returns The CSS fontFamily value
- */
-export function getFontFamily(fontName: string): string {
-  return loadedFontFamilies.get(fontName) ?? fontName;
-}
-
-/**
- * Get a list of available font names.
- */
-export function getAvailableFonts(): string[] {
-  return [...AVAILABLE_FONTS];
-}
-
-/**
- * Check if a font is available.
- */
-export function isFontAvailable(fontName: string): boolean {
-  return AVAILABLE_FONTS.includes(fontName as typeof AVAILABLE_FONTS[number]);
-}
-
-/**
  * Measure text dimensions with the specified font properties.
  * Uses @remotion/layout-utils for accurate measurement.
  *
@@ -195,58 +170,3 @@ export function measureTextDimensions(
   }
 }
 
-/**
- * Calculate the optimal font size to fit text within a given width.
- * Uses binary search for efficiency.
- *
- * @param text - The text to fit
- * @param maxWidth - Maximum width in pixels
- * @param options - Font options
- * @returns Optimal font size
- */
-export function fitTextToWidth(
-  text: string,
-  maxWidth: number,
-  options: {
-    fontFamily: string;
-    fontWeight?: string;
-    letterSpacing?: number;
-    minFontSize?: number;
-    maxFontSize?: number;
-  }
-): number {
-  const {
-    fontFamily,
-    fontWeight = 'normal',
-    letterSpacing = 0,
-    minFontSize = 12,
-    maxFontSize = 200,
-  } = options;
-
-  // Ensure font is loaded
-  loadFont(fontFamily);
-
-  let low = minFontSize;
-  let high = maxFontSize;
-  let result = minFontSize;
-
-  // Binary search for optimal font size
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const { width } = measureTextDimensions(text, {
-      fontFamily,
-      fontSize: mid,
-      fontWeight,
-      letterSpacing,
-    });
-
-    if (width <= maxWidth) {
-      result = mid;
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
-  }
-
-  return result;
-}

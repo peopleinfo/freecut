@@ -121,12 +121,6 @@ async function extractAndSave(
   const totalFrames = totalFramesOverride ?? allFrames;
   const skipSet = new Set(skipIndices || []);
 
-  console.log(`[FilmstripWorker:${workerId}] Starting extraction:`, {
-    mediaId: mediaId.slice(0, 8),
-    range: `${rangeStart}-${rangeEnd}`,
-    totalFrames,
-  });
-
   // Generate timestamps for frames we need to extract (within our range)
   const framesToExtract: { index: number; timestamp: number }[] = [];
   for (let i = rangeStart; i < rangeEnd; i++) {
@@ -169,7 +163,6 @@ async function extractAndSave(
     if (!videoTrack) {
       throw new Error('No video track found');
     }
-    console.log(`[FilmstripWorker:${workerId}] Got video track`);
 
     // Create CanvasSink with poolSize matching our parallel save capacity
     // This keeps VRAM constant and prevents allocation/deallocation churn
@@ -179,7 +172,6 @@ async function extractAndSave(
       fit: 'cover',
       poolSize: 4, // Reduced for 1fps extraction
     });
-    console.log(`[FilmstripWorker:${workerId}] Created CanvasSink`);
 
     // Track extracted frames
     let extractedCount = skipSet.size;
@@ -276,7 +268,6 @@ async function extractAndSave(
     // Clean up mediabunny resources to free memory
     sink?.dispose?.();
     input?.dispose();
-    console.log(`[FilmstripWorker:${workerId}] Cleaned up resources`);
   }
 }
 

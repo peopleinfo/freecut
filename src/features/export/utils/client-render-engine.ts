@@ -899,11 +899,6 @@ async function createCompositionRenderer(
     const sourceTime = adjustedSourceStart / fps + localTime * speed;
     const clampedTime = Math.max(0, Math.min(sourceTime, video.duration - 0.01));
 
-    // Debug: log source time for transition clips
-    if (sourceFrameOffset !== 0) {
-      console.log(`[VIDEO-SOURCE] id=${item.id.substring(0,8)} frame=${frame} localFrame=${localFrame} sourceStart=${sourceStart} offset=${sourceFrameOffset} adjustedStart=${adjustedSourceStart} sourceTime=${sourceTime.toFixed(3)}s clampedTime=${clampedTime.toFixed(3)}s`);
-    }
-
     // Seek to the correct time and wait for seek to complete
     const needsSeek = Math.abs(video.currentTime - clampedTime) > 0.01;
     if (needsSeek) {
@@ -1334,20 +1329,6 @@ async function createCompositionRenderer(
     const rightKeyframes = keyframesMap.get(rightClip.id);
     const rightTransform = getAnimatedTransform(rightClip, rightKeyframes, rightEffectiveFrame, canvas);
     await renderItem(rightCtx, rightClip, rightTransform, rightEffectiveFrame, canvas, videoElements, imageElements, rightSourceOffset);
-
-    // Debug: Log both clips' timing at key progress points
-    if (isFirstFrame || Math.abs(progress - 0.5) < 0.02 || progress >= 0.99) {
-      const leftLocalFrame = leftEffectiveFrame - leftClip.from;
-      const leftSourceStart = (leftClip as any).sourceStart ?? (leftClip as any).trimStart ?? 0;
-      const leftSourceTime = leftSourceStart / fps + leftLocalFrame / fps;
-
-      const rightLocalFrame = rightEffectiveFrame - rightClip.from;
-      const rightSourceStart = (rightClip as any).sourceStart ?? (rightClip as any).trimStart ?? 0;
-      const rightAdjustedStart = rightSourceStart + rightSourceOffset; // No clamping for debug
-      const rightSourceTime = rightAdjustedStart / fps + rightLocalFrame / fps;
-
-      console.log(`[TRANSITION-FRAMES] progress=${progress.toFixed(2)} frame=${frame} transitionLocal=${transitionLocalFrame} | LEFT: localInClip=${leftLocalFrameInClip} effectiveFrame=${leftEffectiveFrame} sourceTime=${leftSourceTime.toFixed(2)}s | RIGHT: localFrame=${rightLocalFrame} sourceTime=${rightSourceTime.toFixed(2)}s (offset=${rightSourceOffset})`);
-    }
 
     // Render transition
     const transitionSettings: TransitionCanvasSettings = canvas;
