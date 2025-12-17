@@ -640,8 +640,9 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
   const halfDuration = Math.floor(transition.durationInFrames / 2);
   const transitionStart = cutPoint - halfDuration;
 
-  // Premount buffer for smoother video loading (about 1 second at 30fps)
-  const premountFrames = 15;
+  // Premount buffer for smoother video loading - match normal clip premount (2 seconds)
+  // This ensures transition video elements have enough time to buffer before becoming visible
+  const premountFrames = Math.round(fps * 2);
 
   // Use higher z-index to ensure effects layer covers normal clips during transition
   const effectsZIndex = Math.max(leftClip.zIndex, rightClip.zIndex) + 2000;
