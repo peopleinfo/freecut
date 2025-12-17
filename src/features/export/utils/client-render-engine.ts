@@ -901,18 +901,21 @@ async function createCompositionRenderer(
     const availableWidth = transform.width - padding * 2;
     const lineHeightPx = fontSize * lineHeight;
 
-    // CSS line-height distributes half-leading above and below text
-    const halfLeading = (lineHeightPx - fontSize) / 2;
+    // Get actual font metrics for precise baseline positioning
+    const metrics = ctx.measureText('Hg');
+    const ascent = metrics.fontBoundingBoxAscent ?? fontSize * 0.8;
+    const descent = metrics.fontBoundingBoxDescent ?? fontSize * 0.2;
+    const fontHeight = ascent + descent;
 
-    // Get actual font metrics to calculate CSS vs canvas offset
-    // CSS centers text based on font metrics, canvas 'top' uses em-square top
-    const metrics = ctx.measureText('Hg'); // Characters with typical ascent/descent
-    const fontAscent = metrics.fontBoundingBoxAscent ?? fontSize * 0.8;
-    const actualAscent = metrics.actualBoundingBoxAscent ?? fontSize * 0.8;
-    // The difference between em-square top and actual glyph top
-    const topPadding = fontAscent - actualAscent;
+    // CSS line-height centers the font's content area within the line box
+    // Content area = ascent + descent (actual font height, not em-square)
+    const halfLeading = (lineHeightPx - fontHeight) / 2;
 
-    ctx.textBaseline = 'top';
+    // Use alphabetic baseline for precise CSS-like positioning
+    ctx.textBaseline = 'alphabetic';
+
+    // Baseline position from line box top = half-leading + ascent
+    const baselineOffset = halfLeading + ascent;
 
     // Wrap text into lines
     const text = item.text ?? '';
@@ -949,10 +952,9 @@ async function createCompositionRenderer(
     // Draw each line
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? '';
-      // Position: line box top + half-leading + partial font metric adjustment
-      // - halfLeading: CSS line-height distributes space above/below
-      // - topPadding/2: partial adjustment for em-square vs actual glyph difference
-      const lineY = textBlockTop + i * lineHeightPx + halfLeading + topPadding * 0.5;
+      // Position baseline at: line box top + baselineOffset
+      // This matches CSS line-height behavior exactly
+      const lineY = textBlockTop + i * lineHeightPx + baselineOffset;
 
       // Calculate x position based on text alignment
       let lineX: number;
