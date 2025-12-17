@@ -52,6 +52,14 @@ import { processAudio, createAudioBuffer, hasAudioContent } from './canvas-audio
 
 const log = createLogger('ClientRenderEngine');
 
+// Font weight mapping to match preview (same as FONT_WEIGHT_MAP in fonts.ts)
+const FONT_WEIGHT_MAP: Record<string, number> = {
+  normal: 400,
+  medium: 500,
+  semibold: 600,
+  bold: 700,
+};
+
 // Type for mediabunny module (dynamically imported)
 type MediabunnyModule = typeof import('mediabunny');
 
@@ -856,43 +864,283 @@ async function createCompositionRenderer(
   }
 
   /**
-   * Render text item
+   * Render text item with clipping and word wrapping to match preview (WYSIWYG)
    */
   function renderTextItem(
     ctx: OffscreenCanvasRenderingContext2D,
     item: TextItem,
-    transform: { x: number; y: number },
+    transform: { x: number; y: number; width: number; height: number },
     canvas: CanvasSettings
   ): void {
-    const fontSize = item.fontSize ?? 48;
-    const fontFamily = item.fontFamily ?? 'Inter, sans-serif';
-    const fontWeight = item.fontWeight ?? 'normal';
+    // Match preview defaults exactly (see item.tsx TextContent)
+    const fontSize = item.fontSize ?? 60;
+    const fontFamily = item.fontFamily ?? 'Inter';
+    const fontWeightName = item.fontWeight ?? 'normal';
+    const fontWeight = FONT_WEIGHT_MAP[fontWeightName] ?? 400;
+    const lineHeight = item.lineHeight ?? 1.2;
+    const letterSpacing = item.letterSpacing ?? 0;
+    const textAlign = item.textAlign ?? 'center';
+    const verticalAlign = item.verticalAlign ?? 'middle';
+    const padding = 16; // Matches preview padding
 
-    ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+    // Calculate item bounds (centered in canvas)
+    const itemLeft = canvas.width / 2 + transform.x - transform.width / 2;
+    const itemTop = canvas.height / 2 + transform.y - transform.height / 2;
+
+    // Apply clipping to item bounds (matches preview overflow: hidden behavior)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(itemLeft, itemTop, transform.width, transform.height);
+    ctx.clip();
+
+    // Set up font - use numeric weight for consistency with CSS
+    ctx.font = `${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
     ctx.fillStyle = item.color ?? '#ffffff';
-    ctx.textAlign = (item.textAlign as CanvasTextAlign) ?? 'center';
-    ctx.textBaseline = 'middle';
 
-    const x = transform.x + canvas.width / 2;
-    const y = transform.y + canvas.height / 2;
+    // Calculate available width for text (accounting for padding)
+    const availableWidth = transform.width - padding * 2;
+    const lineHeightPx = fontSize * lineHeight;
 
-    // Text shadow (check for extended properties via any cast)
-    const textItem = item as TextItem & { shadowColor?: string; shadowBlur?: number; shadowOffsetX?: number; shadowOffsetY?: number; strokeColor?: string; strokeWidth?: number };
-    if (textItem.shadowColor && textItem.shadowBlur) {
-      ctx.shadowColor = textItem.shadowColor;
-      ctx.shadowBlur = textItem.shadowBlur;
-      ctx.shadowOffsetX = textItem.shadowOffsetX ?? 0;
-      ctx.shadowOffsetY = textItem.shadowOffsetY ?? 0;
+    // CSS line-height distributes half-leading above and below text
+    const halfLeading = (lineHeightPx - fontSize) / 2;
+
+    // Get actual font metrics to calculate CSS vs canvas offset
+    // CSS centers text based on font metrics, canvas 'top' uses em-square top
+    const metrics = ctx.measureText('Hg'); // Characters with typical ascent/descent
+    const fontAscent = metrics.fontBoundingBoxAscent ?? fontSize * 0.8;
+    const actualAscent = metrics.actualBoundingBoxAscent ?? fontSize * 0.8;
+    // The difference between em-square top and actual glyph top
+    const topPadding = fontAscent - actualAscent;
+
+    ctx.textBaseline = 'top';
+
+    // Wrap text into lines
+    const text = item.text ?? '';
+    const lines = wrapText(ctx, text, availableWidth, letterSpacing);
+
+    // Calculate total text block height (matches CSS inline-block height)
+    const totalTextHeight = lines.length * lineHeightPx;
+    const availableHeight = transform.height - padding * 2;
+
+    // Calculate vertical start position based on alignment
+    // This matches CSS flexbox alignItems behavior
+    let textBlockTop: number;
+    switch (verticalAlign) {
+      case 'top':
+        textBlockTop = itemTop + padding;
+        break;
+      case 'bottom':
+        textBlockTop = itemTop + transform.height - padding - totalTextHeight;
+        break;
+      case 'middle':
+      default:
+        textBlockTop = itemTop + padding + (availableHeight - totalTextHeight) / 2;
+        break;
     }
 
-    // Text stroke
-    if (textItem.strokeColor && textItem.strokeWidth) {
-      ctx.strokeStyle = textItem.strokeColor;
-      ctx.lineWidth = textItem.strokeWidth;
-      ctx.strokeText(item.text ?? '', x, y);
+    // Text shadow support - use item.textShadow (matches preview)
+    if (item.textShadow) {
+      ctx.shadowColor = item.textShadow.color;
+      ctx.shadowBlur = item.textShadow.blur;
+      ctx.shadowOffsetX = item.textShadow.offsetX;
+      ctx.shadowOffsetY = item.textShadow.offsetY;
     }
 
-    ctx.fillText(item.text ?? '', x, y);
+    // Draw each line
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? '';
+      // Position: line box top + half-leading + partial font metric adjustment
+      // - halfLeading: CSS line-height distributes space above/below
+      // - topPadding/2: partial adjustment for em-square vs actual glyph difference
+      const lineY = textBlockTop + i * lineHeightPx + halfLeading + topPadding * 0.5;
+
+      // Calculate x position based on text alignment
+      let lineX: number;
+      switch (textAlign) {
+        case 'left':
+          ctx.textAlign = 'left';
+          lineX = itemLeft + padding;
+          break;
+        case 'right':
+          ctx.textAlign = 'right';
+          lineX = itemLeft + transform.width - padding;
+          break;
+        case 'center':
+        default:
+          ctx.textAlign = 'center';
+          lineX = itemLeft + transform.width / 2;
+          break;
+      }
+
+      // Draw stroke first if present (matches preview which uses text-shadow workaround)
+      // Canvas can do proper stroke, so we use strokeText
+      if (item.stroke && item.stroke.width > 0) {
+        ctx.strokeStyle = item.stroke.color;
+        ctx.lineWidth = item.stroke.width * 2; // Double width because strokeText draws half inside/half outside
+        ctx.lineJoin = 'round';
+        drawTextWithLetterSpacing(ctx, line, lineX, lineY, letterSpacing, true);
+      }
+
+      // Draw fill
+      drawTextWithLetterSpacing(ctx, line, lineX, lineY, letterSpacing, false);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Wrap text into lines that fit within maxWidth
+   */
+  function wrapText(
+    ctx: OffscreenCanvasRenderingContext2D,
+    text: string,
+    maxWidth: number,
+    letterSpacing: number
+  ): string[] {
+    const lines: string[] = [];
+
+    // First split by explicit newlines
+    const paragraphs = text.split('\n');
+
+    for (const paragraph of paragraphs) {
+      if (paragraph === '') {
+        lines.push('');
+        continue;
+      }
+
+      const words = paragraph.split(' ');
+      let currentLine = '';
+
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        const testWidth = measureTextWidth(ctx, testLine, letterSpacing);
+
+        if (testWidth > maxWidth && currentLine) {
+          // Current line is full, push it and start new line with current word
+          lines.push(currentLine);
+          currentLine = word;
+
+          // Check if single word exceeds width (need to break word)
+          if (measureTextWidth(ctx, word, letterSpacing) > maxWidth) {
+            const brokenLines = breakWord(ctx, word, maxWidth, letterSpacing);
+            // Add all but last broken segment as lines
+            for (let j = 0; j < brokenLines.length - 1; j++) {
+              lines.push(brokenLines[j] ?? '');
+            }
+            // Last segment becomes current line
+            currentLine = brokenLines[brokenLines.length - 1] ?? '';
+          }
+        } else {
+          currentLine = testLine;
+        }
+      }
+
+      // Push remaining text
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+    }
+
+    return lines.length > 0 ? lines : [''];
+  }
+
+  /**
+   * Break a single word into segments that fit within maxWidth
+   */
+  function breakWord(
+    ctx: OffscreenCanvasRenderingContext2D,
+    word: string,
+    maxWidth: number,
+    letterSpacing: number
+  ): string[] {
+    const segments: string[] = [];
+    let current = '';
+
+    for (const char of word) {
+      const test = current + char;
+      if (measureTextWidth(ctx, test, letterSpacing) > maxWidth && current) {
+        segments.push(current);
+        current = char;
+      } else {
+        current = test;
+      }
+    }
+
+    if (current) {
+      segments.push(current);
+    }
+
+    return segments;
+  }
+
+  /**
+   * Measure text width accounting for letter spacing
+   */
+  function measureTextWidth(
+    ctx: OffscreenCanvasRenderingContext2D,
+    text: string,
+    letterSpacing: number
+  ): number {
+    const baseWidth = ctx.measureText(text).width;
+    // Letter spacing adds space between each character (n-1 spaces for n characters)
+    const spacingWidth = Math.max(0, text.length - 1) * letterSpacing;
+    return baseWidth + spacingWidth;
+  }
+
+  /**
+   * Draw text with letter spacing applied
+   */
+  function drawTextWithLetterSpacing(
+    ctx: OffscreenCanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    letterSpacing: number,
+    isStroke: boolean
+  ): void {
+    if (letterSpacing === 0) {
+      // No letter spacing, draw normally
+      if (isStroke) {
+        ctx.strokeText(text, x, y);
+      } else {
+        ctx.fillText(text, x, y);
+      }
+      return;
+    }
+
+    // With letter spacing, we need to adjust x based on text alignment
+    const totalWidth = measureTextWidth(ctx, text, letterSpacing);
+    const currentAlign = ctx.textAlign;
+
+    let startX: number;
+    switch (currentAlign) {
+      case 'center':
+        startX = x - totalWidth / 2;
+        break;
+      case 'right':
+        startX = x - totalWidth;
+        break;
+      case 'left':
+      default:
+        startX = x;
+        break;
+    }
+
+    // Draw each character individually with spacing
+    ctx.textAlign = 'left';
+    let currentX = startX;
+
+    for (const char of text) {
+      if (isStroke) {
+        ctx.strokeText(char, currentX, y);
+      } else {
+        ctx.fillText(char, currentX, y);
+      }
+      currentX += ctx.measureText(char).width + letterSpacing;
+    }
+
+    // Restore alignment
+    ctx.textAlign = currentAlign;
   }
 
   /**
