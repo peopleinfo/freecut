@@ -1,8 +1,8 @@
-import { memo, useEffect, useState, useMemo, useDeferredValue, useCallback } from 'react';
+import { memo, useEffect, useState, useMemo, useDeferredValue, useCallback, useRef } from 'react';
 import { FilmstripSkeleton } from './filmstrip-skeleton';
 import { useFilmstrip, type FilmstripFrame } from '../../hooks/use-filmstrip';
 import { mediaLibraryService } from '@/features/media-library/services/media-library-service';
-import { THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from '../../services/filmstrip-cache';
+import { THUMBNAIL_WIDTH } from '../../services/filmstrip-cache';
 
 export interface ClipFilmstripProps {
   /** Media ID from the timeline item */
@@ -23,10 +23,6 @@ export interface ClipFilmstripProps {
   isVisible: boolean;
   /** Pixels per second from parent (avoids redundant zoom subscription) */
   pixelsPerSecond: number;
-  /** Optional height override */
-  height?: number;
-  /** Optional className for positioning */
-  className?: string;
 }
 
 /**
@@ -67,9 +63,13 @@ function findClosestFrame(frames: FilmstripFrame[], targetTime: number): Filmstr
 const FilmstripTile = memo(function FilmstripTile({
   src,
   x,
+  height,
+  width,
 }: {
   src: string;
   x: number;
+  height: number;
+  width: number;
 }) {
   const [errorSrc, setErrorSrc] = useState<string | null>(null);
 
@@ -91,8 +91,8 @@ const FilmstripTile = memo(function FilmstripTile({
       onError={handleError}
       style={{
         left: x,
-        width: THUMBNAIL_WIDTH,
-        height: THUMBNAIL_HEIGHT,
+        width,
+        height,
         objectFit: 'cover',
       }}
     />
@@ -104,6 +104,7 @@ const FilmstripTile = memo(function FilmstripTile({
  *
  * Renders video frame thumbnails as a tiled filmstrip.
  * Uses useDeferredValue to keep zoom interactions responsive.
+ * Auto-fills container height.
  */
 export const ClipFilmstrip = memo(function ClipFilmstrip({
   mediaId,
@@ -115,10 +116,35 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
   fps: _fps,
   isVisible,
   pixelsPerSecond,
-  height = THUMBNAIL_HEIGHT,
-  className = 'top-1',
 }: ClipFilmstripProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  // Measure container height
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const measure = () => {
+      const parent = container.parentElement;
+      if (parent) {
+        setHeight(parent.clientHeight);
+      }
+    };
+
+    measure();
+
+    const resizeObserver = new ResizeObserver(measure);
+    if (container.parentElement) {
+      resizeObserver.observe(container.parentElement);
+    }
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  // Calculate thumbnail width based on height (16:9 aspect ratio)
+  const thumbnailWidth = Math.round(height * (16 / 9)) || THUMBNAIL_WIDTH;
 
   // Defer zoom values to keep zoom slider responsive
   const deferredPixelsPerSecond = useDeferredValue(pixelsPerSecond);
@@ -163,14 +189,14 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
   // Calculate tiles - maps each tile position to the best frame
   // Browser's native loading="lazy" handles performance optimization
   const tiles = useMemo(() => {
-    if (!frames || frames.length === 0) return [];
+    if (!frames || frames.length === 0 || thumbnailWidth === 0) return [];
 
     const effectiveStart = sourceStart + trimStart;
-    const tileCount = Math.ceil(deferredClipWidth / THUMBNAIL_WIDTH);
+    const tileCount = Math.ceil(deferredClipWidth / thumbnailWidth);
     const result: { tileIndex: number; frame: FilmstripFrame; x: number }[] = [];
 
     for (let tile = 0; tile < tileCount; tile++) {
-      const tileX = tile * THUMBNAIL_WIDTH;
+      const tileX = tile * thumbnailWidth;
       const tileTime = effectiveStart + (tileX / deferredPixelsPerSecond) * speed;
       const frame = findClosestFrame(frames, tileTime);
 
@@ -180,25 +206,29 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
     }
 
     return result;
-  }, [frames, deferredClipWidth, deferredPixelsPerSecond, sourceStart, trimStart, speed]);
+  }, [frames, deferredClipWidth, deferredPixelsPerSecond, sourceStart, trimStart, speed, thumbnailWidth]);
 
   if (error) {
     return null;
   }
 
-  // Show skeleton only if no frames yet
-  if (!frames || frames.length === 0) {
-    return <FilmstripSkeleton clipWidth={clipWidth} height={height} className={className} />;
+  // Show skeleton while loading or height not yet measured
+  if (!frames || frames.length === 0 || height === 0) {
+    return (
+      <div ref={containerRef} className="absolute inset-0">
+        <FilmstripSkeleton clipWidth={clipWidth} height={height || 40} />
+      </div>
+    );
   }
 
   return (
-    <>
+    <div ref={containerRef} className="absolute inset-0">
       {/* Show shimmer skeleton behind while loading */}
       {!isComplete && (
-        <FilmstripSkeleton clipWidth={clipWidth} height={height} className={className} />
+        <FilmstripSkeleton clipWidth={clipWidth} height={height} />
       )}
       <div
-        className={`absolute left-0 ${className} overflow-hidden pointer-events-none`}
+        className="absolute left-0 top-0 overflow-hidden pointer-events-none"
         style={{
           width: deferredClipWidth,
           height,
@@ -207,11 +237,11 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
         }}
       >
         {tiles.map(({ tileIndex, frame, x }) => (
-          <FilmstripTile key={tileIndex} src={frame.url} x={x} />
+          <FilmstripTile key={tileIndex} src={frame.url} x={x} height={height} width={thumbnailWidth} />
         ))}
       </div>
-    </>
+    </div>
   );
 });
 
-export { THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT };
+export { THUMBNAIL_WIDTH };

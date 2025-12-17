@@ -105,7 +105,7 @@ export function ProjectCard({ project, onEdit }: ProjectCardProps) {
             key={project.updatedAt} // Force re-render when project is updated
             src={thumbnailUrl}
             alt={project.name}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain bg-black/40"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-secondary/40 to-secondary/20">

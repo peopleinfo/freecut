@@ -136,12 +136,31 @@ async function saveTimeline(projectId: string): Promise<void> {
         const resolvedTracks = await resolveMediaUrls(composition.tracks);
         const resolvedComposition = { ...composition, tracks: resolvedTracks };
 
+        // Calculate thumbnail dimensions preserving project aspect ratio
+        // Fit within 320x180 bounds while maintaining aspect ratio
+        const maxThumbWidth = 320;
+        const maxThumbHeight = 180;
+        const projectAspectRatio = width / height;
+        const targetAspectRatio = maxThumbWidth / maxThumbHeight;
+
+        let thumbWidth: number;
+        let thumbHeight: number;
+        if (projectAspectRatio > targetAspectRatio) {
+          // Wider than 16:9 - constrained by width
+          thumbWidth = maxThumbWidth;
+          thumbHeight = Math.round(maxThumbWidth / projectAspectRatio);
+        } else {
+          // Taller than 16:9 (portrait) - constrained by height
+          thumbHeight = maxThumbHeight;
+          thumbWidth = Math.round(maxThumbHeight * projectAspectRatio);
+        }
+
         // Render single frame at current playhead position
         const thumbnailBlob = await renderSingleFrame({
           composition: resolvedComposition,
           frame: currentFrame,
-          width: 320,
-          height: 180,
+          width: thumbWidth,
+          height: thumbHeight,
           quality: 0.85,
           format: 'image/jpeg',
         });
@@ -153,8 +172,8 @@ async function saveTimeline(projectId: string): Promise<void> {
           mediaId: projectId,
           blob: thumbnailBlob,
           timestamp: Date.now(),
-          width: 320,
-          height: 180,
+          width: thumbWidth,
+          height: thumbHeight,
         });
       } catch (thumbError) {
         // Thumbnail generation failure shouldn't block save

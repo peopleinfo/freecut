@@ -6,7 +6,6 @@ import { mediaLibraryService } from '@/features/media-library/services/media-lib
 import { WAVEFORM_FILL_COLOR, WAVEFORM_STROKE_COLOR } from '../../constants';
 
 // Waveform dimensions
-const DEFAULT_WAVEFORM_HEIGHT = 32;
 const BAR_WIDTH = 2;
 const BAR_GAP = 1;
 
@@ -29,10 +28,6 @@ export interface ClipWaveformProps {
   isVisible: boolean;
   /** Pixels per second from parent (avoids redundant zoom subscription) */
   pixelsPerSecond: number;
-  /** Optional height override (default 32px) */
-  height?: number;
-  /** Optional className for positioning override */
-  className?: string;
 }
 
 /**
@@ -51,12 +46,34 @@ export const ClipWaveform = memo(function ClipWaveform({
   fps: _fps,
   isVisible,
   pixelsPerSecond,
-  height = DEFAULT_WAVEFORM_HEIGHT,
-  className = 'top-2',
 }: ClipWaveformProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const hasStartedLoadingRef = useRef(false);
   const lastMediaIdRef = useRef<string | null>(null);
+
+  // Measure container height
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const measure = () => {
+      const parent = container.parentElement;
+      if (parent) {
+        setHeight(parent.clientHeight);
+      }
+    };
+
+    measure();
+
+    const resizeObserver = new ResizeObserver(measure);
+    if (container.parentElement) {
+      resizeObserver.observe(container.parentElement);
+    }
+
+    return () => resizeObserver.disconnect();
+  }, []);
 
   // Reset loading state when mediaId changes (e.g., after relinking)
   useEffect(() => {
@@ -131,7 +148,7 @@ export const ClipWaveform = memo(function ClipWaveform({
       // Calculate bar positions
       const barSpacing = BAR_WIDTH + BAR_GAP;
       const centerY = height / 2;
-      const maxBarHeight = (height / 2) - 2; // Leave some padding
+      const maxBarHeight = height / 2; // Fill container height
 
       // Iterate through bars that should be in this tile
       for (let x = 0; x < tileWidth; x += barSpacing) {
@@ -174,29 +191,32 @@ export const ClipWaveform = memo(function ClipWaveform({
     [peaks, duration, sampleRate, pixelsPerSecond, sourceStart, trimStart, speed, sourceDuration, height]
   );
 
-  // Show skeleton while loading or on error (better than showing nothing)
-  if (!peaks || peaks.length === 0) {
-    return <WaveformSkeleton clipWidth={clipWidth} height={height} className={className} />;
+  // Show skeleton while loading or height not yet measured
+  if (!peaks || peaks.length === 0 || height === 0) {
+    return (
+      <div ref={containerRef} className="absolute inset-0">
+        <WaveformSkeleton clipWidth={clipWidth} height={height || 24} />
+      </div>
+    );
   }
 
   // Include quantized pixelsPerSecond in version to force re-render on zoom changes
   // Quantize to steps of 5 to reduce canvas redraws on small zoom changes
   const quantizedPPS = Math.round(pixelsPerSecond / 5) * 5;
-  const renderVersion = peaks.length * 10000 + quantizedPPS;
+  const renderVersion = peaks.length * 10000 + quantizedPPS + height;
 
   return (
-    <>
+    <div ref={containerRef} className="absolute inset-0">
       {/* Show shimmer skeleton behind canvas while loading progressively */}
       {isLoading && (
-        <WaveformSkeleton clipWidth={clipWidth} height={height} className={className} />
+        <WaveformSkeleton clipWidth={clipWidth} height={height} />
       )}
       <TiledCanvas
         width={clipWidth}
         height={height}
         renderTile={renderTile}
         version={renderVersion}
-        className={className}
       />
-    </>
+    </div>
   );
 });

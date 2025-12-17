@@ -4,7 +4,6 @@ import { ClipFilmstrip } from '../clip-filmstrip';
 import { ClipWaveform } from '../clip-waveform';
 import {
   CLIP_LABEL_HEIGHT,
-  VIDEO_FILMSTRIP_HEIGHT,
   VIDEO_WAVEFORM_HEIGHT,
   AUDIO_WAVEFORM_HEIGHT,
 } from '@/features/timeline/constants';
@@ -41,8 +40,8 @@ export const ClipContent = memo(function ClipContent({
   if (item.type === 'video' && item.mediaId) {
     return (
       <div className="absolute inset-0 flex flex-col">
-        {/* Row 1: Filmstrip with overlayed label */}
-        <div className="relative overflow-hidden" style={{ height: VIDEO_FILMSTRIP_HEIGHT }}>
+        {/* Row 1: Filmstrip with overlayed label - flex-1 to fill remaining space */}
+        <div className="relative overflow-hidden flex-1 min-h-0">
           <ClipFilmstrip
             mediaId={item.mediaId}
             clipWidth={clipWidth}
@@ -53,8 +52,6 @@ export const ClipContent = memo(function ClipContent({
             fps={fps}
             isVisible={isClipVisible}
             pixelsPerSecond={pixelsPerSecond}
-            height={VIDEO_FILMSTRIP_HEIGHT}
-            className="top-0"
           />
           {/* Overlayed label */}
           <div
@@ -64,7 +61,7 @@ export const ClipContent = memo(function ClipContent({
             {item.label}
           </div>
         </div>
-        {/* Row 2: Waveform */}
+        {/* Row 2: Waveform - fixed height */}
         <div className="relative overflow-hidden" style={{ height: VIDEO_WAVEFORM_HEIGHT }}>
           <ClipWaveform
             mediaId={item.mediaId}
@@ -76,8 +73,6 @@ export const ClipContent = memo(function ClipContent({
             fps={fps}
             isVisible={isClipVisible}
             pixelsPerSecond={pixelsPerSecond}
-            height={VIDEO_WAVEFORM_HEIGHT}
-            className="top-0"
           />
         </div>
       </div>
@@ -107,8 +102,6 @@ export const ClipContent = memo(function ClipContent({
             fps={fps}
             isVisible={isClipVisible}
             pixelsPerSecond={pixelsPerSecond}
-            height={AUDIO_WAVEFORM_HEIGHT}
-            className="top-0"
           />
         </div>
       </div>
