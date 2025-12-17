@@ -36,16 +36,10 @@ import * as timelineActions from './timeline-actions';
 import { getProject, updateProject, saveThumbnail } from '@/lib/storage/indexeddb';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useZoomStore } from './zoom-store';
-import { generatePlayheadThumbnail } from '@/features/projects/utils/thumbnail-generator';
 import type { ProjectTimeline } from '@/types/project';
-
-/**
- * Convert a data URL to a Blob
- */
-async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
-  const response = await fetch(dataUrl);
-  return response.blob();
-}
+import { renderSingleFrame } from '@/features/export/utils/client-render-engine';
+import { convertTimelineToRemotion } from '@/features/export/utils/timeline-to-remotion';
+import { resolveMediaUrls } from '@/features/preview/utils/media-resolver';
 
 
 /**
@@ -115,39 +109,51 @@ async function saveTimeline(projectId: string): Promise<void> {
       }),
     };
 
-    // Generate thumbnail from current Player frame and save as Blob
+    // Generate thumbnail using the client render engine (renders all layers)
     let thumbnailId: string | undefined;
     if (itemsState.items.length > 0) {
       try {
-        let thumbnailDataUrl: string | null = null;
+        const fps = project.metadata?.fps || 30;
+        const width = project.metadata?.width || 1920;
+        const height = project.metadata?.height || 1080;
 
-        const captureFrame = usePlaybackStore.getState().captureFrame;
-        if (captureFrame) {
-          thumbnailDataUrl = await captureFrame();
-        } else {
-          // Fallback to source-based thumbnail if Player isn't available
-          const fps = project.metadata?.fps || 30;
-          thumbnailDataUrl = await generatePlayheadThumbnail(
-            itemsState.items,
-            itemsState.tracks,
-            currentFrame,
-            fps
-          );
-        }
+        // Convert timeline to Remotion composition format
+        const composition = convertTimelineToRemotion(
+          itemsState.tracks,
+          itemsState.items,
+          transitionsState.transitions,
+          fps,
+          width,
+          height,
+          null, // inPoint - render full timeline
+          null, // outPoint
+          keyframesState.keyframes
+        );
 
-        // Convert data URL to Blob and save to thumbnails store
-        if (thumbnailDataUrl) {
-          thumbnailId = `project:${projectId}:cover`;
-          const blob = await dataUrlToBlob(thumbnailDataUrl);
-          await saveThumbnail({
-            id: thumbnailId,
-            mediaId: projectId, // Use projectId for project covers
-            blob,
-            timestamp: Date.now(),
-            width: 320,
-            height: 180,
-          });
-        }
+        // Resolve media URLs (convert mediaId to blob URLs)
+        const resolvedTracks = await resolveMediaUrls(composition.tracks);
+        const resolvedComposition = { ...composition, tracks: resolvedTracks };
+
+        // Render single frame at current playhead position
+        const thumbnailBlob = await renderSingleFrame({
+          composition: resolvedComposition,
+          frame: currentFrame,
+          width: 320,
+          height: 180,
+          quality: 0.85,
+          format: 'image/jpeg',
+        });
+
+        // Save thumbnail to IndexedDB
+        thumbnailId = `project:${projectId}:cover`;
+        await saveThumbnail({
+          id: thumbnailId,
+          mediaId: projectId,
+          blob: thumbnailBlob,
+          timestamp: Date.now(),
+          width: 320,
+          height: 180,
+        });
       } catch (thumbError) {
         // Thumbnail generation failure shouldn't block save
         logger.warn('Failed to generate thumbnail:', thumbError);

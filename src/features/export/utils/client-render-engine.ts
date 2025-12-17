@@ -1255,3 +1255,71 @@ async function createCompositionRenderer(
     };
   }
 }
+
+// =============================================================================
+// SINGLE FRAME RENDERING (for thumbnails)
+// =============================================================================
+
+export interface SingleFrameOptions {
+  composition: RemotionInputProps;
+  frame: number;
+  width?: number;
+  height?: number;
+  quality?: number;
+  format?: 'image/jpeg' | 'image/png' | 'image/webp';
+}
+
+/**
+ * Render a single frame from a composition to a Blob.
+ * Reuses the same createCompositionRenderer as full export for consistency.
+ * Includes all layers: video, images, text, shapes, effects, transitions.
+ */
+export async function renderSingleFrame(options: SingleFrameOptions): Promise<Blob> {
+  const {
+    composition,
+    frame,
+    width = 320,
+    height = 180,
+    quality = 0.85,
+    format = 'image/jpeg',
+  } = options;
+
+  const compositionWidth = composition.width || 1920;
+  const compositionHeight = composition.height || 1080;
+
+  log.debug('Rendering single frame', { frame, width, height, compositionWidth, compositionHeight });
+
+  // Create canvas at full composition size
+  const renderCanvas = new OffscreenCanvas(compositionWidth, compositionHeight);
+  const renderCtx = renderCanvas.getContext('2d');
+  if (!renderCtx) {
+    throw new Error('Failed to get 2d context');
+  }
+
+  // Use the SAME renderer as export - single source of truth
+  const dummySettings: ClientExportSettings = {
+    resolution: { width: compositionWidth, height: compositionHeight },
+    codec: 'avc',
+    container: 'mp4',
+    videoBitrate: 8000000,
+    audioBitrate: 128000,
+    quality: 'high',
+    fps: composition.fps || 30,
+  };
+
+  const renderer = await createCompositionRenderer(composition, renderCanvas, renderCtx, dummySettings);
+  await renderer.preload();
+  await renderer.renderFrame(frame);
+
+  // Scale down to thumbnail size
+  const thumbnailCanvas = new OffscreenCanvas(width, height);
+  const thumbnailCtx = thumbnailCanvas.getContext('2d');
+  if (!thumbnailCtx) {
+    throw new Error('Failed to get thumbnail 2d context');
+  }
+
+  thumbnailCtx.drawImage(renderCanvas, 0, 0, width, height);
+
+  const blob = await thumbnailCanvas.convertToBlob({ type: format, quality });
+  return blob;
+}
