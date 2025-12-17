@@ -169,17 +169,6 @@ export function convertTimelineToRemotion(
     })),
   });
 
-  // Debug: log item sourceStart values as a single string for easy copy
-  const originalVideoItems = items.filter(i => i.type === 'video').map(i => 
-    `id=${i.id.substring(0,8)} from=${i.from} sourceStart=${(i as any).sourceStart} trimStart=${(i as any).trimStart} originId=${i.originId?.substring(0,8) ?? 'none'}`
-  ).join(' | ');
-  const processedVideoItems = processedItems.filter(i => i.type === 'video').map(i => 
-    `id=${i.id.substring(0,8)} from=${i.from} sourceStart=${(i as any).sourceStart} trimStart=${(i as any).trimStart}`
-  ).join(' | ');
-  log.info(`ORIGINAL ITEMS: ${originalVideoItems}`);
-  log.info(`PROCESSED ITEMS: ${processedVideoItems}`);
-  log.info(`IO MARKERS: inPoint=${inPoint} outPoint=${outPoint} hasRange=${hasInOutRange}`);
-
   return {
     fps,
     durationInFrames,
@@ -220,22 +209,11 @@ function processKeyframesForExport(
     return keyframes.filter(kf => processedItemIds.has(kf.itemId));
   }
 
-  // Build lookup maps for advanced processing
+  // Build lookup map for keyframes by item ID
   const keyframesByItemId = new Map<string, ItemKeyframes>();
-  const keyframesByOriginId = new Map<string, ItemKeyframes>();
-  
+
   for (const kf of keyframes) {
     keyframesByItemId.set(kf.itemId, kf);
-    // Also index by the item's originId if it has one
-    const item = originalItems.find(i => i.id === kf.itemId);
-    if (item?.originId) {
-      // Don't overwrite if we already have keyframes for this originId
-      if (!keyframesByOriginId.has(item.originId)) {
-        keyframesByOriginId.set(item.originId, kf);
-      }
-    }
-    // Also store by itemId as originId (for items that ARE the origin)
-    keyframesByOriginId.set(kf.itemId, kf);
   }
   
   const result: ItemKeyframes[] = [];
@@ -250,16 +228,23 @@ function processKeyframesForExport(
     const originalItem = originalItems.find(i => i.id === item.id);
     
     // If no direct keyframes, try to find via originId (for split clips)
-    // BUT: don't inherit opacity keyframes - they should only apply to the original clip
+    // IMPORTANT: Only inherit keyframes from the PARENT clip (where keyframes.itemId === item.originId)
+    // NOT from sibling clips that happen to share the same originId
+    // This prevents clip A from incorrectly inheriting clip B's keyframes when both are splits
     let isInherited = false;
     if (!itemKeyframes && item.originId) {
-      itemKeyframes = keyframesByOriginId.get(item.originId);
-      isInherited = true;
-      
-      if (itemKeyframes && originalItem) {
-        // Calculate the frame offset for this split clip
-        // Use the ORIGINAL item (before IO marker adjustments) to avoid double-counting
-        splitFrameOffset = calculateSplitKeyframeOffset(originalItem, originalItems);
+      // Only look up keyframes if they were defined on the ORIGINAL parent clip
+      // (the clip whose id equals this item's originId)
+      const parentKeyframes = keyframesByItemId.get(item.originId);
+      if (parentKeyframes) {
+        itemKeyframes = parentKeyframes;
+        isInherited = true;
+
+        if (originalItem) {
+          // Calculate the frame offset for this split clip
+          // Use the ORIGINAL item (before IO marker adjustments) to avoid double-counting
+          splitFrameOffset = calculateSplitKeyframeOffset(originalItem, originalItems);
+        }
       }
     }
     
@@ -288,10 +273,7 @@ function processKeyframesForExport(
     
     // Total offset = split offset (if inheriting from parent) + IO marker offset
     const totalOffset = splitFrameOffset + ioMarkerOffset;
-    
-    // Debug
-    log.info(`KEYFRAME OFFSET: itemId=${item.id.substring(0,8)} splitOffset=${splitFrameOffset} ioOffset=${ioMarkerOffset} total=${totalOffset}`);
-    
+
     // Only adjust keyframes if needed
     if (totalOffset > 0) {
       // Create adjusted keyframes for this item

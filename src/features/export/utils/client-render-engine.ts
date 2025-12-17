@@ -516,16 +516,6 @@ async function createCompositionRenderer(
       contentCtx.fillStyle = 'transparent';
       contentCtx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Debug: count items per track for first few frames
-      if (frame < 3) {
-        const allItems = sortedTracks.flatMap(t => t.items ?? []);
-        const videoItems = allItems.filter(i => i.type === 'video');
-        log.info(`FRAME ${frame}: totalItems=${allItems.length} videoItems=${videoItems.length}`);
-        for (const vi of videoItems) {
-          const visible = frame >= vi.from && frame < vi.from + vi.durationInFrames;
-          log.info(`  VIDEO id=${vi.id.substring(0,8)} from=${vi.from} dur=${vi.durationInFrames} visible=${visible}`);
-        }
-      }
 
       // Render each track
       for (const track of sortedTracks) {
@@ -558,30 +548,6 @@ async function createCompositionRenderer(
           const itemKeyframes = keyframesMap.get(item.id);
           const transform = getAnimatedTransform(item, itemKeyframes, frame, canvasSettings);
 
-          // Debug logging for first frame only
-          if (frame === 0) {
-            const localFrame = frame - item.from;
-            // Log each keyframe property separately for clarity
-            if (itemKeyframes) {
-              for (const prop of itemKeyframes.properties) {
-                if (prop.keyframes.length > 0) {
-                  const kfDetails = prop.keyframes.map(k => `frame=${k.frame}, value=${k.value}`).join(' | ');
-                  log.debug(`Keyframes [${prop.property}]: ${kfDetails}`);
-                }
-              }
-            }
-            log.debug('Transform at frame 0', {
-              localFrame,
-              itemFrom: item.from,
-              itemId: item.id.substring(0, 8),
-              x: transform.x,
-              y: transform.y,
-              width: transform.width,
-              height: transform.height,
-              opacity: transform.opacity,
-              rotation: transform.rotation,
-            });
-          }
 
           // Get effects (item effects + adjustment layer effects)
           const adjEffects = getAdjustmentLayerEffects(

@@ -43,8 +43,12 @@ interface VideoGroup {
  * Only adjacent clips (one ends where another begins) are grouped together.
  * Clips that have been dragged apart are placed in separate groups.
  *
- * NOTE: Speed is intentionally NOT part of the key. Changing speed should not
- * cause component remounts, as this breaks Web Audio API connections.
+ * KEY STABILITY NOTES:
+ * - Speed is NOT part of the key - changing speed should not cause remounts
+ * - Position (minFrom) is NOT part of the key - rate stretch from start, trim,
+ *   move, or undo should not cause remounts
+ * - Uses first item's ID to differentiate sub-groups when clips are dragged apart
+ * - This ensures Web Audio API connections stay intact across all operations
  */
 function groupByOrigin(items: EnrichedVideoItem[]): VideoGroup[] {
   // First, collect items by their origin key
@@ -86,8 +90,11 @@ function groupByOrigin(items: EnrichedVideoItem[]): VideoGroup[] {
         // Gap detected - finalize current group and start new one
         const minFrom = Math.min(...currentGroup.map((i) => i.from));
         const maxEnd = Math.max(...currentGroup.map((i) => i.from + i.durationInFrames));
+        // Use first item's ID for stable key - doesn't change when position changes
+        // (minFrom would change on rate stretch from start, trim, or move, causing remount)
+        const firstItemId = currentGroup[0]!.id;
         groups.push({
-          originKey: `${originKey}-${minFrom}`, // Make key unique per sub-group
+          originKey: `${originKey}-${firstItemId}`,
           items: currentGroup,
           minFrom,
           maxEnd,
@@ -100,8 +107,10 @@ function groupByOrigin(items: EnrichedVideoItem[]): VideoGroup[] {
     // Finalize last group
     const minFrom = Math.min(...currentGroup.map((i) => i.from));
     const maxEnd = Math.max(...currentGroup.map((i) => i.from + i.durationInFrames));
+    // Use first item's ID for stable key - doesn't change when position changes
+    const firstItemId = currentGroup[0]!.id;
     groups.push({
-      originKey: `${originKey}-${minFrom}`,
+      originKey: `${originKey}-${firstItemId}`,
       items: currentGroup,
       minFrom,
       maxEnd,
