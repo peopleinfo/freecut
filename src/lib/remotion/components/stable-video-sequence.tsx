@@ -152,14 +152,31 @@ const GroupRenderer: React.FC<{
   // Convert to global frame for comparison with item.from (which is global)
   const globalFrame = localFrame + group.minFrom;
 
-  // Find the active item for current frame
-  const activeItem = group.items.find(
+  // Find the active item ID for current frame
+  // IMPORTANT: Only extract the ID here, not the object reference.
+  // The object reference from .find() changes every frame, but the ID is stable.
+  const activeItemId = group.items.find(
     (item) => globalFrame >= item.from && globalFrame < item.from + item.durationInFrames
+  )?.id;
+
+  // Create a fingerprint of item properties that affect playback calculations.
+  // This ensures adjustedItem recalculates when speed/source bounds change (e.g., after rate stretch).
+  // Without this, the useMemo might use stale values if group.items reference doesn't change.
+  const itemsFingerprint = useMemo(() =>
+    group.items.map(i => `${i.id}:${i.speed ?? 1}:${i.sourceStart ?? 0}:${i.sourceEnd ?? ''}:${i.from}:${i.durationInFrames}`).join('|'),
+    [group.items]
   );
 
   // Memoize the adjusted item based on active item's identity.
-  // Only recalculates when crossing split boundaries.
+  // Only recalculates when crossing split boundaries (activeItemId changes).
+  // CRITICAL: Depend on activeItemId (string), NOT on the activeItem object reference.
+  // The object reference changes every frame due to .find(), but the ID is stable.
+  // Also depends on itemsFingerprint to catch property changes (speed, sourceStart, etc.)
   const adjustedItem = useMemo(() => {
+    if (!activeItemId) return null;
+
+    // Look up item by ID inside useMemo - this ensures we use the stable group.items reference
+    const activeItem = group.items.find((item) => item.id === activeItemId);
     if (!activeItem) return null;
 
     // Adjust sourceStart to account for the shared Sequence.
@@ -186,7 +203,7 @@ const GroupRenderer: React.FC<{
       // not relative to this specific item, causing fades to misbehave on split clips
       _sequenceFrameOffset: itemOffset,
     };
-  }, [activeItem?.id, activeItem, group.minFrom]);
+  }, [activeItemId, group.items, group.minFrom, itemsFingerprint]);
 
   // CRITICAL: Also memoize the RENDERED OUTPUT.
   // This prevents calling renderItem (which creates new React elements) every frame.

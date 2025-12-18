@@ -35,6 +35,11 @@ export function useTimelineTrim(item: TimelineItem, timelineDuration: number, tr
   const trimItemEnd = useTimelineStore((s) => s.trimItemEnd);
   const setDragState = useSelectionStore((s) => s.setDragState);
 
+  // Get fresh item from store to ensure we have latest values after previous trims
+  const getItemFromStore = useCallback(() => {
+    return useTimelineStore.getState().items.find((i) => i.id === item.id) ?? item;
+  }, [item.id]);
+
   // Use snap calculator - pass item.id to exclude self from magnetic snaps
   // Only use magnetic snap targets (item edges), not grid lines
   const { magneticSnapTargets, snapThresholdFrames, snapEnabled } = useSnapCalculator(
@@ -121,7 +126,9 @@ export function useTimelineTrim(item: TimelineItem, timelineDuration: number, tr
 
       // Apply source boundary clamping for media items
       // This ensures visual feedback matches what the store will actually commit
-      const { clampedAmount } = clampTrimAmount(item, handle!, deltaFrames);
+      // Use fresh item from store to ensure we have latest values after previous trims
+      const currentItem = getItemFromStore();
+      const { clampedAmount } = clampTrimAmount(currentItem, handle!, deltaFrames);
       deltaFrames = clampedAmount;
 
       // Update local state for visual feedback
@@ -146,7 +153,7 @@ export function useTimelineTrim(item: TimelineItem, timelineDuration: number, tr
         });
       }
     },
-    [pixelsToTime, fps, trackLocked, findSnapForFrame, setDragState, item.id]
+    [pixelsToTime, fps, trackLocked, findSnapForFrame, setDragState, item.id, getItemFromStore]
   );
 
   // Mouse up handler - commits changes to store (single update)

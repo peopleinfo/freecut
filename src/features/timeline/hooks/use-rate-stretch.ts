@@ -80,6 +80,11 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
   const rateStretchItem = useTimelineStore((s) => s.rateStretchItem);
   const setDragState = useSelectionStore((s) => s.setDragState);
 
+  // Get fresh item from store to ensure we have latest values after previous operations
+  const getItemFromStore = useCallback(() => {
+    return useTimelineStore.getState().items.find((i) => i.id === item.id) ?? item;
+  }, [item.id]);
+
   // Use snap calculator - pass item.id to exclude self from magnetic snaps
   // Only use magnetic snap targets (item edges), not grid lines
   const { magneticSnapTargets, snapThresholdFrames, snapEnabled } = useSnapCalculator(
@@ -324,45 +329,48 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
       if (e.button !== 0) return;
       if (trackLocked) return;
 
+      // Get fresh item from store to ensure we have latest values after previous operations
+      const currentItem = getItemFromStore();
+
       // Only works on video/audio/gif items
-      const isGifImage = item.type === 'image' && item.label?.toLowerCase().endsWith('.gif');
-      if (item.type !== 'video' && item.type !== 'audio' && !isGifImage) return;
+      const isGifImage = currentItem.type === 'image' && currentItem.label?.toLowerCase().endsWith('.gif');
+      if (currentItem.type !== 'video' && currentItem.type !== 'audio' && !isGifImage) return;
 
       e.stopPropagation();
       e.preventDefault();
 
-      const currentSpeed = item.speed || 1;
-      const isLoopingMedia = item.type === 'image'; // GIFs (images) can loop infinitely
+      const currentSpeed = currentItem.speed || 1;
+      const isLoopingMedia = currentItem.type === 'image'; // GIFs (images) can loop infinitely
 
       // Use the actual available source frames for this clip
       // For trimmed/split clips, this is sourceEnd - sourceStart (the segment being used)
       // For untrimmed clips, use sourceDuration (full source file)
       // Fall back to durationInFrames * speed only if no source info is available
       let sourceDuration: number;
-      if (item.sourceEnd !== undefined && item.sourceStart !== undefined) {
+      if (currentItem.sourceEnd !== undefined && currentItem.sourceStart !== undefined) {
         // Trimmed clip: use the actual source segment
-        sourceDuration = item.sourceEnd - item.sourceStart;
-      } else if (item.sourceDuration) {
+        sourceDuration = currentItem.sourceEnd - currentItem.sourceStart;
+      } else if (currentItem.sourceDuration) {
         // Untrimmed clip: use full source duration
-        sourceDuration = item.sourceDuration;
+        sourceDuration = currentItem.sourceDuration;
       } else {
         // Fallback: estimate from current state
-        sourceDuration = Math.round(item.durationInFrames * currentSpeed);
+        sourceDuration = Math.round(currentItem.durationInFrames * currentSpeed);
       }
 
       setStretchState({
         isStretching: true,
         handle,
         startX: e.clientX,
-        initialFrom: item.from,
-        initialDuration: item.durationInFrames,
+        initialFrom: currentItem.from,
+        initialDuration: currentItem.durationInFrames,
         sourceDuration,
         initialSpeed: currentSpeed,
         currentDelta: 0,
         isLoopingMedia,
       });
     },
-    [item, trackLocked]
+    [trackLocked, getItemFromStore]
   );
 
   // Calculate visual feedback during stretch

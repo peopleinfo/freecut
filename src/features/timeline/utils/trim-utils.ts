@@ -51,6 +51,8 @@ export function clampTrimAmount(
       }
     } else {
       // End handle: positive trimAmount = extending right
+      // Always use sourceDuration - trimming should always be reversible
+      // (user can extend back to full source regardless of rate stretch state)
       if (sourceDuration !== undefined) {
         const maxDuration = calcMaxDuration(sourceDuration, sourceStart, speed);
         maxExtend = maxDuration - item.durationInFrames;
@@ -100,9 +102,10 @@ export function getMaxTimelineDuration(item: TimelineItem, handle: TrimHandle): 
   if (!isMediaItem(item)) return null;
 
   const { sourceStart, sourceDuration, speed } = getSourceProperties(item);
-  if (sourceDuration === undefined) return null;
 
   if (handle === 'end') {
+    // Always use sourceDuration - trimming should always be reversible
+    if (sourceDuration === undefined) return null;
     return calcMaxDuration(sourceDuration, sourceStart, speed);
   } else {
     // For start handle: max extend amount in timeline frames
