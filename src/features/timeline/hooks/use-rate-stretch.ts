@@ -343,19 +343,19 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
       const isLoopingMedia = currentItem.type === 'image'; // GIFs (images) can loop infinitely
 
       // Use the actual available source frames for this clip
-      // IMPORTANT: Always prefer sourceDuration (original file duration) over sourceEnd - sourceStart
-      // to avoid accumulating rounding errors across multiple rate stretch operations.
-      // sourceEnd is recalculated each time and can drift due to rounding in duration * speed.
-      // sourceDuration is the ground truth from the original source file.
+      // IMPORTANT: For split clips, use sourceEnd - sourceStart to limit rate stretch
+      // to the clip's actual portion rather than the entire remaining source.
+      // This makes rate stretching "per clip" - each split clip starts at speed 1 relative
+      // to its own source boundaries.
       let sourceDuration: number;
-      if (currentItem.sourceDuration) {
-        // Use original source file duration (most accurate, no rounding drift)
-        // Subtract sourceStart to get available frames from current position
+      if (currentItem.sourceEnd !== undefined && currentItem.sourceStart !== undefined) {
+        // For clips with defined source boundaries (including split clips),
+        // use only the clip's actual portion
+        sourceDuration = currentItem.sourceEnd - currentItem.sourceStart;
+      } else if (currentItem.sourceDuration) {
+        // For clips without explicit end, use remaining source from current position
         const sourceStart = currentItem.sourceStart ?? 0;
         sourceDuration = currentItem.sourceDuration - sourceStart;
-      } else if (currentItem.sourceEnd !== undefined && currentItem.sourceStart !== undefined) {
-        // Fallback for clips without sourceDuration metadata
-        sourceDuration = currentItem.sourceEnd - currentItem.sourceStart;
       } else {
         // Last resort: estimate from current state
         sourceDuration = Math.round(currentItem.durationInFrames * currentSpeed);
