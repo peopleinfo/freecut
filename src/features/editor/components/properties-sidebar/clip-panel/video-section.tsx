@@ -174,7 +174,7 @@ export function VideoSection({ items }: VideoSectionProps) {
             onChange={handleSpeedChange}
             min={MIN_SPEED}
             max={MAX_SPEED}
-            step={0.1}
+            step={0.01}
             unit="x"
             className="flex-1 min-w-0"
           />

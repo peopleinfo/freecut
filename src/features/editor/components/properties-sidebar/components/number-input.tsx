@@ -46,9 +46,11 @@ export function NumberInput({
   unitWidth = 20,
 }: NumberInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [localValue, setLocalValue] = useState(
-    value === 'mixed' ? '' : String(value)
-  );
+  const [localValue, setLocalValue] = useState(() => {
+    if (value === 'mixed') return '';
+    if (step >= 1) return String(Math.round(value));
+    return value.toFixed(2);
+  });
   const [isScrubbing, setIsScrubbing] = useState(false);
   const scrubStartRef = useRef<{ x: number; startValue: number } | null>(null);
   const scrubValueRef = useRef<number | null>(null);
@@ -56,26 +58,31 @@ export function NumberInput({
   const lastLiveChangeRef = useRef<number>(0);
   const LIVE_CHANGE_THROTTLE_MS = 16; // ~60fps max
 
-  // Sync local value with prop value
-  useEffect(() => {
-    if (!inputRef.current || document.activeElement !== inputRef.current) {
-      setLocalValue(value === 'mixed' ? '' : String(value));
-    }
-  }, [value]);
-
   const clamp = useCallback(
     (v: number) => {
       let result = v;
-      // Round to nearest step if step is an integer (e.g., 1 for pixel values)
-      if (Number.isInteger(step)) {
-        result = Math.round(result);
-      }
       if (min !== undefined) result = Math.max(min, result);
       if (max !== undefined) result = Math.min(max, result);
       return result;
     },
-    [min, max, step]
+    [min, max]
   );
+
+  // Format number for display (2 decimal places for decimal steps, integer for step=1)
+  const formatValue = useCallback(
+    (v: number) => {
+      if (step >= 1) return String(Math.round(v));
+      return v.toFixed(2);
+    },
+    [step]
+  );
+
+  // Sync local value with prop value
+  useEffect(() => {
+    if (!inputRef.current || document.activeElement !== inputRef.current) {
+      setLocalValue(value === 'mixed' ? '' : formatValue(value));
+    }
+  }, [value, formatValue]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setLocalValue(e.target.value);
@@ -87,7 +94,7 @@ export function NumberInput({
       onChange(clamp(parsed));
     } else {
       // Revert to original value
-      setLocalValue(value === 'mixed' ? '' : String(value));
+      setLocalValue(value === 'mixed' ? '' : formatValue(value));
     }
   };
 
@@ -95,7 +102,7 @@ export function NumberInput({
     if (e.key === 'Enter') {
       e.currentTarget.blur();
     } else if (e.key === 'Escape') {
-      setLocalValue(value === 'mixed' ? '' : String(value));
+      setLocalValue(value === 'mixed' ? '' : formatValue(value));
       e.currentTarget.blur();
     } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
@@ -120,11 +127,11 @@ export function NumberInput({
       if (!scrubStartRef.current) return;
       const dx = moveEvent.clientX - scrubStartRef.current.x;
       const sensitivity = moveEvent.shiftKey ? 0.1 : 1;
-      const delta = Math.round(dx * sensitivity * step);
+      const delta = dx * sensitivity * step;
       const newValue = clamp(scrubStartRef.current.startValue + delta);
       scrubValueRef.current = newValue;
       // Update displayed value during scrub
-      setLocalValue(String(newValue));
+      setLocalValue(formatValue(newValue));
       // Use live change for preview - throttled to prevent overwhelming composition
       if (onLiveChange) {
         const now = performance.now();
