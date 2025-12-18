@@ -102,7 +102,7 @@ export const useMediaLibraryStore = create<
 
         // Check if File System Access API is supported
         if (!('showOpenFilePicker' in window)) {
-          set({ error: 'File picker not supported in this browser' });
+          set({ error: 'File picker not supported. Please use Google Chrome.' });
           return [];
         }
 

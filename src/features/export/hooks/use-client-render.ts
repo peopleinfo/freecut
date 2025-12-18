@@ -13,16 +13,18 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
-import type { ExportSettings } from '@/types/export';
-import type { RenderProgress, ClientRenderResult } from '../utils/client-renderer';
+import type { ExportSettings, ExtendedExportSettings } from '@/types/export';
+import type { RenderProgress, ClientRenderResult, ClientVideoContainer, ClientAudioContainer } from '../utils/client-renderer';
 import {
   mapToClientSettings,
   validateSettings,
   getSupportedCodecs,
   formatBytes,
   estimateFileSize,
+  getDefaultAudioCodec,
+  getAudioBitrateForQuality,
 } from '../utils/client-renderer';
-import { renderComposition } from '../utils/client-render-engine';
+import { renderComposition, renderAudioOnly } from '../utils/client-render-engine';
 import { convertTimelineToRemotion } from '../utils/timeline-to-remotion';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import { useProjectStore } from '@/features/projects/stores/project-store';
@@ -52,7 +54,7 @@ interface UseClientRenderReturn {
   result: ClientRenderResult | null;
 
   // Actions
-  startExport: (settings: ExportSettings) => Promise<void>;
+  startExport: (settings: ExportSettings | ExtendedExportSettings) => Promise<void>;
   cancelExport: () => void;
   downloadVideo: () => void;
   resetState: () => void;
@@ -102,10 +104,17 @@ export function useClientRender(): UseClientRenderReturn {
   }, []);
 
   /**
+   * Check if settings are extended
+   */
+  const isExtendedSettings = (settings: ExportSettings | ExtendedExportSettings): settings is ExtendedExportSettings => {
+    return 'mode' in settings;
+  };
+
+  /**
    * Start client-side export
    */
   const startExport = useCallback(
-    async (settings: ExportSettings) => {
+    async (settings: ExportSettings | ExtendedExportSettings) => {
       try {
         setIsExporting(true);
         setProgress(0);
@@ -127,6 +136,11 @@ export function useClientRender(): UseClientRenderReturn {
         const projectWidth = currentProject?.metadata?.width ?? 1920;
         const projectHeight = currentProject?.metadata?.height ?? 1080;
 
+        // Determine export mode and container from extended settings
+        const exportMode = isExtendedSettings(settings) ? settings.mode : 'video';
+        const videoContainer = isExtendedSettings(settings) ? settings.videoContainer : undefined;
+        const audioContainer = isExtendedSettings(settings) ? settings.audioContainer : undefined;
+
         log.debug('Starting client export', {
           fps,
           tracksCount: tracks.length,
@@ -136,37 +150,59 @@ export function useClientRender(): UseClientRenderReturn {
           keyframeCount: keyframes?.length ?? 0,
           backgroundColor,
           projectResolution: { width: projectWidth, height: projectHeight },
+          exportMode,
+          videoContainer,
+          audioContainer,
         });
 
         // Map settings to client-compatible settings
         const clientSettings = mapToClientSettings(settings, fps);
 
-        // Validate settings
-        const validation = validateSettings(clientSettings);
-        if (!validation.valid) {
-          throw new Error(validation.error);
+        // Override container if specified in extended settings
+        if (exportMode === 'video' && videoContainer) {
+          clientSettings.container = videoContainer as ClientVideoContainer;
+        } else if (exportMode === 'audio' && audioContainer) {
+          clientSettings.container = audioContainer as ClientAudioContainer;
+          clientSettings.mode = 'audio';
+          clientSettings.audioCodec = getDefaultAudioCodec(audioContainer);
+          clientSettings.audioBitrate = getAudioBitrateForQuality(settings.quality);
         }
 
-        // Check codec support
-        const supportedCodecs = await getSupportedCodecs(
-          clientSettings.resolution.width,
-          clientSettings.resolution.height
-        );
+        // Set the mode
+        clientSettings.mode = exportMode;
 
-        if (!supportedCodecs.includes(clientSettings.codec)) {
-          // Try fallback to H.264 if available
-          if (supportedCodecs.includes('avc')) {
-            log.warn(`Codec ${clientSettings.codec} not supported, falling back to H.264`);
-            clientSettings.codec = 'avc';
-            clientSettings.container = 'mp4';
-          } else if (supportedCodecs.length > 0) {
-            // Use first available codec
-            const fallbackCodec = supportedCodecs[0]!;
-            clientSettings.codec = fallbackCodec;
-            clientSettings.container = ['vp8', 'vp9', 'av1'].includes(fallbackCodec) ? 'webm' : 'mp4';
-            log.warn(`Using fallback codec: ${fallbackCodec}`);
-          } else {
-            throw new Error('No supported video codecs available in this browser');
+        // Validate settings (skip video codec validation for audio-only)
+        if (exportMode === 'video') {
+          const validation = validateSettings(clientSettings);
+          if (!validation.valid) {
+            throw new Error(validation.error);
+          }
+
+          // Check codec support
+          const supportedCodecs = await getSupportedCodecs(
+            clientSettings.resolution.width,
+            clientSettings.resolution.height
+          );
+
+          if (!supportedCodecs.includes(clientSettings.codec)) {
+            // Try fallback to H.264 if available
+            if (supportedCodecs.includes('avc')) {
+              log.warn(`Codec ${clientSettings.codec} not supported, falling back to H.264`);
+              clientSettings.codec = 'avc';
+              if (!videoContainer) {
+                clientSettings.container = 'mp4';
+              }
+            } else if (supportedCodecs.length > 0) {
+              // Use first available codec
+              const fallbackCodec = supportedCodecs[0]!;
+              clientSettings.codec = fallbackCodec;
+              if (!videoContainer) {
+                clientSettings.container = ['vp8', 'vp9', 'av1'].includes(fallbackCodec) ? 'webm' : 'mp4';
+              }
+              log.warn(`Using fallback codec: ${fallbackCodec}`);
+            } else {
+              throw new Error('No supported video codecs available in this browser');
+            }
           }
         }
 
@@ -238,13 +274,26 @@ export function useClientRender(): UseClientRenderReturn {
           itemsWithSrc,
         });
 
-        // Run the render
-        const renderResult = await renderComposition({
-          settings: clientSettings,
-          composition,
-          onProgress: handleProgress,
-          signal: abortControllerRef.current.signal,
-        });
+        // Run the render based on export mode
+        let renderResult: ClientRenderResult;
+
+        if (exportMode === 'audio') {
+          // Audio-only export
+          renderResult = await renderAudioOnly({
+            settings: clientSettings,
+            composition,
+            onProgress: handleProgress,
+            signal: abortControllerRef.current.signal,
+          });
+        } else {
+          // Video export (includes audio)
+          renderResult = await renderComposition({
+            settings: clientSettings,
+            composition,
+            onProgress: handleProgress,
+            signal: abortControllerRef.current.signal,
+          });
+        }
 
         setResult(renderResult);
         setStatus('completed');
@@ -260,7 +309,7 @@ export function useClientRender(): UseClientRenderReturn {
           setStatus('cancelled');
         } else {
           log.error('Export error:', err);
-          const message = err instanceof Error ? err.message : 'Failed to export video';
+          const message = err instanceof Error ? err.message : 'Failed to export';
           setError(message);
           setStatus('failed');
         }
@@ -284,7 +333,7 @@ export function useClientRender(): UseClientRenderReturn {
   }, []);
 
   /**
-   * Download the rendered video
+   * Download the rendered video/audio
    */
   const downloadVideo = useCallback(() => {
     if (!result) return;
@@ -292,7 +341,19 @@ export function useClientRender(): UseClientRenderReturn {
     const url = URL.createObjectURL(result.blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `export-${Date.now()}.${result.mimeType.includes('webm') ? 'webm' : 'mp4'}`;
+
+    // Determine file extension from MIME type
+    let extension = 'mp4';
+    const mime = result.mimeType.toLowerCase();
+    if (mime.includes('webm')) extension = 'webm';
+    else if (mime.includes('matroska')) extension = 'mkv';
+    else if (mime.includes('quicktime') || mime.includes('mov')) extension = 'mov';
+    else if (mime.includes('audio/mpeg') || mime.includes('mp3')) extension = 'mp3';
+    else if (mime.includes('audio/wav') || mime.includes('wave')) extension = 'wav';
+    else if (mime.includes('audio/flac') || mime.includes('flac')) extension = 'flac';
+    else if (mime.includes('audio/aac') || mime.includes('adts')) extension = 'aac';
+
+    a.download = `export-${Date.now()}.${extension}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

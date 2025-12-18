@@ -190,7 +190,8 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
   // Create canvas for rendering frames at COMPOSITION resolution
   // This ensures all positioning/transforms are calculated correctly
   const renderCanvas = new OffscreenCanvas(compositionWidth, compositionHeight);
-  const ctx = renderCanvas.getContext('2d');
+  // Use willReadFrequently for better performance with frequent getImageData calls
+  const ctx = renderCanvas.getContext('2d', { willReadFrequently: true });
 
   if (!ctx) {
     throw new Error('Failed to create OffscreenCanvas 2D context');
@@ -202,7 +203,7 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
     ? new OffscreenCanvas(exportWidth, exportHeight)
     : renderCanvas;
   const outputCtx = needsScaling
-    ? outputCanvas.getContext('2d')!
+    ? outputCanvas.getContext('2d', { willReadFrequently: true })!
     : ctx;
 
   onProgress({
@@ -231,19 +232,24 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
     try {
       // Create audio buffer from processed samples
       audioBuffer = createAudioBuffer(audioData);
-      
+
+      // Select audio codec based on container
+      // WebM only supports opus/vorbis, MP4 supports aac
+      const audioCodec = settings.container === 'webm' ? 'opus' : 'aac';
+
       // Create audio source for encoding
       audioSource = new AudioBufferSource({
-        codec: 'aac',
+        codec: audioCodec,
         bitrate: settings.audioBitrate ?? 192000,
       });
-      
+
       // Add audio track to output (audio data fed after start())
       output.addAudioTrack(audioSource);
       log.info('Audio track added to output', {
         duration: audioBuffer.duration,
         channels: audioBuffer.numberOfChannels,
         sampleRate: audioBuffer.sampleRate,
+        codec: audioCodec,
       });
     } catch (error) {
       log.error('Failed to setup audio track', { error });
@@ -1496,13 +1502,14 @@ export async function renderSingleFrame(options: SingleFrameOptions): Promise<Bl
 
   // Create canvas at full composition size
   const renderCanvas = new OffscreenCanvas(compositionWidth, compositionHeight);
-  const renderCtx = renderCanvas.getContext('2d');
+  const renderCtx = renderCanvas.getContext('2d', { willReadFrequently: true });
   if (!renderCtx) {
     throw new Error('Failed to get 2d context');
   }
 
   // Use the SAME renderer as export - single source of truth
   const dummySettings: ClientExportSettings = {
+    mode: 'video',
     resolution: { width: compositionWidth, height: compositionHeight },
     codec: 'avc',
     container: 'mp4',
@@ -1518,7 +1525,7 @@ export async function renderSingleFrame(options: SingleFrameOptions): Promise<Bl
 
   // Scale down to thumbnail size
   const thumbnailCanvas = new OffscreenCanvas(width, height);
-  const thumbnailCtx = thumbnailCanvas.getContext('2d');
+  const thumbnailCtx = thumbnailCanvas.getContext('2d', { willReadFrequently: true });
   if (!thumbnailCtx) {
     throw new Error('Failed to get thumbnail 2d context');
   }
@@ -1527,4 +1534,204 @@ export async function renderSingleFrame(options: SingleFrameOptions): Promise<Bl
 
   const blob = await thumbnailCanvas.convertToBlob({ type: format, quality });
   return blob;
+}
+
+// =============================================================================
+// AUDIO-ONLY RENDERING
+// =============================================================================
+
+export interface AudioRenderOptions {
+  settings: ClientExportSettings;
+  composition: RemotionInputProps;
+  onProgress: (progress: RenderProgress) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Render audio-only export (no video frames)
+ * Extracts and mixes all audio from the composition and encodes to the specified format.
+ */
+export async function renderAudioOnly(options: AudioRenderOptions): Promise<ClientRenderResult> {
+  const { settings, composition, onProgress, signal } = options;
+  const { fps, durationInFrames = 0 } = composition;
+
+  log.info('Starting audio-only render', {
+    fps,
+    durationInFrames,
+    durationSeconds: durationInFrames / fps,
+    container: settings.container,
+    audioCodec: settings.audioCodec,
+    audioBitrate: settings.audioBitrate,
+  });
+
+  // Validate inputs
+  if (durationInFrames <= 0) {
+    throw new Error('Composition has no duration');
+  }
+
+  const durationSeconds = durationInFrames / fps;
+
+  onProgress({
+    phase: 'preparing',
+    progress: 0,
+    totalFrames: durationInFrames,
+    message: 'Loading encoder...',
+  });
+
+  // Check for abort
+  if (signal?.aborted) {
+    throw new DOMException('Render cancelled', 'AbortError');
+  }
+
+  // Dynamically import mediabunny
+  const mediabunny = await import('mediabunny');
+  const { Output, BufferTarget, AudioBufferSource } = mediabunny;
+
+  // Register MP3 encoder if exporting to MP3
+  if (settings.container === 'mp3') {
+    try {
+      const { registerMp3Encoder } = await import('@mediabunny/mp3-encoder');
+      registerMp3Encoder();
+      log.info('MP3 encoder registered');
+    } catch (err) {
+      log.warn('Failed to load MP3 encoder extension', err);
+    }
+  }
+
+  onProgress({
+    phase: 'preparing',
+    progress: 10,
+    totalFrames: durationInFrames,
+    message: 'Processing audio...',
+  });
+
+  // Process audio
+  if (!hasAudioContent(composition)) {
+    throw new Error('No audio content found in composition');
+  }
+
+  const audioData = await processAudio(composition, signal);
+  if (!audioData) {
+    throw new Error('Failed to process audio');
+  }
+
+  onProgress({
+    phase: 'preparing',
+    progress: 50,
+    totalFrames: durationInFrames,
+    message: 'Creating encoder...',
+  });
+
+  // Create output format
+  const format = await createOutputFormat(settings.container, { fastStart: true });
+
+  // Create buffer target to collect the output
+  const target = new BufferTarget();
+
+  // Create output
+  const output = new Output({
+    format,
+    target,
+  });
+
+  // Determine audio codec based on container (container = codec for audio-only)
+  let audioCodec: 'mp3' | 'aac' | 'pcm-s16';
+  switch (settings.container) {
+    case 'mp3':
+      audioCodec = 'mp3';
+      break;
+    case 'aac':
+      audioCodec = 'aac';
+      break;
+    default:
+      audioCodec = 'pcm-s16';
+  }
+
+  // PCM codecs don't need browser encoding support - they're raw samples
+  const isPcmCodec = audioCodec === 'pcm-s16';
+
+  if (!isPcmCodec) {
+    // Check if codec is supported
+    const { canEncodeAudio } = mediabunny;
+    const isSupported = await canEncodeAudio(audioCodec, {
+      bitrate: settings.audioBitrate ?? 192000,
+      numberOfChannels: 2,
+      sampleRate: 48000,
+    });
+
+    if (!isSupported) {
+      throw new Error(
+        `${audioCodec.toUpperCase()} encoding is not supported in this browser. ` +
+        `Try exporting as WAV (lossless) instead.`
+      );
+    }
+    log.info(`Using ${audioCodec.toUpperCase()} codec`);
+  }
+
+  // Create audio buffer from processed samples
+  const audioBuffer = createAudioBuffer(audioData);
+
+  // Create audio source for encoding
+  const audioSource = new AudioBufferSource({
+    codec: audioCodec,
+    bitrate: settings.audioBitrate ?? 192000,
+  });
+
+  // Add audio track to output
+  output.addAudioTrack(audioSource);
+
+  log.info('Audio track configured', {
+    duration: audioBuffer.duration,
+    channels: audioBuffer.numberOfChannels,
+    sampleRate: audioBuffer.sampleRate,
+    codec: audioCodec,
+  });
+
+  onProgress({
+    phase: 'encoding',
+    progress: 60,
+    totalFrames: durationInFrames,
+    message: 'Encoding audio...',
+  });
+
+  // Start the output
+  await output.start();
+
+  // Feed audio buffer
+  await audioSource.add(audioBuffer);
+
+  onProgress({
+    phase: 'finalizing',
+    progress: 90,
+    totalFrames: durationInFrames,
+    message: 'Finalizing audio...',
+  });
+
+  // Close audio source
+  audioSource.close();
+
+  // Finalize output
+  await output.finalize();
+
+  // Get the buffer
+  const buffer = target.buffer;
+  if (!buffer) {
+    throw new Error('No output buffer generated');
+  }
+
+  const blob = new Blob([buffer], { type: getMimeType(settings.container) });
+
+  onProgress({
+    phase: 'finalizing',
+    progress: 100,
+    totalFrames: durationInFrames,
+    message: 'Complete!',
+  });
+
+  return {
+    blob,
+    mimeType: getMimeType(settings.container),
+    duration: durationSeconds,
+    fileSize: blob.size,
+  };
 }

@@ -142,16 +142,16 @@ export async function decodeAudioFromSource(
     const arrayBuffer = await response.arrayBuffer();
 
     // Decode using Web Audio API
-    const audioContext = new AudioContext();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    // Use OfflineAudioContext to avoid "AudioContext not allowed to start" warning
+    // OfflineAudioContext doesn't require user gesture unlike regular AudioContext
+    const offlineContext = new OfflineAudioContext(2, 1, 48000);
+    const audioBuffer = await offlineContext.decodeAudioData(arrayBuffer);
 
     // Extract samples per channel
     const samples: Float32Array[] = [];
     for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
       samples.push(audioBuffer.getChannelData(i));
     }
-
-    await audioContext.close();
 
     log.debug('Decoded audio', {
       itemId,

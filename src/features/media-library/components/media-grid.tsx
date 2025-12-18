@@ -244,7 +244,7 @@ export const MediaGrid = memo(function MediaGrid({ onMediaSelect, onImportHandle
     if (!firstItem || !('getAsFileSystemHandle' in firstItem)) {
       onShowNotification({
         type: 'warning',
-        message: 'Drag-drop not supported in this browser. Use the Import button instead.',
+        message: 'Drag-drop not supported. Please use Google Chrome.',
       });
       return;
     }

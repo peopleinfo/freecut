@@ -23,11 +23,14 @@ import {
   Film,
   Clock,
   HardDrive,
+  Music,
+  Video,
 } from 'lucide-react';
-import type { ExportSettings } from '@/types/export';
+import type { ExportSettings, ExportMode } from '@/types/export';
 import { useRender } from '../hooks/use-render';
 import { useClientRender } from '../hooks/use-client-render';
 import { useProjectStore } from '@/features/projects/stores/project-store';
+import type { ClientVideoContainer, ClientAudioContainer } from '../utils/client-renderer';
 
 export interface ExportDialogProps {
   open: boolean;
@@ -82,6 +85,9 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
   });
 
   const [renderMode, setRenderMode] = useState<RenderMode>('client');
+  const [exportMode, setExportMode] = useState<ExportMode>('video');
+  const [videoContainer, setVideoContainer] = useState<ClientVideoContainer>('mp4');
+  const [audioContainer, setAudioContainer] = useState<ClientAudioContainer>('mp3');
   const [view, setView] = useState<DialogView>('settings');
   const [startTime, setStartTime] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -161,7 +167,14 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
   // Start export
   const handleStartExport = async () => {
     setView('progress');
-    await startExport(settings);
+    // Create extended settings with export mode and container
+    const extendedSettings = {
+      ...settings,
+      mode: exportMode,
+      videoContainer: exportMode === 'video' ? videoContainer : undefined,
+      audioContainer: exportMode === 'audio' ? audioContainer : undefined,
+    };
+    await startExport(extendedSettings);
   };
 
   // Handle mode change
@@ -183,20 +196,60 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
   }, [open, serverRender, clientRender]);
 
   const getCodecOptions = () => {
-    if (renderMode === 'client') {
+    if (renderMode === 'server') {
+      // Server mode has all codecs available
       return [
-        { value: 'h264', label: 'H.264 (MP4)' },
-        { value: 'vp9', label: 'VP9 (WebM)' },
-      ];
-    } else {
-      return [
-        { value: 'h264', label: 'H.264 (MP4)' },
-        { value: 'h265', label: 'H.265 (HEVC)' },
-        { value: 'vp8', label: 'VP8 (WebM)' },
-        { value: 'vp9', label: 'VP9 (WebM)' },
+        { value: 'h264', label: 'H.264' },
+        { value: 'h265', label: 'H.265/HEVC' },
+        { value: 'vp8', label: 'VP8' },
+        { value: 'vp9', label: 'VP9' },
       ];
     }
+    // Client mode - codecs depend on container
+    switch (videoContainer) {
+      case 'mp4':
+      case 'mov':
+        return [
+          { value: 'h264', label: 'H.264' },
+          { value: 'h265', label: 'H.265/HEVC' },
+        ];
+      case 'webm':
+        return [
+          { value: 'vp8', label: 'VP8' },
+          { value: 'vp9', label: 'VP9' },
+        ];
+      case 'mkv':
+        return [
+          { value: 'h264', label: 'H.264' },
+          { value: 'h265', label: 'H.265/HEVC' },
+          { value: 'vp8', label: 'VP8' },
+          { value: 'vp9', label: 'VP9' },
+        ];
+      default:
+        return [{ value: 'h264', label: 'H.264' }];
+    }
   };
+
+  const getVideoContainerOptions = () => [
+    { value: 'mp4', label: 'MP4', description: 'Most compatible, H.264/H.265' },
+    { value: 'mov', label: 'QuickTime (MOV)', description: 'Best for macOS/iOS' },
+    { value: 'webm', label: 'WebM', description: 'Web-optimized, VP8/VP9' },
+    { value: 'mkv', label: 'Matroska (MKV)', description: 'Flexible, all codecs' },
+  ];
+
+  const getAudioContainerOptions = () => [
+    { value: 'mp3', label: 'MP3', description: 'Universal, small files' },
+    { value: 'aac', label: 'AAC', description: 'High quality, compact' },
+    { value: 'wav', label: 'WAV', description: 'Lossless, large files' },
+  ];
+
+  // Reset codec when container changes to ensure compatibility
+  useEffect(() => {
+    const validCodecs = getCodecOptions().map((o) => o.value);
+    if (!validCodecs.includes(settings.codec)) {
+      setSettings((prev) => ({ ...prev, codec: validCodecs[0] as ExportSettings['codec'] }));
+    }
+  }, [videoContainer]);
 
   const preventClose = view === 'progress' || view === 'complete';
   const fileSize = renderMode === 'client' ? clientRender.result?.fileSize : undefined;
@@ -268,106 +321,220 @@ export function ExportDialog({ open, onClose }: ExportDialogProps) {
         {/* Settings View */}
         {view === 'settings' && (
           <div className="space-y-6 py-4">
-            <Tabs value={renderMode} onValueChange={(v) => handleModeChange(v as RenderMode)}>
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="client" className="flex items-center gap-2">
-                  <Monitor className="h-4 w-4" />
-                  Browser
-                </TabsTrigger>
-                <TabsTrigger value="server" className="flex items-center gap-2">
-                  <Cloud className="h-4 w-4" />
-                  Server
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="client" className="mt-4">
-                <Alert>
-                  <Monitor className="h-4 w-4" />
-                  <AlertDescription>
-                    Renders entirely in your browser using WebCodecs. No upload required, but limited codec support.
-                  </AlertDescription>
-                </Alert>
-              </TabsContent>
-
-              <TabsContent value="server" className="mt-4">
-                <Alert>
-                  <Cloud className="h-4 w-4" />
-                  <AlertDescription>
-                    Uploads media to server for rendering with FFmpeg. Better quality and more codec options.
-                  </AlertDescription>
-                </Alert>
-              </TabsContent>
-            </Tabs>
-
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="codec">Codec</Label>
-                <Select
-                  value={settings.codec}
-                  onValueChange={(value) => setSettings({ ...settings, codec: value as ExportSettings['codec'] })}
+            {/* Export Mode: Video or Audio Toggle Group */}
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Export Type</Label>
+              <div className="flex rounded-md border border-border p-0.5 bg-muted/30">
+                <button
+                  type="button"
+                  onClick={() => setExportMode('video')}
+                  className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    exportMode === 'video'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
                 >
-                  <SelectTrigger id="codec">
-                    <SelectValue placeholder="Select codec" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getCodecOptions().map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="quality">Quality</Label>
-                <Select
-                  value={settings.quality}
-                  onValueChange={(value) => setSettings({ ...settings, quality: value as ExportSettings['quality'] })}
+                  <Video className="h-3.5 w-3.5" />
+                  Video
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExportMode('audio')}
+                  className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    exportMode === 'audio'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
                 >
-                  <SelectTrigger id="quality">
-                    <SelectValue placeholder="Select quality" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low (Faster, smaller file)</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High (Recommended)</SelectItem>
-                    <SelectItem value="ultra">Ultra (Slower, larger file)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="resolution">Resolution</Label>
-                <Select
-                  value={`${settings.resolution.width}x${settings.resolution.height}`}
-                  onValueChange={(value) => {
-                    const parts = value.split('x').map(Number);
-                    const width = parts[0] ?? projectWidth;
-                    const height = parts[1] ?? projectHeight;
-                    setSettings({ ...settings, resolution: { width, height } });
-                  }}
-                >
-                  <SelectTrigger id="resolution">
-                    <SelectValue placeholder="Select resolution" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {resolutionOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <Music className="h-3.5 w-3.5" />
+                  Audio
+                </button>
               </div>
             </div>
+
+            {/* Video Export Settings */}
+            {exportMode === 'video' && (
+              <>
+                {/* Render Mode: Browser or Server */}
+                <Tabs value={renderMode} onValueChange={(v) => handleModeChange(v as RenderMode)}>
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="client" className="flex items-center gap-2">
+                      <Monitor className="h-4 w-4" />
+                      Browser
+                    </TabsTrigger>
+                    <TabsTrigger value="server" className="flex items-center gap-2">
+                      <Cloud className="h-4 w-4" />
+                      Server
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="client" className="mt-4">
+                    <Alert>
+                      <Monitor className="h-4 w-4" />
+                      <AlertDescription>
+                        Renders in your browser using WebCodecs. No upload required.
+                      </AlertDescription>
+                    </Alert>
+                  </TabsContent>
+
+                  <TabsContent value="server" className="mt-4">
+                    <Alert>
+                      <Cloud className="h-4 w-4" />
+                      <AlertDescription>
+                        Uploads media to server for rendering with FFmpeg. More codec options.
+                      </AlertDescription>
+                    </Alert>
+                  </TabsContent>
+                </Tabs>
+
+                <div className="space-y-4">
+                  {/* Container Format (client mode only) */}
+                  {renderMode === 'client' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="container">Format</Label>
+                      <Select
+                        value={videoContainer}
+                        onValueChange={(v) => setVideoContainer(v as ClientVideoContainer)}
+                      >
+                        <SelectTrigger id="container">
+                          <SelectValue placeholder="Select format" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {getVideoContainerOptions().map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              <span>{option.label}</span>
+                              <span className="ml-2 text-xs text-muted-foreground">{option.description}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="codec">Codec</Label>
+                    <Select
+                      value={settings.codec}
+                      onValueChange={(value) => setSettings({ ...settings, codec: value as ExportSettings['codec'] })}
+                    >
+                      <SelectTrigger id="codec">
+                        <SelectValue placeholder="Select codec" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getCodecOptions().map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="quality">Quality</Label>
+                    <Select
+                      value={settings.quality}
+                      onValueChange={(value) => setSettings({ ...settings, quality: value as ExportSettings['quality'] })}
+                    >
+                      <SelectTrigger id="quality">
+                        <SelectValue placeholder="Select quality" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="low">Low (Faster, smaller file)</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High (Recommended)</SelectItem>
+                        <SelectItem value="ultra">Ultra (Slower, larger file)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="resolution">Resolution</Label>
+                    <Select
+                      value={`${settings.resolution.width}x${settings.resolution.height}`}
+                      onValueChange={(value) => {
+                        const parts = value.split('x').map(Number);
+                        const width = parts[0] ?? projectWidth;
+                        const height = parts[1] ?? projectHeight;
+                        setSettings({ ...settings, resolution: { width, height } });
+                      }}
+                    >
+                      <SelectTrigger id="resolution">
+                        <SelectValue placeholder="Select resolution" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {resolutionOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Audio Export Settings */}
+            {exportMode === 'audio' && (
+              <div className="space-y-4">
+                <Alert>
+                  <Music className="h-4 w-4" />
+                  <AlertDescription>
+                    Exports audio only. Video tracks will be ignored.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="space-y-2">
+                  <Label htmlFor="audio-format">Format</Label>
+                  <Select
+                    value={audioContainer}
+                    onValueChange={(v) => setAudioContainer(v as ClientAudioContainer)}
+                  >
+                    <SelectTrigger id="audio-format">
+                      <SelectValue placeholder="Select format" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getAudioContainerOptions().map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          <span>{option.label}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">{option.description}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="audio-quality">Quality</Label>
+                  <Select
+                    value={settings.quality}
+                    onValueChange={(value) => setSettings({ ...settings, quality: value as ExportSettings['quality'] })}
+                  >
+                    <SelectTrigger id="audio-quality">
+                      <SelectValue placeholder="Select quality" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low (96 kbps)</SelectItem>
+                      <SelectItem value="medium">Medium (192 kbps)</SelectItem>
+                      <SelectItem value="high">High (256 kbps)</SelectItem>
+                      <SelectItem value="ultra">Ultra (320 kbps)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={handleClose}>
                 Cancel
               </Button>
               <Button onClick={handleStartExport}>
-                {renderMode === 'client' ? 'Render in Browser' : 'Start Export'}
+                {exportMode === 'audio'
+                  ? 'Export Audio'
+                  : renderMode === 'client'
+                    ? 'Render in Browser'
+                    : 'Start Export'}
               </Button>
             </div>
           </div>

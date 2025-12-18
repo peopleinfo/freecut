@@ -243,7 +243,9 @@ function ProjectsIndex() {
         {/* Header */}
         <div className="panel-header border-b border-border">
           <div className="max-w-[1920px] mx-auto px-6 py-5 flex items-center justify-between">
-            <FreeCutLogo variant="full" size="md" />
+            <Link to="/">
+              <FreeCutLogo variant="full" size="md" className="hover:opacity-80 transition-opacity" />
+            </Link>
             <div className="flex items-center gap-3">
               <Button
                 variant="outline"
