@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import type { ExportSettings } from '@/types/export';
+import type { ExportSettings, ExtendedExportSettings } from '@/types/export';
 import type { RenderStatus } from '@/api/render';
 import {
   startRender,
@@ -25,7 +25,7 @@ interface UseRenderReturn {
   status?: RenderStatus['status'];
   error: string | null;
   jobId: string | null;
-  startExport: (settings: ExportSettings) => Promise<void>;
+  startExport: (settings: ExportSettings | ExtendedExportSettings) => Promise<void>;
   cancelExport: () => void;
   downloadVideo: () => Promise<void>;
   resetState: () => void;
@@ -92,10 +92,17 @@ export function useRender(): UseRenderReturn {
   }, [handleProgressUpdate]);
 
   /**
+   * Check if settings are extended
+   */
+  const isExtendedSettings = (settings: ExportSettings | ExtendedExportSettings): settings is ExtendedExportSettings => {
+    return 'mode' in settings;
+  };
+
+  /**
    * Start export process
    */
   const startExport = useCallback(
-    async (settings: ExportSettings) => {
+    async (settings: ExportSettings | ExtendedExportSettings) => {
       try {
         setIsExporting(true);
         setIsUploading(true);
@@ -121,7 +128,12 @@ export function useRender(): UseRenderReturn {
         const projectWidth = currentProject?.metadata?.width ?? settings.resolution.width;
         const projectHeight = currentProject?.metadata?.height ?? settings.resolution.height;
 
-        log.debug('Export with IO points:', { inPoint, outPoint, fps, transitionCount: transitions.length, keyframeCount: keyframes.length, backgroundColor, projectResolution: { width: projectWidth, height: projectHeight } });
+        // Check if we should render whole project (ignore in/out points)
+        const renderWholeProject = isExtendedSettings(settings) ? settings.renderWholeProject : false;
+        const effectiveInPoint = renderWholeProject ? null : inPoint;
+        const effectiveOutPoint = renderWholeProject ? null : outPoint;
+
+        log.debug('Export with IO points:', { inPoint: effectiveInPoint, outPoint: effectiveOutPoint, renderWholeProject, fps, transitionCount: transitions.length, keyframeCount: keyframes.length, backgroundColor, projectResolution: { width: projectWidth, height: projectHeight } });
 
         // Convert timeline to Remotion format with export settings
         // Use PROJECT resolution so transforms match preview
@@ -133,8 +145,8 @@ export function useRender(): UseRenderReturn {
           fps,
           projectWidth,
           projectHeight,
-          inPoint,
-          outPoint,
+          effectiveInPoint,
+          effectiveOutPoint,
           keyframes,
           backgroundColor
         );

@@ -26,6 +26,8 @@ export interface ExtendedExportSettings extends ExportSettings {
   mode: ExportMode;
   videoContainer?: VideoContainer;
   audioContainer?: AudioContainer;
+  /** When true, ignores in/out points and exports the full timeline */
+  renderWholeProject?: boolean;
 }
 
 export interface RemotionInputProps {

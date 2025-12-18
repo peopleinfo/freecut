@@ -140,13 +140,19 @@ export function useClientRender(): UseClientRenderReturn {
         const exportMode = isExtendedSettings(settings) ? settings.mode : 'video';
         const videoContainer = isExtendedSettings(settings) ? settings.videoContainer : undefined;
         const audioContainer = isExtendedSettings(settings) ? settings.audioContainer : undefined;
+        const renderWholeProject = isExtendedSettings(settings) ? settings.renderWholeProject : false;
+
+        // When renderWholeProject is true, ignore in/out points
+        const effectiveInPoint = renderWholeProject ? null : inPoint;
+        const effectiveOutPoint = renderWholeProject ? null : outPoint;
 
         log.debug('Starting client export', {
           fps,
           tracksCount: tracks.length,
           itemsCount: items.length,
-          inPoint,
-          outPoint,
+          inPoint: effectiveInPoint,
+          outPoint: effectiveOutPoint,
+          renderWholeProject,
           keyframeCount: keyframes?.length ?? 0,
           backgroundColor,
           projectResolution: { width: projectWidth, height: projectHeight },
@@ -215,8 +221,8 @@ export function useClientRender(): UseClientRenderReturn {
           fps,
           projectWidth,
           projectHeight,
-          inPoint,
-          outPoint,
+          effectiveInPoint,
+          effectiveOutPoint,
           keyframes,
           backgroundColor
         );
@@ -235,9 +241,10 @@ export function useClientRender(): UseClientRenderReturn {
           tracksCount: composition.tracks.length,
           totalItems: totalCompositionItems,
           itemsPerTrack,
-          inPoint,
-          outPoint,
-          hasInOutRange: inPoint !== null && outPoint !== null && outPoint > inPoint,
+          inPoint: effectiveInPoint,
+          outPoint: effectiveOutPoint,
+          renderWholeProject,
+          hasInOutRange: effectiveInPoint !== null && effectiveOutPoint !== null && effectiveOutPoint > effectiveInPoint,
         });
 
         // Resolve media URLs (convert mediaIds to blob URLs)
