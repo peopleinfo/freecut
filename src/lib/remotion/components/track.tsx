@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, Sequence } from 'remotion';
+import { AbsoluteFill, Sequence } from '@/features/player/composition';
 import type { TimelineTrack } from '@/types/timeline';
 import { Item } from './item';
 

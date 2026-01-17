@@ -30,22 +30,15 @@ export default defineConfig({
             return 'react-vendor';
           }
           // Remotion Player - loaded when preview is needed
-          if (id.includes('@remotion/player') || id.includes('@remotion/media')) {
+          if (id.includes('@remotion/player')) {
             return 'remotion-player';
           }
           // Remotion Renderer - only needed for export
           if (id.includes('@remotion/renderer')) {
             return 'remotion-renderer';
           }
-          // Remotion core and utilities
-          if (
-            id.includes('node_modules/remotion') ||
-            id.includes('@remotion/transitions') ||
-            id.includes('@remotion/shapes') ||
-            id.includes('@remotion/layout-utils') ||
-            id.includes('@remotion/gif') ||
-            id.includes('@remotion/google-fonts')
-          ) {
+          // Remotion core
+          if (id.includes('node_modules/remotion')) {
             return 'remotion-core';
           }
           // Media processing - loaded on demand

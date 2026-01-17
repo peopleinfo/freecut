@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
-import { useCurrentFrame, useVideoConfig, Internals, getRemotionEnvironment, Audio, interpolate } from 'remotion';
+import { Audio } from 'remotion';
+import { useCurrentFrame, useVideoConfig, useIsRendering, useIsPlaying } from '../hooks/use-remotion-compat';
+import { interpolate } from '@/features/player/composition';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 
@@ -51,8 +53,8 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const environment = getRemotionEnvironment();
-  const [playing] = Internals.Timeline.usePlayingState();
+  const isRendering = useIsRendering();
+  const playing = useIsPlaying();
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   // Web Audio API refs for volume boost > 1
@@ -163,14 +165,14 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
 
   // During render, use only item volume
   // During preview, apply master preview volume from playback controls
-  const isPreview = !environment.isRendering;
+  const isPreview = !isRendering;
   const effectiveMasterVolume = isPreview ? (previewMasterMuted ? 0 : previewMasterVolume) : 1;
   const finalVolume = itemVolume * effectiveMasterVolume;
 
   // During rendering, use Remotion's Audio component
   // Remotion's playbackRate uses FFmpeg's atempo filter which already preserves pitch
   // So we don't need to apply toneFrequency for pitch correction
-  if (environment.isRendering) {
+  if (isRendering) {
     return (
       <Audio
         src={src}

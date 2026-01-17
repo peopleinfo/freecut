@@ -1,5 +1,7 @@
-import React, { useMemo } from 'react';
-import { AbsoluteFill, useCurrentFrame, Sequence, OffthreadVideo, Img, interpolate, useVideoConfig, spring } from 'remotion';
+import React, { useMemo, useRef, useEffect } from 'react';
+import { AbsoluteFill, Sequence, interpolate, spring } from '@/features/player/composition';
+import { OffthreadVideo, Img } from 'remotion';
+import { useCurrentFrame, useVideoConfig, useIsRendering, useIsPlaying } from '../hooks/use-remotion-compat';
 import type { VideoItem, ImageItem, AdjustmentItem } from '@/types/timeline';
 import type { Transition, WipeDirection, SlideDirection, FlipDirection } from '@/types/transition';
 import { resolveTransform, toTransformStyle, getSourceDimensions } from '../utils/transform-resolver';
@@ -13,6 +15,67 @@ import {
 } from '@/features/effects/utils/effect-to-css';
 import { getGlitchFilterString, getScanlinesStyle } from '@/features/effects/utils/glitch-algorithms';
 import type { GlitchEffect, ItemEffect } from '@/types/effects';
+
+/**
+ * Native video component for transition effects during preview.
+ * Muted video that syncs to the current frame - used for visual transitions only.
+ */
+const NativeTransitionVideo: React.FC<{
+  src: string;
+  sourceStart: number;
+  playbackRate: number;
+  fps: number;
+}> = ({ src, sourceStart, playbackRate, fps }) => {
+  const frame = useCurrentFrame();
+  const isPlaying = useIsPlaying();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const lastFrameRef = useRef<number>(-1);
+
+  // Calculate target time in the source video
+  const targetTime = (sourceStart / fps) + (frame / fps);
+
+  // Sync video playback with timeline
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.playbackRate = playbackRate;
+    video.muted = true; // Always muted for transition videos
+
+    const frameChanged = frame !== lastFrameRef.current;
+    lastFrameRef.current = frame;
+
+    const canSeek = video.readyState >= 1;
+
+    if (isPlaying) {
+      if (video.paused && video.readyState >= 2) {
+        video.play().catch(() => {});
+      }
+    } else {
+      if (!video.paused) {
+        video.pause();
+      }
+      if (frameChanged && canSeek) {
+        try {
+          video.currentTime = targetTime;
+        } catch {
+          // Seek failed
+        }
+      }
+    }
+  }, [frame, fps, isPlaying, playbackRate, sourceStart, targetTime]);
+
+  return (
+    <video
+      ref={videoRef}
+      src={src}
+      preload="auto"
+      muted
+      playsInline
+      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+    />
+  );
+};
 
 /** Adjustment layer with its track order for scope calculation */
 export interface AdjustmentLayerWithTrackOrder {
@@ -205,6 +268,8 @@ const ClipContent: React.FC<{
   debugLabel?: string;
 }> = ({ clip, sourceStartOffset = 0, canvasWidth, canvasHeight, fps, adjustmentLayers, clipGlobalFrom, debugLabel }) => {
   const frame = useCurrentFrame();
+  const isRendering = useIsRendering();
+  const isPreview = !isRendering;
 
   // Convert local frame to global frame for adjustment layer timing
   const globalFrame = frame + clipGlobalFrom;
@@ -328,19 +393,29 @@ const ClipContent: React.FC<{
           overflow: 'hidden',
         }}
       >
-        <OffthreadVideo
-          src={videoClip.src}
-          startFrom={sourceStart}
-          playbackRate={playbackRate}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-          }}
-          // Ensure no audio from effects layer - audio is handled separately
-          muted={true}
-          volume={0}
-        />
+        {isPreview ? (
+          // Native video for preview - no Remotion SharedAudioContext needed
+          <NativeTransitionVideo
+            src={videoClip.src}
+            sourceStart={sourceStart}
+            playbackRate={playbackRate}
+            fps={fps}
+          />
+        ) : (
+          // Remotion video for render - has SharedAudioContext
+          <OffthreadVideo
+            src={videoClip.src}
+            startFrom={sourceStart}
+            playbackRate={playbackRate}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+            }}
+            muted={true}
+            volume={0}
+          />
+        )}
       </div>
     );
   } else if (clip.type === 'image') {
@@ -353,14 +428,28 @@ const ClipContent: React.FC<{
 
     mediaContent = (
       <div style={{ ...transformStyle, overflow: 'hidden' }}>
-        <Img
-          src={imageClip.src}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-          }}
-        />
+        {isPreview ? (
+          // Native image for preview
+          <img
+            src={imageClip.src}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+            }}
+            alt=""
+          />
+        ) : (
+          // Remotion Img for render
+          <Img
+            src={imageClip.src}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+            }}
+          />
+        )}
       </div>
     );
   }

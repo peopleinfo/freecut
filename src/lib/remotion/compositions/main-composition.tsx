@@ -1,8 +1,8 @@
 import React, { useMemo, useCallback } from 'react';
-import { AbsoluteFill, Sequence, useVideoConfig, useCurrentFrame } from 'remotion';
+import { AbsoluteFill, Sequence } from '@/features/player/composition';
+import { useCurrentFrame, useVideoConfig } from '../hooks/use-remotion-compat';
 import type { RemotionInputProps } from '@/types/export';
 import type { TextItem, ShapeItem, AdjustmentItem, VideoItem, ImageItem } from '@/types/timeline';
-import type { Transition } from '@/types/transition';
 import { Item } from '../components/item';
 import { EffectsBasedTransitionsLayer } from '../components/effects-based-transition';
 import { StableVideoSequence } from '../components/stable-video-sequence';

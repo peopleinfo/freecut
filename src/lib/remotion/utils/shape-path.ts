@@ -8,8 +8,9 @@ import {
   makeStar,
   makePolygon,
   makeHeart,
-} from '@remotion/shapes';
-import { scalePath, translatePath } from '@remotion/paths';
+  scalePath,
+  translatePath,
+} from '@/lib/shapes';
 
 /**
  * Generates SVG path data for shape items using Remotion's shape utilities.

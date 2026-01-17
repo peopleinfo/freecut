@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useCurrentFrame } from 'remotion';
+import { useCurrentFrame } from '../hooks/use-remotion-compat';
 import type { AdjustmentItem } from '@/types/timeline';
 import type { ItemEffect, GlitchEffect } from '@/types/effects';
 import { effectsToCSSFilter, getGlitchEffects, getVignetteEffect, getVignetteStyle, getHalftoneEffect, getHalftoneStyles } from '@/features/effects/utils/effect-to-css';

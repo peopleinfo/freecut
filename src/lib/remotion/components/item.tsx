@@ -1,9 +1,11 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { AbsoluteFill, OffthreadVideo, Img, useVideoConfig, useCurrentFrame, interpolate, useRemotionEnvironment } from 'remotion';
-import { Rect, Circle, Triangle, Ellipse, Star, Polygon, Heart } from '@remotion/shapes';
+import { AbsoluteFill, interpolate } from '@/features/player/composition';
+import { OffthreadVideo, Img } from 'remotion';
+import { Rect, Circle, Triangle, Ellipse, Star, Polygon, Heart } from '@/lib/shapes';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useDebugStore } from '@/features/editor/stores/debug-store';
+import { useVideoConfig, useCurrentFrame, useIsRendering, useIsPlaying } from '../hooks/use-remotion-compat';
 import type { TimelineItem, VideoItem, TextItem, ShapeItem } from '@/types/timeline';
 import type { TransformProperties } from '@/types/transform';
 import { DebugOverlay } from './debug-overlay';
@@ -40,7 +42,7 @@ const videoAudioContexts = new WeakMap<HTMLVideoElement, AudioContext>();
 function useVideoAudioVolume(item: VideoItem & { _sequenceFrameOffset?: number }, muted: boolean): number {
   const { fps } = useVideoConfig();
   const sequenceFrame = useCurrentFrame();
-  const env = useRemotionEnvironment();
+  const isRendering = useIsRendering();
 
   // Adjust frame for shared Sequences (split clips)
   // In a shared Sequence, useCurrentFrame() returns frame relative to the shared Sequence start,
@@ -120,7 +122,7 @@ function useVideoAudioVolume(item: VideoItem & { _sequenceFrameOffset?: number }
 
   // During render, use only item volume
   // During preview, apply master preview volume from playback controls
-  const isPreview = env.isPlayer || env.isStudio;
+  const isPreview = !isRendering;
   const effectiveMasterVolume = isPreview ? (previewMasterMuted ? 0 : previewMasterVolume) : 1;
 
   return itemVolume * effectiveMasterVolume;
@@ -136,6 +138,150 @@ function isGifUrl(url: string): boolean {
 }
 
 /**
+ * Native HTML5 video component for preview mode.
+ * Uses native video element instead of Remotion's OffthreadVideo to avoid
+ * dependency on Remotion's SharedAudioContext.
+ */
+const NativePreviewVideo: React.FC<{
+  src: string;
+  safeTrimBefore: number;
+  playbackRate: number;
+  audioVolume: number;
+  onError: (error: Error) => void;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+}> = ({ src, safeTrimBefore, playbackRate, audioVolume, onError, containerRef }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const lastSyncTimeRef = useRef<number>(Date.now());
+  const needsInitialSyncRef = useRef<boolean>(true);
+  const lastFrameRef = useRef<number>(-1);
+
+  // Get playing state from our clock
+  const isPlaying = useIsPlaying();
+
+  // Calculate target time in the source video
+  const targetTime = (safeTrimBefore / fps) + (frame / fps);
+
+  // Sync video playback with timeline
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Set playback rate
+    video.playbackRate = playbackRate;
+
+    // Detect if frame actually changed (for scrub detection)
+    const frameChanged = frame !== lastFrameRef.current;
+    lastFrameRef.current = frame;
+
+    // Guard: Only seek if video has enough data loaded
+    const canSeek = video.readyState >= 1;
+
+    if (isPlaying) {
+      const currentTime = video.currentTime;
+      const now = Date.now();
+
+      // Calculate drift direction: positive = video ahead, negative = video behind
+      const drift = currentTime - targetTime;
+      const timeSinceLastSync = now - lastSyncTimeRef.current;
+
+      // Determine if we need to seek:
+      // 1. Initial sync when component first plays
+      // 2. Video is BEHIND by more than threshold (needs to catch up)
+      const videoBehind = drift < -0.2;
+      const needsSync = needsInitialSyncRef.current || (videoBehind && timeSinceLastSync > 500);
+
+      if (needsSync && canSeek) {
+        try {
+          video.currentTime = targetTime;
+          lastSyncTimeRef.current = now;
+          needsInitialSyncRef.current = false;
+        } catch {
+          // Seek failed - video may not be ready yet
+        }
+      }
+
+      // Play if paused and video is ready
+      if (video.paused && video.readyState >= 2) {
+        video.play().catch(() => {
+          // Autoplay might be blocked - this is fine
+        });
+      }
+    } else {
+      // Pause video when not playing
+      if (!video.paused) {
+        video.pause();
+      }
+      // Only seek when paused if frame actually changed (user is scrubbing)
+      if (frameChanged && canSeek) {
+        try {
+          video.currentTime = targetTime;
+        } catch {
+          // Seek failed - video may not be ready yet
+        }
+      }
+    }
+  }, [frame, fps, isPlaying, playbackRate, safeTrimBefore, targetTime]);
+
+  // Update volume using Web Audio API for values > 1
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Check if already connected to Web Audio API
+    if (connectedVideoElements.has(video)) {
+      const gainNode = videoGainNodes.get(video);
+      if (gainNode) {
+        gainNode.gain.value = audioVolume;
+      }
+      return;
+    }
+
+    // For volume <= 1, use native volume
+    if (audioVolume <= 1) {
+      video.volume = Math.max(0, audioVolume);
+      return;
+    }
+
+    // Set up Web Audio API for volume boost > 1
+    try {
+      const audioContext = new AudioContext();
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = audioVolume;
+      const sourceNode = audioContext.createMediaElementSource(video);
+      sourceNode.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      connectedVideoElements.add(video);
+      videoGainNodes.set(video, gainNode);
+      videoAudioContexts.set(video, audioContext);
+
+      if (audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+    } catch {
+      // Failed to set up Web Audio - use native volume
+      video.volume = Math.min(1, Math.max(0, audioVolume));
+    }
+  }, [audioVolume]);
+
+  return (
+    <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
+      <video
+        ref={videoRef}
+        src={src}
+        preload="auto"
+        muted={false}
+        playsInline
+        onError={(e) => onError(new Error((e.target as HTMLVideoElement)?.error?.message || 'Video error'))}
+        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+      />
+    </div>
+  );
+};
+
+/**
  * Video content with audio volume/fades support.
  * Separate component so we can use hooks for audio calculation.
  *
@@ -149,7 +295,8 @@ const VideoContent: React.FC<{
   playbackRate: number;
 }> = ({ item, muted, safeTrimBefore, playbackRate }) => {
   const audioVolume = useVideoAudioVolume(item, muted);
-  const env = useRemotionEnvironment();
+  const isRendering = useIsRendering();
+  const isPreview = !isRendering;
   const [hasError, setHasError] = useState(false);
 
   // Web Audio API refs for volume boost > 1 during preview
@@ -159,7 +306,7 @@ const VideoContent: React.FC<{
   // Set up Web Audio API when video element is available (for volume > 1 boost)
   // OffthreadVideo renders a <video> element during preview - we find it via DOM
   useEffect(() => {
-    if (!containerRef.current || !env.isPlayer) return;
+    if (!containerRef.current || !isPreview) return;
 
     // Find the video element rendered by OffthreadVideo
     const findAndConnectVideo = () => {
@@ -214,7 +361,7 @@ const VideoContent: React.FC<{
       observer.disconnect();
       // Don't disconnect audio - video element might be reused
     };
-  }, [env.isPlayer, audioVolume]);
+  }, [isPreview, audioVolume]);
 
   // Update gain node volume (allows > 1 for boost)
   useEffect(() => {
@@ -255,33 +402,29 @@ const VideoContent: React.FC<{
     );
   }
 
-  // Use OffthreadVideo for preview (Player/Studio) - runs in separate thread, resilient to UI activity
-  // Use @remotion/media Video for rendering - better frame extraction with mediabunny
-  const isPreview = env.isPlayer || env.isStudio;
+  // Use native HTML5 video for preview - doesn't require Remotion's SharedAudioContext
+  // Use OffthreadVideo for server-side rendering - Remotion provides its own context
+  // isPreview is already defined above from useIsRendering()
 
   if (isPreview) {
     return (
-      <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
-        <OffthreadVideo
-          src={item.src!}
-          trimBefore={safeTrimBefore > 0 ? safeTrimBefore : undefined}
-          volume={1} // Keep at 1 - actual volume controlled via Web Audio API GainNode
-          playbackRate={playbackRate}
-          pauseWhenBuffering={false}
-          onError={handleError}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-      </div>
+      <NativePreviewVideo
+        src={item.src!}
+        safeTrimBefore={safeTrimBefore}
+        playbackRate={playbackRate}
+        audioVolume={audioVolume}
+        onError={handleError}
+        containerRef={containerRef}
+      />
     );
   }
 
-  // Use OffthreadVideo for server-side rendering as well
-  // @remotion/media Video was falling back to OffthreadVideo anyway due to "Unknown container format"
-  // Using OffthreadVideo directly ensures consistent behavior and proper trimBefore handling
+  // Use OffthreadVideo for server-side rendering
+  // Remotion provides its own SharedAudioContext during rendering
   return (
     <OffthreadVideo
       src={item.src!}
-      trimBefore={safeTrimBefore > 0 ? safeTrimBefore : undefined}
+      startFrom={safeTrimBefore > 0 ? safeTrimBefore : undefined}
       volume={audioVolume}
       playbackRate={playbackRate}
       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -291,8 +434,6 @@ const VideoContent: React.FC<{
       }}
     />
   );
-  // Note: Volume > 1 for boost is handled by Remotion internally via Web Audio API
-  // For OffthreadVideo during preview, volume boost works without additional props
 };
 
 /**

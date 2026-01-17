@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useVideoConfig } from 'remotion';
+import { useVideoConfig } from '../hooks/use-remotion-compat';
 import type { TimelineItem } from '@/types/timeline';
 import { useItemVisualState, getScanlinesStyle } from './hooks/use-item-visual-state';
 import type { MaskInfo } from './item';

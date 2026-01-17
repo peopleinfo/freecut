@@ -6,7 +6,9 @@
  */
 
 import React, { useRef, useLayoutEffect, useState, useEffect, useCallback } from 'react';
-import { useCurrentFrame, useVideoConfig, useRemotionEnvironment, OffthreadVideo, Img, interpolate } from 'remotion';
+import { useCurrentFrame, useVideoConfig, useIsRendering } from '@/lib/remotion/hooks/use-remotion-compat';
+import { interpolate } from '@/features/player/composition';
+import { OffthreadVideo, Img } from 'remotion';
 import { HalftoneRenderer, type HalftoneGLOptions } from '../utils/halftone-shader';
 import { renderHalftone } from '../utils/halftone-algorithm';
 import { effectsWorkerManager } from '../utils/effects-worker-manager';
@@ -96,10 +98,10 @@ export const HalftoneWrapper: React.FC<HalftoneWrapperProps> = ({
 
   const frame = useCurrentFrame();
   const { width, height, fps } = useVideoConfig();
-  const env = useRemotionEnvironment();
+  const isRendering = useIsRendering();
 
   // Determine if we're in preview mode (Player/Studio) or rendering
-  const isPreview = env.isPlayer || env.isStudio;
+  const isPreview = !isRendering;
 
   // Use worker for video in preview mode if supported
   const useWorker = isPreview && itemType === 'video' && supportsOffscreenCanvas;

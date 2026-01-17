@@ -11,7 +11,8 @@
  */
 
 import React, { useMemo } from 'react';
-import { Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
+import { Sequence } from '@/features/player/composition';
+import { useCurrentFrame, useVideoConfig } from '../hooks/use-remotion-compat';
 import type { VideoItem } from '@/types/timeline';
 
 /** Video item with additional properties added by MainComposition */

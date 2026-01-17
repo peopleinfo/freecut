@@ -4,7 +4,7 @@
  */
 
 import { useMemo } from 'react';
-import { useCurrentFrame } from 'remotion';
+import { useCurrentFrame } from './use-remotion-compat';
 import type { TimelineItem } from '@/types/timeline';
 import type { CanvasSettings, ResolvedTransform } from '@/types/transform';
 import type { ItemKeyframes } from '@/types/keyframe';

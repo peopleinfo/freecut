@@ -1,5 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { useCurrentFrame, useVideoConfig, AbsoluteFill, delayRender, continueRender } from 'remotion';
+import { AbsoluteFill } from '@/features/player/composition';
+import { delayRender, continueRender } from 'remotion';
+import { useCurrentFrame, useVideoConfig } from '../../hooks/use-remotion-compat';
 import { useGifFrames } from '../../../../features/timeline/hooks/use-gif-frames';
 import { GifCanvas } from './gif-canvas';
 

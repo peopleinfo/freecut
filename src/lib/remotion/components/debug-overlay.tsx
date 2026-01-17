@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useRemotionEnvironment } from 'remotion';
 
 export interface DebugOverlayProps {
   /** Unique identifier for the item */
@@ -68,8 +67,9 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
   fps = 30,
   position = 'top-left',
 }) => {
-  const env = useRemotionEnvironment();
-  const isPreview = env.isPlayer;
+  // Debug overlay is only rendered during preview (not during export)
+  // so we can always assume preview mode
+  const isPreview = true;
 
   // Track player container position for portal mode
   const [containerRect, setContainerRect] = useState<DOMRect | null>(null);
