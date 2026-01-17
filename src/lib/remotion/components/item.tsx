@@ -1,11 +1,10 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { AbsoluteFill, interpolate } from '@/features/player/composition';
-import { OffthreadVideo, Img } from 'remotion';
 import { Rect, Circle, Triangle, Ellipse, Star, Polygon, Heart } from '@/lib/shapes';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useDebugStore } from '@/features/editor/stores/debug-store';
-import { useVideoConfig, useCurrentFrame, useIsRendering, useIsPlaying } from '../hooks/use-remotion-compat';
+import { useVideoConfig, useCurrentFrame, useIsPlaying } from '../hooks/use-remotion-compat';
 import type { TimelineItem, VideoItem, TextItem, ShapeItem } from '@/types/timeline';
 import type { TransformProperties } from '@/types/transform';
 import { DebugOverlay } from './debug-overlay';
@@ -37,12 +36,11 @@ const videoAudioContexts = new WeakMap<HTMLVideoElement, AudioContext>();
 /**
  * Hook to calculate video audio volume with fades and preview support.
  * Returns the final volume (0-1) to apply to the video component.
- * During preview, also applies master preview volume from playback controls.
+ * Applies master preview volume from playback controls.
  */
 function useVideoAudioVolume(item: VideoItem & { _sequenceFrameOffset?: number }, muted: boolean): number {
   const { fps } = useVideoConfig();
   const sequenceFrame = useCurrentFrame();
-  const isRendering = useIsRendering();
 
   // Adjust frame for shared Sequences (split clips)
   // In a shared Sequence, useCurrentFrame() returns frame relative to the shared Sequence start,
@@ -117,13 +115,11 @@ function useVideoAudioVolume(item: VideoItem & { _sequenceFrameOffset?: number }
   // Convert dB to linear (0 dB = unity gain = 1.0)
   // +20dB = 10x, -20dB = 0.1x, -60dB ≈ 0.001x
   const linearVolume = Math.pow(10, volumeDb / 20);
-  // Item volume with fades - allow values > 1 for volume boost (Remotion handles via Web Audio API)
+  // Item volume with fades - allow values > 1 for volume boost (Web Audio API handles this)
   const itemVolume = Math.max(0, linearVolume * fadeMultiplier);
 
-  // During render, use only item volume
-  // During preview, apply master preview volume from playback controls
-  const isPreview = !isRendering;
-  const effectiveMasterVolume = isPreview ? (previewMasterMuted ? 0 : previewMasterVolume) : 1;
+  // Apply master preview volume from playback controls
+  const effectiveMasterVolume = previewMasterMuted ? 0 : previewMasterVolume;
 
   return itemVolume * effectiveMasterVolume;
 }
@@ -285,8 +281,7 @@ const NativePreviewVideo: React.FC<{
  * Video content with audio volume/fades support.
  * Separate component so we can use hooks for audio calculation.
  *
- * Uses OffthreadVideo for preview (Player/Studio) - more resilient to main thread activity.
- * Uses @remotion/media Video for rendering - better frame extraction.
+ * Uses native HTML5 video for both preview and export (via Canvas + WebCodecs).
  */
 const VideoContent: React.FC<{
   item: VideoItem;
@@ -295,20 +290,17 @@ const VideoContent: React.FC<{
   playbackRate: number;
 }> = ({ item, muted, safeTrimBefore, playbackRate }) => {
   const audioVolume = useVideoAudioVolume(item, muted);
-  const isRendering = useIsRendering();
-  const isPreview = !isRendering;
   const [hasError, setHasError] = useState(false);
 
-  // Web Audio API refs for volume boost > 1 during preview
+  // Web Audio API refs for volume boost > 1
   const containerRef = useRef<HTMLDivElement | null>(null);
   const currentVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Set up Web Audio API when video element is available (for volume > 1 boost)
-  // OffthreadVideo renders a <video> element during preview - we find it via DOM
   useEffect(() => {
-    if (!containerRef.current || !isPreview) return;
+    if (!containerRef.current) return;
 
-    // Find the video element rendered by OffthreadVideo
+    // Find the video element rendered by NativePreviewVideo
     const findAndConnectVideo = () => {
       const video = containerRef.current?.querySelector('video');
       if (!video) return;
@@ -361,7 +353,7 @@ const VideoContent: React.FC<{
       observer.disconnect();
       // Don't disconnect audio - video element might be reused
     };
-  }, [isPreview, audioVolume]);
+  }, [audioVolume]);
 
   // Update gain node volume (allows > 1 for boost)
   useEffect(() => {
@@ -402,36 +394,16 @@ const VideoContent: React.FC<{
     );
   }
 
-  // Use native HTML5 video for preview - doesn't require Remotion's SharedAudioContext
-  // Use OffthreadVideo for server-side rendering - Remotion provides its own context
-  // isPreview is already defined above from useIsRendering()
-
-  if (isPreview) {
-    return (
-      <NativePreviewVideo
-        src={item.src!}
-        safeTrimBefore={safeTrimBefore}
-        playbackRate={playbackRate}
-        audioVolume={audioVolume}
-        onError={handleError}
-        containerRef={containerRef}
-      />
-    );
-  }
-
-  // Use OffthreadVideo for server-side rendering
-  // Remotion provides its own SharedAudioContext during rendering
+  // Use native HTML5 video - no Remotion dependency
+  // Export uses Canvas + WebCodecs (client-render-engine.ts), not Remotion's renderer
   return (
-    <OffthreadVideo
+    <NativePreviewVideo
       src={item.src!}
-      startFrom={safeTrimBefore > 0 ? safeTrimBefore : undefined}
-      volume={audioVolume}
+      safeTrimBefore={safeTrimBefore}
       playbackRate={playbackRate}
-      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-      onError={(err) => {
-        // Log but don't crash - Remotion will retry failed frames
-        console.warn('[VideoContent] Frame extraction warning:', err.message);
-      }}
+      audioVolume={audioVolume}
+      onError={handleError}
+      containerRef={containerRef}
     />
   );
 };
@@ -957,10 +929,11 @@ export const Item = React.memo<ItemProps>(({ item, muted = false, masks = [] }) 
       );
     }
 
-    // Regular static images - use Remotion's Img component for proper loading in render mode
+    // Regular static images - use native img element
     const imageContent = (
-      <Img
+      <img
         src={item.src}
+        alt=""
         style={{
           width: '100%',
           height: '100%',

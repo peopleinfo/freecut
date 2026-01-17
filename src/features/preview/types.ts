@@ -1,4 +1,11 @@
-import type { CaptureOptions } from './utils/player-capture';
+export interface CaptureOptions {
+  width?: number;
+  height?: number;
+  quality?: number;
+  format?: 'image/jpeg' | 'image/png' | 'image/webp';
+  /** If true, capture at container size without scaling */
+  fullResolution?: boolean;
+}
 
 export interface PlaybackState {
   currentFrame: number;

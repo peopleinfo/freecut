@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useCallback } from 'react';
-import { Audio } from 'remotion';
-import { useCurrentFrame, useVideoConfig, useIsRendering, useIsPlaying } from '../hooks/use-remotion-compat';
+import { useCurrentFrame, useVideoConfig, useIsPlaying } from '../hooks/use-remotion-compat';
 import { interpolate } from '@/features/player/composition';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
@@ -27,13 +26,8 @@ interface PitchCorrectedAudioProps {
 /**
  * Audio component with pitch-preserved playback for rate-stretched audio.
  *
- * During preview: Uses HTML5 audio element with preservesPitch (native browser feature)
- * During render: Uses Remotion's Audio component with playbackRate (uses FFmpeg atempo filter
- *                which preserves pitch automatically)
- *
- * Note: We use Audio from 'remotion' directly instead of '@remotion/media' Audio because:
- * - @remotion/media Audio shows "Unknown container format" warnings for MP3 files
- * - The standard Audio component works reliably with all formats
+ * Uses HTML5 audio element with preservesPitch (native browser feature).
+ * Export uses Canvas + WebCodecs (client-render-engine.ts) which handles audio separately.
  *
  * Wrapped in React.memo to prevent re-renders when parent composition updates
  * but audio props haven't changed (e.g., when moving other items in timeline).
@@ -53,7 +47,6 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const isRendering = useIsRendering();
   const playing = useIsPlaying();
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -163,27 +156,12 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
   // Item volume with fades - allow values > 1 for volume boost
   const itemVolume = muted ? 0 : Math.max(0, linearVolume * fadeMultiplier);
 
-  // During render, use only item volume
-  // During preview, apply master preview volume from playback controls
-  const isPreview = !isRendering;
-  const effectiveMasterVolume = isPreview ? (previewMasterMuted ? 0 : previewMasterVolume) : 1;
+  // Apply master preview volume from playback controls
+  const effectiveMasterVolume = previewMasterMuted ? 0 : previewMasterVolume;
   const finalVolume = itemVolume * effectiveMasterVolume;
 
-  // During rendering, use Remotion's Audio component
-  // Remotion's playbackRate uses FFmpeg's atempo filter which already preserves pitch
-  // So we don't need to apply toneFrequency for pitch correction
-  if (isRendering) {
-    return (
-      <Audio
-        src={src}
-        volume={finalVolume}
-        playbackRate={playbackRate}
-        trimBefore={trimBefore > 0 ? trimBefore : undefined}
-      />
-    );
-  }
-
-  // Preview mode: Use HTML5 audio with native preservesPitch
+  // Use HTML5 audio with native preservesPitch
+  // Export uses Canvas + WebCodecs (client-render-engine.ts) which handles audio separately
   // Web Audio API is used for volume boost > 1
 
   // Create and manage audio element with Web Audio API for volume boost

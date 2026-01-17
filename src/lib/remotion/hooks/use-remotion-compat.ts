@@ -1,66 +1,38 @@
-import { useVideoConfig as useRemotionVideoConfig, useCurrentFrame as useRemotionCurrentFrame, getRemotionEnvironment, Internals } from 'remotion';
+/**
+ * Remotion compatibility layer for the custom player.
+ *
+ * These hooks provide a Remotion-like API using the custom Clock-based player.
+ * Export uses Canvas + WebCodecs (client-render-engine.ts), not Remotion's renderer.
+ */
+
 import { useVideoConfig as useCustomVideoConfig } from '@/features/player/video-config-context';
 import { useBridgedCurrentFrame, useBridgedIsPlaying } from '@/features/player/clock';
 
 /**
- * Get video config from custom player context, falling back to Remotion's hook.
+ * Get video config (fps, width, height, durationInFrames) from the custom player context.
  */
 export function useVideoConfig() {
-  try {
-    return useCustomVideoConfig();
-  } catch {
-    return useRemotionVideoConfig();
-  }
+  return useCustomVideoConfig();
 }
 
 /**
- * Get current frame from custom player context, falling back to Remotion's hook.
+ * Get current frame from the custom player's Clock.
  */
 export function useCurrentFrame() {
-  try {
-    return useBridgedCurrentFrame();
-  } catch {
-    return useRemotionCurrentFrame();
-  }
+  return useBridgedCurrentFrame();
 }
 
 /**
- * Check if we're in Remotion rendering mode (export) vs preview mode.
- * Returns true during export, false during preview.
+ * Check if we're in rendering mode.
+ * Always returns false since we use Canvas + WebCodecs for export, not Remotion's renderer.
  */
 export function useIsRendering(): boolean {
-  try {
-    // Try to detect if we're in a ClockProvider (preview mode)
-    useBridgedCurrentFrame();
-    // If we get here, we're in preview mode
-    return false;
-  } catch {
-    // Not in ClockProvider, check Remotion environment
-    try {
-      const env = getRemotionEnvironment();
-      return env.isRendering;
-    } catch {
-      // Default to preview mode if we can't determine
-      return false;
-    }
-  }
+  return false;
 }
 
 /**
- * Get playing state from custom player context, falling back to Remotion's internal hook.
- * Returns true if currently playing (or always true during render).
+ * Get playing state from the custom player's Clock.
  */
 export function useIsPlaying(): boolean {
-  try {
-    return useBridgedIsPlaying();
-  } catch {
-    // Fallback to Remotion's internal playing state
-    try {
-      const [playing] = Internals.Timeline.usePlayingState();
-      return playing;
-    } catch {
-      // Default to not playing if we can't determine
-      return false;
-    }
-  }
+  return useBridgedIsPlaying();
 }

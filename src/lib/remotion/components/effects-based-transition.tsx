@@ -1,7 +1,6 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import { AbsoluteFill, Sequence, interpolate, spring } from '@/features/player/composition';
-import { OffthreadVideo, Img } from 'remotion';
-import { useCurrentFrame, useVideoConfig, useIsRendering, useIsPlaying } from '../hooks/use-remotion-compat';
+import { useCurrentFrame, useVideoConfig, useIsPlaying } from '../hooks/use-remotion-compat';
 import type { VideoItem, ImageItem, AdjustmentItem } from '@/types/timeline';
 import type { Transition, WipeDirection, SlideDirection, FlipDirection } from '@/types/transition';
 import { resolveTransform, toTransformStyle, getSourceDimensions } from '../utils/transform-resolver';
@@ -268,8 +267,6 @@ const ClipContent: React.FC<{
   debugLabel?: string;
 }> = ({ clip, sourceStartOffset = 0, canvasWidth, canvasHeight, fps, adjustmentLayers, clipGlobalFrom, debugLabel }) => {
   const frame = useCurrentFrame();
-  const isRendering = useIsRendering();
-  const isPreview = !isRendering;
 
   // Convert local frame to global frame for adjustment layer timing
   const globalFrame = frame + clipGlobalFrom;
@@ -393,29 +390,12 @@ const ClipContent: React.FC<{
           overflow: 'hidden',
         }}
       >
-        {isPreview ? (
-          // Native video for preview - no Remotion SharedAudioContext needed
-          <NativeTransitionVideo
-            src={videoClip.src}
-            sourceStart={sourceStart}
-            playbackRate={playbackRate}
-            fps={fps}
-          />
-        ) : (
-          // Remotion video for render - has SharedAudioContext
-          <OffthreadVideo
-            src={videoClip.src}
-            startFrom={sourceStart}
-            playbackRate={playbackRate}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-            }}
-            muted={true}
-            volume={0}
-          />
-        )}
+        <NativeTransitionVideo
+          src={videoClip.src}
+          sourceStart={sourceStart}
+          playbackRate={playbackRate}
+          fps={fps}
+        />
       </div>
     );
   } else if (clip.type === 'image') {
@@ -428,28 +408,15 @@ const ClipContent: React.FC<{
 
     mediaContent = (
       <div style={{ ...transformStyle, overflow: 'hidden' }}>
-        {isPreview ? (
-          // Native image for preview
-          <img
-            src={imageClip.src}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-            }}
-            alt=""
-          />
-        ) : (
-          // Remotion Img for render
-          <Img
-            src={imageClip.src}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-            }}
-          />
-        )}
+        <img
+          src={imageClip.src}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+          }}
+          alt=""
+        />
       </div>
     );
   }

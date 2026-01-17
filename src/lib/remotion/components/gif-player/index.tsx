@@ -1,6 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import { AbsoluteFill } from '@/features/player/composition';
-import { delayRender, continueRender } from 'remotion';
 import { useCurrentFrame, useVideoConfig } from '../../hooks/use-remotion-compat';
 import { useGifFrames } from '../../../../features/timeline/hooks/use-gif-frames';
 import { GifCanvas } from './gif-canvas';
@@ -21,13 +20,12 @@ export interface GifPlayerProps {
 }
 
 /**
- * Custom GIF Player for Remotion
+ * Custom GIF Player
  *
- * Replaces @remotion/gif with pre-extracted frames for:
+ * Pre-extracts GIF frames for:
  * - Lag-free scrubbing via O(1) frame lookup
  * - Memory-efficient caching
  * - IndexedDB persistence
- * - Server-side rendering support via delayRender
  */
 export const GifPlayer: React.FC<GifPlayerProps> = ({
   mediaId,
@@ -40,10 +38,6 @@ export const GifPlayer: React.FC<GifPlayerProps> = ({
   const currentFrame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  // Use delayRender to pause Remotion rendering until GIF frames are loaded
-  const [handle] = useState(() => delayRender(`Loading GIF: ${mediaId}`));
-  const [renderContinued, setRenderContinued] = useState(false);
-
   const { getFrameAtTime, totalDuration, isLoading, isComplete, frames, error } = useGifFrames({
     mediaId,
     blobUrl: src,
@@ -51,21 +45,13 @@ export const GifPlayer: React.FC<GifPlayerProps> = ({
     enabled: true,
   });
 
-  // Continue rendering once frames are loaded (or on error) - only once
-  useEffect(() => {
-    if (!renderContinued && (isComplete || error)) {
-      continueRender(handle);
-      setRenderContinued(true);
-    }
-  }, [isComplete, error, handle, renderContinued]);
-
-  // Calculate which GIF frame to show based on Remotion frame
+  // Calculate which GIF frame to show based on current timeline frame
   const gifFrame = useMemo(() => {
     if (!frames || frames.length === 0 || !totalDuration) {
       return null;
     }
 
-    // Convert Remotion frame to milliseconds
+    // Convert timeline frame to milliseconds
     const timeMs = (currentFrame / fps) * 1000 * playbackRate;
 
     // Handle loop behavior
