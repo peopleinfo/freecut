@@ -12,3 +12,6 @@ export * from './hooks';
 
 // Graph exports
 export * from './graph';
+
+// Media exports
+export * from './media';
