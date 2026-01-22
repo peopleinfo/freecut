@@ -9,3 +9,6 @@ export * from './backend';
 
 // Hook exports
 export * from './hooks';
+
+// Graph exports
+export * from './graph';
