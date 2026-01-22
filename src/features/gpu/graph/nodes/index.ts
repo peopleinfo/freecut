@@ -43,6 +43,17 @@ export {
   BLEND_MODES,
 } from './blend-node';
 
+// Transform nodes
+export {
+  createTransformNode,
+  createScaleNode,
+  createRotateNode,
+  createTranslateNode,
+  createFlipNode,
+  createCropNode,
+  getTransformFunctionsWGSL,
+} from './transform-node';
+
 // Output nodes
 export {
   createOutputNode,
@@ -81,6 +92,14 @@ import {
   createHardLightBlendNode,
   createSoftLightBlendNode,
 } from './blend-node';
+import {
+  createTransformNode,
+  createScaleNode,
+  createRotateNode,
+  createTranslateNode,
+  createFlipNode,
+  createCropNode,
+} from './transform-node';
 import {
   createOutputNode,
   createExportOutputNode,
@@ -123,6 +142,14 @@ export function registerBuiltinNodes(registry: NodeRegistry = globalRegistry): v
   registry.register('color-burn-blend', createColorBurnBlendNode);
   registry.register('hard-light-blend', createHardLightBlendNode);
   registry.register('soft-light-blend', createSoftLightBlendNode);
+
+  // Transform
+  registry.register('transform', createTransformNode);
+  registry.register('scale', createScaleNode);
+  registry.register('rotate', createRotateNode);
+  registry.register('translate', createTranslateNode);
+  registry.register('flip', createFlipNode);
+  registry.register('crop', createCropNode);
 
   // Output
   registry.register('output', createOutputNode);
