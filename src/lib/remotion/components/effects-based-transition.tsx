@@ -32,6 +32,11 @@ const NativeTransitionVideo: React.FC<{
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const lastFrameRef = useRef<number>(-1);
 
+  // Don't render during premount phase (negative localFrame)
+  if (frame < 0) {
+    return null;
+  }
+
   // Calculate target time in the source video
   // playbackRate affects how many source frames we advance per timeline frame
   const targetTime = (sourceStart / fps) + (frame * playbackRate / fps);
@@ -49,20 +54,13 @@ const NativeTransitionVideo: React.FC<{
 
     const canSeek = video.readyState >= 1;
 
-    if (isPlaying) {
-      if (video.paused && video.readyState >= 2) {
-        video.play().catch(() => {});
-      }
-    } else {
-      if (!video.paused) {
-        video.pause();
-      }
-      if (frameChanged && canSeek) {
-        try {
-          video.currentTime = targetTime;
-        } catch {
-          // Seek failed
-        }
+    // Always seek to target frame during transitions - never play
+    // Playing causes the video's currentTime to drift from the calculated targetTime
+    if (canSeek && frameChanged) {
+      try {
+        video.currentTime = targetTime;
+      } catch {
+        // Seek failed
       }
     }
   }, [frame, fps, isPlaying, playbackRate, sourceStart, targetTime]);
@@ -273,6 +271,11 @@ const ClipContent: React.FC<{
   const sequenceContext = useSequenceContext();
   const frame = sequenceContext?.localFrame ?? 0;
 
+  // Don't render during premount phase (negative localFrame)
+  if (frame < 0) {
+    return null;
+  }
+
   // Convert local frame to global frame for adjustment layer timing
   const globalFrame = frame + clipGlobalFrom;
 
@@ -299,8 +302,8 @@ const ClipContent: React.FC<{
     if (affectingLayers.length === 0) return [];
 
     // Sort by track order (lowest first = applied first) and collect effects
-    return [...affectingLayers]
-      .sort((a, b) => a.trackOrder - b.trackOrder)
+    return affectingLayers
+      .toSorted((a, b) => a.trackOrder - b.trackOrder)
       .flatMap(({ layer }) => {
         const effects = layer.effects ?? [];
         return effects.filter(e => e.enabled);
@@ -512,6 +515,12 @@ const TransitionOverlay: React.FC<{
   // Get local frame from Sequence context (0-based within this Sequence)
   const sequenceContext = useSequenceContext();
   const frame = sequenceContext?.localFrame ?? 0;
+
+  // Don't render during premount phase (negative localFrame)
+  if (frame < 0) {
+    return null;
+  }
+
   // frame is local to the parent Sequence (0 to durationInFrames - 1)
   // Calculate progress based on timing: linear or spring
   const rawProgress = useMemo(() => {
@@ -701,12 +710,6 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
   // We want to show the last `durationInFrames` frames of the left clip
   const leftClipContentOffset = -(leftClip.durationInFrames - transition.durationInFrames);
 
-  // Right clip sourceStart offset to align with normal rendering after transition ends.
-  // Without this offset, transition shows frames 0 to (durationInFrames-1), then normal
-  // rendering jumps back to frame halfDuration, causing visible frame repetition.
-  // With the offset, transition shows frames that lead into where normal rendering continues.
-  const rightClipSourceOffset = -halfDuration;
-
   // Calculate global frame positions for adjustment layer timing
   // Left clip plays at its normal position (end portion during transition)
   const leftClipGlobalFrom = transitionStart + leftClipContentOffset;
@@ -742,10 +745,11 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
           <Sequence
             from={0}
             durationInFrames={transition.durationInFrames}
+            premountFor={premountFrames}
           >
             <ClipContent
               clip={rightClip}
-              sourceStartOffset={rightClipSourceOffset}
+              sourceStartOffset={-rightClip.from}
               canvasWidth={canvasWidth}
               canvasHeight={canvasHeight}
               fps={fps}
@@ -767,11 +771,13 @@ export const EffectsBasedTransitionRenderer = React.memo<EffectsBasedTransitionP
           fps={fps}
         >
           <Sequence
-            from={leftClipContentOffset}
+            from={0}
             durationInFrames={transition.durationInFrames + Math.abs(leftClipContentOffset)}
+            premountFor={premountFrames}
           >
             <ClipContent
               clip={leftClip}
+              sourceStartOffset={leftClipContentOffset}
               canvasWidth={canvasWidth}
               canvasHeight={canvasHeight}
               fps={fps}

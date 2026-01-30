@@ -188,7 +188,7 @@ function computeAdjacentInfo(
 
   const trackItems = items
     .filter((i) => i.trackId === selectedItem.trackId && validTypes.includes(i.type))
-    .sort((a, b) => a.from - b.from);
+    .toSorted((a, b) => a.from - b.from);
 
   const selectedIndex = trackItems.findIndex((i) => i.id === selectedId);
   if (selectedIndex === -1) return null;

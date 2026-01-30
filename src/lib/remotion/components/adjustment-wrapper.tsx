@@ -48,8 +48,8 @@ const AdjustmentWrapperInternal = React.memo<AdjustmentWrapperInternalProps>(({
   const activeEffects = useMemo((): ItemEffect[] => {
     if (adjustmentLayers.length === 0) return [];
 
-    // Sort by track order (lowest first = applied first)
-    const sortedLayers = [...adjustmentLayers].sort((a, b) => a.trackOrder - b.trackOrder);
+    // Sort by track order (lowest first = applied first, toSorted for immutability)
+    const sortedLayers = adjustmentLayers.toSorted((a, b) => a.trackOrder - b.trackOrder);
 
     return sortedLayers
       .filter(({ layer }) =>

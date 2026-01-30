@@ -49,6 +49,10 @@ export default defineConfig({
           if (id.includes('@radix-ui/')) {
             return 'vendor-ui';
           }
+          // Icons - keep lucide-react in separate chunk for better caching
+          if (id.includes('lucide-react')) {
+            return 'vendor-icons';
+          }
           return undefined;
         },
       },
@@ -59,5 +63,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['mediabunny'],
+    // Pre-bundle lucide-react for faster dev startup (avoids analyzing 1500+ icons on each reload)
+    include: ['lucide-react'],
   },
 })

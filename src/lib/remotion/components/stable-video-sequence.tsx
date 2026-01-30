@@ -80,8 +80,8 @@ function groupByOrigin(items: EnrichedVideoItem[]): VideoGroup[] {
   const groups: VideoGroup[] = [];
 
   for (const [originKey, originItems] of byOriginKey) {
-    // Sort by position
-    const sorted = [...originItems].sort((a, b) => a.from - b.from);
+    // Sort by position (toSorted for immutability)
+    const sorted = originItems.toSorted((a, b) => a.from - b.from);
 
     // Build contiguous groups - clips must be adjacent (no gap)
     let currentGroup: EnrichedVideoItem[] = [sorted[0]!];

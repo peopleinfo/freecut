@@ -430,9 +430,9 @@ export const PooledVideoLayer = memo<PooledVideoLayerProps>(
       pool.pruneUnused(sourcesToPreload);
     }, [preloadClips, pool]);
 
-    // Sort clips by z-index for proper layering
+    // Sort clips by z-index for proper layering (toSorted for immutability)
     const sortedClips = useMemo(
-      () => [...clips].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
+      () => clips.toSorted((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
       [clips]
     );
 

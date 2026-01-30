@@ -30,9 +30,9 @@ export const GraphHandles = memo(function GraphHandles({
   draggingHandle,
   disabled = false,
 }: GraphHandlesProps) {
-  // Sort points by frame
+  // Sort points by frame (toSorted for immutability)
   const sortedPoints = useMemo(
-    () => [...points].sort((a, b) => a.keyframe.frame - b.keyframe.frame),
+    () => points.toSorted((a, b) => a.keyframe.frame - b.keyframe.frame),
     [points]
   );
 

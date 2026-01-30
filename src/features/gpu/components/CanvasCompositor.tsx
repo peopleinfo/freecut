@@ -170,9 +170,9 @@ export const CanvasCompositor = memo<CanvasCompositorProps>(
       }
     }, [backendError, onError]);
 
-    // Sort layers by z-index
+    // Sort layers by z-index (toSorted for immutability)
     const sortedLayers = useMemo(
-      () => [...layers].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
+      () => layers.toSorted((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
       [layers]
     );
 

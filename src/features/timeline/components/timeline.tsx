@@ -16,6 +16,9 @@ import type { TimelineTrack } from '@/types/timeline';
 import { trackDropIndexRef } from '../hooks/use-track-drag';
 import { DEFAULT_TRACK_HEIGHT } from '@/features/timeline/constants';
 
+// Hoisted RegExp - avoids recreation on every render (js-hoist-regexp)
+const TRACK_NUMBER_REGEX = /^Track (\d+)$/;
+
 export interface TimelineProps {
   duration: number; // Total timeline duration in seconds
   /** Callback when graph panel open state changes - used by parent to resize panel */
@@ -98,11 +101,14 @@ export const Timeline = memo(function Timeline({ duration, onGraphPanelOpenChang
   );
 
   // Set first track as active on mount
+  // Use primitive dependencies to avoid re-running on unrelated track changes
+  const tracksLength = tracks.length;
+  const firstTrackId = tracks[0]?.id;
   useEffect(() => {
-    if (tracks.length > 0 && !activeTrackId && tracks[0]) {
-      setActiveTrack(tracks[0].id);
+    if (tracksLength > 0 && !activeTrackId && firstTrackId) {
+      setActiveTrack(firstTrackId);
     }
-  }, [tracks, activeTrackId, setActiveTrack]);
+  }, [tracksLength, activeTrackId, firstTrackId, setActiveTrack]);
 
 
   // Sync vertical scroll between track headers and timeline content using transform
@@ -187,12 +193,15 @@ export const Timeline = memo(function Timeline({ duration, onGraphPanelOpenChang
    */
   const getNextTrackName = () => {
     // Extract existing track numbers from names like "Track 1", "Track 2", etc.
-    const existingNumbers = tracks
-      .map(t => {
-        const match = t.name.match(/^Track (\d+)$/);
-        return match && match[1] ? parseInt(match[1], 10) : 0;
-      })
-      .filter(n => n > 0);
+    // Uses hoisted TRACK_NUMBER_REGEX to avoid RegExp recreation
+    const existingNumbers: number[] = [];
+    for (const t of tracks) {
+      const match = t.name.match(TRACK_NUMBER_REGEX);
+      if (match?.[1]) {
+        const num = parseInt(match[1], 10);
+        if (num > 0) existingNumbers.push(num);
+      }
+    }
 
     // Find the smallest available number starting from 1
     let nextNumber = 1;

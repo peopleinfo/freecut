@@ -211,9 +211,9 @@ export const VideoTrackManager = memo<VideoTrackManagerProps>(
       [onVideoError]
     );
 
-    // Sort items by z-index for proper layering
+    // Sort items by z-index for proper layering (toSorted for immutability)
     const sortedItems = useMemo(
-      () => [...items].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
+      () => items.toSorted((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
       [items]
     );
 

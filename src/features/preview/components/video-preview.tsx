@@ -228,7 +228,7 @@ export const VideoPreview = memo(function VideoPreview({ project, containerSize 
         ...track,
         items: items.filter((item) => item.trackId === track.id),
       }))
-      .sort((a, b) => b.order - a.order);
+      .toSorted((a, b) => b.order - a.order);
   }, [tracks, items]);
 
   // Create resolved tracks by merging cached URLs with current items
@@ -250,7 +250,7 @@ export const VideoPreview = memo(function VideoPreview({ project, containerSize 
     s.items
       .filter((item) => item.mediaId)
       .map((item) => item.mediaId!)
-      .sort()
+      .toSorted()
       .join('|')
   );
 

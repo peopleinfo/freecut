@@ -94,9 +94,9 @@ export const GraphCurves = memo(function GraphCurves({
   points: GraphKeyframePoint[];
   selectedKeyframeIds?: Set<string>;
 }) {
-  // Sort points by frame
+  // Sort points by frame (toSorted for immutability)
   const sortedPoints = useMemo(
-    () => [...points].sort((a, b) => a.keyframe.frame - b.keyframe.frame),
+    () => points.toSorted((a, b) => a.keyframe.frame - b.keyframe.frame),
     [points]
   );
 
@@ -141,8 +141,8 @@ export const GraphExtensionLines = memo(function GraphExtensionLines({
 }) {
   if (points.length === 0) return null;
 
-  // Sort points by frame
-  const sortedPoints = [...points].sort((a, b) => a.keyframe.frame - b.keyframe.frame);
+  // Sort points by frame (toSorted for immutability)
+  const sortedPoints = points.toSorted((a, b) => a.keyframe.frame - b.keyframe.frame);
   const firstPoint = sortedPoints[0];
   const lastPoint = sortedPoints[sortedPoints.length - 1];
 

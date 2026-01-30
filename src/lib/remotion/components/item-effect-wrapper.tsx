@@ -76,8 +76,8 @@ const ItemEffectWrapperInternal = React.memo<ItemEffectWrapperInternalProps>(({
     if (affectingLayers.length === 0) return [];
 
     // Sort by track order (lowest first = applied first) and collect effects
-    return [...affectingLayers]
-      .sort((a, b) => a.trackOrder - b.trackOrder)
+    return affectingLayers
+      .toSorted((a, b) => a.trackOrder - b.trackOrder)
       .flatMap(({ layer }) => {
         // Use preview effects if available, otherwise use actual effects
         const effects = preview?.[layer.id]?.effects ?? layer.effects ?? [];

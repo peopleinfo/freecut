@@ -4,7 +4,7 @@ import { useCurrentFrame, useVideoConfig } from '../hooks/use-remotion-compat';
 import type { RemotionInputProps } from '@/types/export';
 import type { TextItem, ShapeItem, AdjustmentItem, VideoItem, ImageItem } from '@/types/timeline';
 import { Item } from '../components/item';
-import { EffectsBasedTransitionsLayer } from '../components/effects-based-transition';
+import { TransitionRenderer } from '../components/transitions';
 import { StableVideoSequence } from '../components/stable-video-sequence';
 import { loadFonts } from '../utils/fonts';
 import { resolveTransform } from '../utils/transform-resolver';
@@ -525,11 +525,20 @@ export const MainComposition: React.FC<RemotionInputProps> = ({ tracks, transiti
 
           {/* Effects-based transitions - visual effect centered on cut point */}
           {/* These render ABOVE the normal clips during the transition window */}
-          <EffectsBasedTransitionsLayer
-            transitions={transitions}
-            itemsById={itemsById}
-            adjustmentLayers={visibleAdjustmentLayers}
-          />
+          {transitions.map((transition) => {
+            const leftClip = itemsById.get(transition.leftClipId);
+            const rightClip = itemsById.get(transition.rightClipId);
+            if (!leftClip || !rightClip) return null;
+            return (
+              <TransitionRenderer
+                key={transition.id}
+                transition={transition}
+                leftClip={leftClip}
+                rightClip={rightClip}
+                adjustmentLayers={visibleAdjustmentLayers}
+              />
+            );
+          })}
 
           {/* NON-MEDIA LAYERS - text, shapes, etc. with per-item effects via ItemEffectWrapper */}
           {/* No more above/below split - items never move between DOM parents */}

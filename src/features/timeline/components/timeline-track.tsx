@@ -126,7 +126,7 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
   const isFrameInGap = useCallback((frame: number) => {
     if (trackItems.length === 0) return false;
 
-    const sortedItems = [...trackItems].sort((a, b) => a.from - b.from);
+    const sortedItems = trackItems.toSorted((a, b) => a.from - b.from);
 
     // Check if frame is inside any clip
     for (const item of sortedItems) {

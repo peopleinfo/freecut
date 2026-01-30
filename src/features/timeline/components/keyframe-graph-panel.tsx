@@ -305,7 +305,7 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
 
       // If there are existing keyframes, interpolate value
       if (propKeyframes && propKeyframes.keyframes.length > 0) {
-        const sorted = [...propKeyframes.keyframes].sort((a, b) => a.frame - b.frame);
+        const sorted = propKeyframes.keyframes.toSorted((a, b) => a.frame - b.frame);
         const before = sorted.filter((kf) => kf.frame <= frame).pop();
         const after = sorted.find((kf) => kf.frame > frame);
 

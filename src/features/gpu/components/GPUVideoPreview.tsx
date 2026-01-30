@@ -139,7 +139,7 @@ export const GPUVideoPreview = memo<GPUVideoPreviewProps>(
             transform: item.transform,
           };
         })
-        .sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+        .toSorted((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
     }, [items, trackInfo]);
 
     // Error handler

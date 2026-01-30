@@ -307,7 +307,7 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
 
   // Get sorted keyframe frames for navigation
   const sortedKeyframeFrames = useMemo(() => {
-    return [...keyframes].map(kf => kf.frame).sort((a, b) => a - b);
+    return keyframes.map(kf => kf.frame).toSorted((a, b) => a - b);
   }, [keyframes]);
 
   // Find previous keyframe frame

@@ -113,6 +113,9 @@ export const TrackHeader = memo(function TrackHeader({
         transform: isDragging ? `translateY(${dragOffset}px) scale(1.02)` : undefined,
         transition: isDragging ? 'none' : undefined,
         zIndex: isBeingDragged ? 100 : undefined,
+        // content-visibility optimization for long track lists (rendering-content-visibility)
+        contentVisibility: 'auto',
+        containIntrinsicSize: `192px ${track.height}px`,
       }}
       onClick={onSelect}
       onMouseDown={handleDragStart}
