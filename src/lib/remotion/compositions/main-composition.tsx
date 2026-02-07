@@ -4,7 +4,7 @@ import { useCurrentFrame, useVideoConfig } from '../hooks/use-remotion-compat';
 import type { RemotionInputProps } from '@/types/export';
 import type { TextItem, ShapeItem, AdjustmentItem, VideoItem, ImageItem } from '@/types/timeline';
 import { Item } from '../components/item';
-import { EffectsBasedTransitionsLayer } from '../components/effects-based-transition-optimized';
+import { EffectsBasedTransitionsLayer } from '../components/transition-renderer';
 import { StableVideoSequence } from '../components/stable-video-sequence';
 import { loadFonts } from '../utils/fonts';
 import { resolveTransform } from '../utils/transform-resolver';
