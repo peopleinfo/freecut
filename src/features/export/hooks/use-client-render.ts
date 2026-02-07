@@ -1,15 +1,8 @@
 /**
  * Client-side render hook
  *
- * Provides a React hook for client-side video rendering using mediabunny.
- * This is an alternative to the server-side `useRender` hook that doesn't
- * require a backend server.
- *
- * Key differences from server-side rendering:
- * - No media upload required (uses blob URLs directly)
- * - Limited codec support (WebCodecs-based)
- * - Runs entirely in the browser
- * - Progress reported via callbacks, not Socket.IO
+ * Provides a React hook for video rendering using mediabunny.
+ * Uses blob URLs directly, runs entirely in the browser with WebCodecs.
  */
 
 import { useState, useCallback, useRef } from 'react';

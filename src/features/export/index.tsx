@@ -1,5 +1,4 @@
 export { ExportDialog } from './components/export-dialog';
-export { useRender } from './hooks/use-render';
 export { useClientRender } from './hooks/use-client-render';
 export * from './types';
 export * from './utils/timeline-to-remotion';

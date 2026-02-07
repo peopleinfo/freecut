@@ -33,10 +33,6 @@ export default defineConfig({
           if (id.includes('@remotion/player')) {
             return 'remotion-player';
           }
-          // Remotion Renderer - only needed for export
-          if (id.includes('@remotion/renderer')) {
-            return 'remotion-renderer';
-          }
           // Remotion core
           if (id.includes('node_modules/remotion')) {
             return 'remotion-core';
