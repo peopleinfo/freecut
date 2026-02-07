@@ -12,7 +12,7 @@
  * - Keyframe animations
  * - Adjustment layer effects
  * - Audio extraction and mixing
- * - Video encoding via mediabunny CanvasSource
+ * - Video encoding via mediabunny VideoSampleSource
  * - Progress reporting and cancellation
  */
 
@@ -124,7 +124,7 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
 
   // Dynamically import mediabunny
   const mediabunny: MediabunnyModule = await import('mediabunny');
-  const { Output, BufferTarget, CanvasSource, AudioBufferSource } = mediabunny;
+  const { Output, BufferTarget, VideoSampleSource, VideoSample, AudioBufferSource } = mediabunny;
 
   onProgress({
     phase: 'preparing',
@@ -210,14 +210,14 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
     message: 'Setting up video encoder...',
   });
 
-  // Create video source from OUTPUT canvas (at export resolution)
-  // Set keyFrameInterval to ensure proper GOP structure
-  // Use 'realtime' latencyMode to disable B-frames and ensure monotonic timestamps
-  const videoSource = new CanvasSource(outputCanvas as unknown as HTMLCanvasElement, {
+  // Create video source for explicit frame capture (at export resolution)
+  // VideoSampleSource lets us control frame capture timing precisely with VideoSample
+  // Use 'quality' latencyMode to enable B-frames and better rate control for offline encoding
+  const videoSource = new VideoSampleSource({
     codec: settings.codec,
     bitrate: settings.videoBitrate ?? 10_000_000,
     keyFrameInterval: 2, // Keyframe every 2 seconds for better seeking
-    latencyMode: 'realtime', // Disables B-frames, ensures monotonic decode order
+    latencyMode: 'quality', // Enables B-frames and consistent frame quality for offline encoding
   });
 
   // Add video track
@@ -316,13 +316,24 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
       const timestamp = frame / fps;
       const frameDuration = 1 / fps;
 
-      // Add frame to video source (from output canvas)
+      // Explicitly snapshot canvas pixels into a VideoSample
+      // VideoSample constructor copies pixel data immediately, preventing any race
+      const sample = new VideoSample(outputCanvas, { timestamp, duration: frameDuration });
+
+      // Add frame to video source, then release GPU memory
       // Force first frame to be a keyframe to ensure proper GOP structure
       // IMPORTANT: Must await to ensure frames are processed in order
-      if (frame === 0) {
-        await videoSource.add(timestamp, frameDuration, { keyFrame: true });
-      } else {
-        await videoSource.add(timestamp, frameDuration);
+      try {
+        if (frame === 0) {
+          await videoSource.add(sample, { keyFrame: true });
+        } else {
+          await videoSource.add(sample);
+        }
+      } finally {
+        // VideoSampleSource does NOT close samples (unlike CanvasSource).
+        // We must close to release the underlying VideoFrame's GPU memory,
+        // otherwise the browser throttles after ~8-16 outstanding frames.
+        sample.close();
       }
 
       // Report progress
