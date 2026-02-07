@@ -14,6 +14,7 @@
  * ```
  */
 
+import { createLogger } from '@/lib/logger';
 import type { FrameBuffer, AVSync } from './wasm-loader';
 import {
   initWasm,
@@ -22,6 +23,8 @@ import {
   createAVSync,
   getBufferStateEnum,
 } from './wasm-loader';
+
+const log = createLogger('Playback');
 import { VideoFrameStorage, createVideoFrameStorage } from './video-frame-storage';
 import type { ManagedMediaSource, DecodedVideoFrame } from '../media';
 
@@ -114,6 +117,7 @@ export class BufferedPlaybackController {
   private displayLoopId: number | null = null;
   private isDecoding: boolean = false;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- event emitter pattern requires heterogeneous callback types
   private listeners: Map<PlaybackEventType, Set<PlaybackEventCallback<any>>> = new Map();
 
   constructor(config: PlaybackConfig = {}) {
@@ -132,7 +136,7 @@ export class BufferedPlaybackController {
    */
   async init(): Promise<void> {
     await initWasm();
-    console.log('[Playback] Controller initialized');
+    log.debug('Controller initialized');
   }
 
   /**
@@ -163,7 +167,7 @@ export class BufferedPlaybackController {
     }
 
     this.setState('idle');
-    console.log(`[Playback] Source set: ${this.fps}fps, ${this.totalFrames} frames`);
+    log.debug(`Source set: ${this.fps}fps, ${this.totalFrames} frames`);
   }
 
   /**
@@ -582,7 +586,7 @@ export class BufferedPlaybackController {
 
   private async convertToVideoFrame(decoded: DecodedVideoFrame): Promise<VideoFrame | null> {
     // If already a VideoFrame, return it
-    if ('codedWidth' in decoded && typeof (decoded as any).close === 'function') {
+    if ('codedWidth' in decoded && 'close' in decoded && typeof decoded.close === 'function') {
       return decoded as unknown as VideoFrame;
     }
 

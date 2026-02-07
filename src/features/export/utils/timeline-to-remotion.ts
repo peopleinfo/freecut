@@ -104,10 +104,11 @@ export function convertTimelineToRemotion(
           const sourceTrimStart = Math.round(additionalTrimStart * speed);
           const sourceTrimEnd = Math.round(additionalTrimEnd * speed);
 
-          (adjustedItem as any).trimStart = currentTrimStart + sourceTrimStart;
-          (adjustedItem as any).trimEnd = currentTrimEnd + sourceTrimEnd;
-          (adjustedItem as any).sourceStart = currentSourceStart + sourceTrimStart;
-          (adjustedItem as any).offset = (adjustedItem as any).trimStart;
+          const mediaItem = adjustedItem as typeof item;
+          mediaItem.trimStart = currentTrimStart + sourceTrimStart;
+          mediaItem.trimEnd = currentTrimEnd + sourceTrimEnd;
+          mediaItem.sourceStart = currentSourceStart + sourceTrimStart;
+          mediaItem.offset = mediaItem.trimStart;
         }
 
         return adjustedItem;

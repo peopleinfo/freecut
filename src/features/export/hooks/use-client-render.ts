@@ -257,20 +257,20 @@ export function useClientRender(): UseClientRenderReturn {
         for (const track of resolvedTracks) {
           for (const item of track.items ?? []) {
             totalResolvedItems++;
-            if ((item as any).src) {
+            if ('src' in item && item.src) {
               itemsWithSrc++;
               log.debug('Item with resolved src', {
                 itemId: item.id,
                 type: item.type,
                 from: item.from,
                 duration: item.durationInFrames,
-                srcPrefix: ((item as any).src as string)?.substring(0, 50),
+                srcPrefix: (item.src as string)?.substring(0, 50),
               });
             } else if (item.type === 'video' || item.type === 'audio' || item.type === 'image') {
               log.warn('Media item missing src', {
                 itemId: item.id,
                 type: item.type,
-                mediaId: (item as any).mediaId,
+                mediaId: item.mediaId,
               });
             }
           }

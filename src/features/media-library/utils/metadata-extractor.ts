@@ -4,7 +4,10 @@
  * Extracts video/audio/image metadata for storage in IndexedDB
  */
 
+import { createLogger } from '@/lib/logger';
 import { getMimeType } from './validation';
+
+const log = createLogger('MetadataExtractor');
 
 // Type definitions for mediabunny module
 interface MediabunnyVideoTrack {
@@ -391,7 +394,7 @@ export async function checkAudioCodecSupport(
     const finalCodec = audioCodec || detectedUnsupportedCodec;
     const isSupported = audioTrack !== null && isAudioCodecSupported(finalCodec);
 
-    console.log('[checkAudioCodecSupport]', {
+    log.debug('checkAudioCodecSupport', {
       fileName: file.name,
       audioCodec,
       detectedUnsupportedCodec,

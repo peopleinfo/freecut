@@ -1,17 +1,17 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { AbsoluteFill, interpolate, useSequenceContext } from '@/features/player/composition';
-import { Rect, Circle, Triangle, Ellipse, Star, Polygon, Heart } from '@/lib/shapes';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useDebugStore } from '@/features/editor/stores/debug-store';
 import { useVideoConfig, useIsPlaying } from '../hooks/use-remotion-compat';
-import type { TimelineItem, VideoItem, TextItem, ShapeItem } from '@/types/timeline';
+import type { TimelineItem, VideoItem } from '@/types/timeline';
 import type { TransformProperties } from '@/types/transform';
 import { DebugOverlay } from './debug-overlay';
 import { PitchCorrectedAudio } from './pitch-corrected-audio';
 import { GifPlayer } from './gif-player';
-import { loadFont, FONT_WEIGHT_MAP } from '../utils/fonts';
 import { ItemVisualWrapper } from './item-visual-wrapper';
+import { TextContent } from './text-content';
+import { ShapeContent } from './shape-content';
 import {
   timelineToSourceFrames,
   isValidSeekPosition,
@@ -20,6 +20,10 @@ import {
   DEFAULT_SPEED,
 } from '@/features/timeline/utils/source-calculations';
 import { useVideoSourcePool } from '@/features/player/video/VideoSourcePoolContext';
+import { createLogger } from '@/lib/logger';
+import { isGifUrl } from '@/utils/media-utils';
+
+const videoLog = createLogger('NativePreviewVideo');
 
 /** Mask information passed from composition to items */
 export interface MaskInfo {
@@ -128,15 +132,6 @@ function useVideoAudioVolume(item: VideoItem & { _sequenceFrameOffset?: number }
 }
 
 /**
- * Check if a URL points to a GIF file
- */
-function isGifUrl(url: string): boolean {
-  if (!url) return false;
-  const lowerUrl = url.toLowerCase();
-  return lowerUrl.endsWith('.gif') || lowerUrl.includes('.gif');
-}
-
-/**
  * Native HTML5 video component for preview mode using VideoSourcePool.
  * Uses pooled video elements instead of creating new ones per clip.
  * Split clips from the same source share video elements for efficiency.
@@ -172,8 +167,6 @@ const NativePreviewVideo: React.FC<{
   // The playbackRate affects how many source frames we advance per timeline frame
   const targetTime = (safeTrimBefore / fps) + (frame * playbackRate / fps);
 
-  // DEBUG mode (set to false for production)
-  const DEBUG = false;
   const shortId = itemId?.slice(0, 8) ?? 'no-id';
 
   // Acquire element from pool on mount
@@ -184,7 +177,7 @@ const NativePreviewVideo: React.FC<{
       return;
     }
 
-    if (DEBUG) console.log(`[NativePreviewVideo ${shortId}] acquiring element for:`, src);
+    videoLog.debug(`[${shortId}] acquiring element for:`, src);
 
     // Ensure source is preloaded
     pool.preloadSource(src).catch((error) => {
@@ -198,7 +191,7 @@ const NativePreviewVideo: React.FC<{
       return;
     }
 
-    if (DEBUG) console.log(`[NativePreviewVideo ${shortId}] acquired:`, element.readyState);
+    videoLog.debug(`[${shortId}] acquired:`, element.readyState);
 
     // CRITICAL: Unmute video element immediately after acquisition
     // Pool creates elements muted, and we need audio to work.
@@ -222,11 +215,11 @@ const NativePreviewVideo: React.FC<{
 
     // Set up event listeners
     const handleCanPlay = () => {
-      if (DEBUG) console.log(`[NativePreviewVideo ${shortId}] canplay:`, element.readyState);
+      videoLog.debug(`[${shortId}] canplay:`, element.readyState);
       setIsReady(true);
     };
     const handleSeeked = () => {
-      if (DEBUG) console.log(`[NativePreviewVideo ${shortId}] seeked:`, element.currentTime);
+      videoLog.debug(`[${shortId}] seeked:`, element.currentTime);
       if (element.readyState >= 3) {
         setIsReady(true);
       }
@@ -238,7 +231,7 @@ const NativePreviewVideo: React.FC<{
     // Prevent black frames when video reaches its natural end
     // Seek back slightly to show the last frame
     const handleEnded = () => {
-      if (DEBUG) console.log(`[NativePreviewVideo ${shortId}] ended, seeking to last frame`);
+      videoLog.debug(`[${shortId}] ended, seeking to last frame`);
       if (element.duration && element.duration > 0.1) {
         element.currentTime = element.duration - 0.05;
       }
@@ -262,21 +255,17 @@ const NativePreviewVideo: React.FC<{
       element.id = `pooled-video-${itemId}`;
       container.appendChild(element);
 
-      if (DEBUG) {
-        console.log(`[NativePreviewVideo ${shortId}] mounted to container`);
-      }
+      videoLog.debug(`[${shortId}] mounted to container`);
     }
 
     // Seek to initial position - need to calculate here since deps don't include targetTime
     // Use playbackRate to correctly calculate source position for speed-adjusted clips
     const initialTargetTime = (safeTrimBefore / fps) + (frame * playbackRate / fps);
-    if (DEBUG) {
-      console.log(`[NativePreviewVideo ${shortId}] initial seek to:`, initialTargetTime.toFixed(3),
-        'safeTrimBefore:', safeTrimBefore, 'frame:', frame, 'playbackRate:', playbackRate,
-        'fps:', fps,
-        'videoDuration:', element.duration?.toFixed(3),
-        'seekPastEnd:', initialTargetTime > element.duration);
-    }
+    videoLog.debug(`[${shortId}] initial seek to:`, initialTargetTime.toFixed(3),
+      'safeTrimBefore:', safeTrimBefore, 'frame:', frame, 'playbackRate:', playbackRate,
+      'fps:', fps,
+      'videoDuration:', element.duration?.toFixed(3),
+      'seekPastEnd:', initialTargetTime > element.duration);
     // Clamp to video duration to avoid seeking past end
     const clampedTime = Math.min(initialTargetTime, (element.duration || Infinity) - 0.1);
     element.currentTime = clampedTime;
@@ -287,7 +276,7 @@ const NativePreviewVideo: React.FC<{
       if (element.paused && element.readyState >= 2) {
         element.play().then(() => {
           element.pause();
-          if (DEBUG) console.log(`[NativePreviewVideo ${shortId}] forced frame render`);
+          videoLog.debug(`[${shortId}] forced frame render`);
         }).catch(() => {
           // Ignore - autoplay might be blocked
         });
@@ -319,7 +308,7 @@ const NativePreviewVideo: React.FC<{
       elementRef.current = null;
       setIsReady(false);
 
-      if (DEBUG) console.log(`[NativePreviewVideo ${shortId}] released`);
+      videoLog.debug(`[${shortId}] released`);
     };
     // Note: frame, fps, targetTime intentionally NOT in deps - we only want to acquire once on mount
     // Ongoing seeking is handled by the separate sync effect
@@ -356,9 +345,8 @@ const NativePreviewVideo: React.FC<{
     const videoDuration = video.duration || Infinity;
     const clampedTargetTime = Math.min(Math.max(0, effectiveTargetTime), videoDuration - 0.05);
 
-    // DEBUG: Log when approaching end of video
-    if (DEBUG && targetTime > videoDuration - 1) {
-      console.log(`[NativePreviewVideo ${shortId}] NEAR END:`, {
+    if (targetTime > videoDuration - 1) {
+      videoLog.debug(`[${shortId}] NEAR END:`, {
         targetTime: targetTime.toFixed(2),
         videoDuration: videoDuration.toFixed(2),
         clampedTargetTime: clampedTargetTime.toFixed(2),
@@ -644,316 +632,9 @@ const VideoContent: React.FC<{
   );
 };
 
-/**
- * Text content with live property preview support.
- * Reads preview values from gizmo store for real-time updates during slider/picker drag.
- */
-const TextContent: React.FC<{ item: TextItem }> = ({ item }) => {
-  // Read preview values from unified preview system
-  const itemPreview = useGizmoStore(
-    useCallback((s) => s.preview?.[item.id], [item.id])
-  );
-  const preview = itemPreview?.properties;
+// TextContent extracted to ./text-content.tsx
 
-  // Use preview values if available, otherwise use item's stored values
-  const fontSize = preview?.fontSize ?? item.fontSize ?? 60;
-  const letterSpacing = preview?.letterSpacing ?? item.letterSpacing ?? 0;
-  const lineHeight = preview?.lineHeight ?? item.lineHeight ?? 1.2;
-  const color = preview?.color ?? item.color;
-
-  // Load the Google Font and get the CSS fontFamily value
-  // loadFont() blocks rendering until the font is ready (works for both preview and server render)
-  const fontName = item.fontFamily ?? 'Inter';
-  const fontFamily = loadFont(fontName);
-
-  // Get font weight from shared map
-  const fontWeight = FONT_WEIGHT_MAP[item.fontWeight ?? 'normal'] ?? 400;
-
-  // Map text align to flexbox justify-content (horizontal)
-  const textAlignMap: Record<string, string> = {
-    left: 'flex-start',
-    center: 'center',
-    right: 'flex-end',
-  };
-  const justifyContent = textAlignMap[item.textAlign ?? 'center'] ?? 'center';
-
-  // Map vertical align to flexbox align-items
-  const verticalAlignMap: Record<string, string> = {
-    top: 'flex-start',
-    middle: 'center',
-    bottom: 'flex-end',
-  };
-  const alignItems = verticalAlignMap[item.verticalAlign ?? 'middle'] ?? 'center';
-
-  // Build text shadow CSS if present
-  const textShadow = item.textShadow
-    ? `${item.textShadow.offsetX}px ${item.textShadow.offsetY}px ${item.textShadow.blur}px ${item.textShadow.color}`
-    : undefined;
-
-  // Build stroke/outline effect using text-stroke or text shadow workaround
-  // Note: -webkit-text-stroke is not well supported in Remotion rendering
-  // Using multiple text shadows as a fallback for stroke effect
-  const strokeShadows = item.stroke
-    ? [
-        `${item.stroke.width}px 0 ${item.stroke.color}`,
-        `-${item.stroke.width}px 0 ${item.stroke.color}`,
-        `0 ${item.stroke.width}px ${item.stroke.color}`,
-        `0 -${item.stroke.width}px ${item.stroke.color}`,
-      ].join(', ')
-    : undefined;
-
-  const finalTextShadow = [textShadow, strokeShadows].filter(Boolean).join(', ') || undefined;
-
-  return (
-    <div
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        alignItems,
-        justifyContent,
-        padding: '16px',
-        backgroundColor: item.backgroundColor,
-        boxSizing: 'border-box',
-      }}
-    >
-      <div
-        style={{
-          fontSize,
-          // Use the fontFamily returned by loadFont (includes proper CSS value)
-          fontFamily: fontFamily,
-          fontWeight,
-          fontStyle: item.fontStyle ?? 'normal',
-          color,
-          textAlign: item.textAlign ?? 'center',
-          lineHeight,
-          letterSpacing,
-          textShadow: finalTextShadow,
-          // Best practice: use inline-block and pre-wrap to match measureText behavior
-          display: 'inline-block',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          width: '100%',
-        }}
-      >
-        {item.text}
-      </div>
-    </div>
-  );
-};
-
-/**
- * Shape content with live property preview support.
- * Renders Remotion shapes (Rect, Circle, Triangle, Ellipse, Star, Polygon).
- * Reads preview values from gizmo store for real-time updates during editing.
- */
-const ShapeContent: React.FC<{ item: ShapeItem }> = ({ item }) => {
-  // Read transform preview from gizmo store for real-time scaling
-  const activeGizmo = useGizmoStore((s) => s.activeGizmo);
-  const previewTransform = useGizmoStore((s) => s.previewTransform);
-  // Read from unified preview system (includes transforms, properties, and effects)
-  const itemPreview = useGizmoStore(
-    useCallback((s) => s.preview?.[item.id], [item.id])
-  );
-
-  // Use preview values if available, otherwise use item's stored values
-  const shapePropsPreview = itemPreview?.properties;
-  const fillColor = shapePropsPreview?.fillColor ?? item.fillColor ?? '#3b82f6';
-  const strokeColor = shapePropsPreview?.strokeColor ?? item.strokeColor;
-  const strokeWidth = shapePropsPreview?.strokeWidth ?? item.strokeWidth ?? 0;
-  const cornerRadius = shapePropsPreview?.cornerRadius ?? item.cornerRadius ?? 0;
-  const direction = shapePropsPreview?.direction ?? item.direction ?? 'up';
-  const points = shapePropsPreview?.points ?? item.points ?? 5;
-  const innerRadius = shapePropsPreview?.innerRadius ?? item.innerRadius ?? 0.5;
-  const shapeType = shapePropsPreview?.shapeType ?? item.shapeType;
-
-  // Get dimensions with preview support for real-time gizmo scaling
-  // Priority: Unified preview (group/properties) > Single gizmo preview > Base transform
-  let width = item.transform?.width ?? 200;
-  let height = item.transform?.height ?? 200;
-
-  const itemPreviewTransform = itemPreview?.transform;
-  const isGizmoPreviewActive = activeGizmo?.itemId === item.id && previewTransform !== null;
-
-  if (itemPreviewTransform) {
-    width = itemPreviewTransform.width ?? width;
-    height = itemPreviewTransform.height ?? height;
-  } else if (isGizmoPreviewActive && previewTransform) {
-    width = previewTransform.width;
-    height = previewTransform.height;
-  }
-
-  // Common stroke props
-  const strokeProps = strokeWidth > 0 && strokeColor ? {
-    stroke: strokeColor,
-    strokeWidth,
-  } : {};
-
-  // Check if aspect ratio is locked (for squish/squash behavior)
-  // Read from preview transforms if available, otherwise from item
-  let aspectLocked = item.transform?.aspectRatioLocked ?? true;
-  if (itemPreviewTransform?.aspectRatioLocked !== undefined) {
-    aspectLocked = itemPreviewTransform.aspectRatioLocked;
-  } else if (isGizmoPreviewActive && previewTransform?.aspectRatioLocked !== undefined) {
-    aspectLocked = previewTransform.aspectRatioLocked;
-  }
-
-  // Centering wrapper style for SVG shapes
-  const centerStyle: React.CSSProperties = {
-    width: '100%',
-    height: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  };
-
-  // For shapes that need to squish/squash when aspect is unlocked,
-  // we render at base size and apply CSS scale transform
-  const baseSize = Math.min(width, height);
-  const scaleX = aspectLocked ? 1 : width / baseSize;
-  const scaleY = aspectLocked ? 1 : height / baseSize;
-  const needsScale = !aspectLocked && (scaleX !== 1 || scaleY !== 1);
-
-  const scaleStyle: React.CSSProperties = needsScale ? {
-    transform: `scale(${scaleX}, ${scaleY})`,
-  } : {};
-
-  // Render appropriate shape based on shapeType
-  switch (shapeType) {
-    case 'rectangle':
-      // Rectangle fills the entire container (naturally supports non-proportional)
-      return (
-        <div style={centerStyle}>
-          <Rect
-            width={width}
-            height={height}
-            fill={fillColor}
-            cornerRadius={cornerRadius}
-            {...strokeProps}
-          />
-        </div>
-      );
-
-    case 'circle': {
-      // Circle: squish/squash when aspect unlocked
-      const radius = baseSize / 2;
-      return (
-        <div style={centerStyle}>
-          <div style={scaleStyle}>
-            <Circle
-              radius={radius}
-              fill={fillColor}
-              {...strokeProps}
-            />
-          </div>
-        </div>
-      );
-    }
-
-    case 'triangle': {
-      // Triangle: squish/squash when aspect unlocked
-      return (
-        <div style={centerStyle}>
-          <div style={scaleStyle}>
-            <Triangle
-              length={baseSize}
-              direction={direction}
-              fill={fillColor}
-              cornerRadius={cornerRadius}
-              {...strokeProps}
-            />
-          </div>
-        </div>
-      );
-    }
-
-    case 'ellipse': {
-      // Ellipse naturally supports non-proportional via rx/ry
-      const rx = width / 2;
-      const ry = height / 2;
-      return (
-        <div style={centerStyle}>
-          <Ellipse
-            rx={rx}
-            ry={ry}
-            fill={fillColor}
-            {...strokeProps}
-          />
-        </div>
-      );
-    }
-
-    case 'star': {
-      // Star: squish/squash when aspect unlocked
-      const outerRadius = baseSize / 2;
-      const innerRadiusValue = outerRadius * innerRadius;
-      return (
-        <div style={centerStyle}>
-          <div style={scaleStyle}>
-            <Star
-              points={points}
-              outerRadius={outerRadius}
-              innerRadius={innerRadiusValue}
-              fill={fillColor}
-              cornerRadius={cornerRadius}
-              {...strokeProps}
-            />
-          </div>
-        </div>
-      );
-    }
-
-    case 'polygon': {
-      // Polygon: squish/squash when aspect unlocked
-      const radius = baseSize / 2;
-      return (
-        <div style={centerStyle}>
-          <div style={scaleStyle}>
-            <Polygon
-              points={points}
-              radius={radius}
-              fill={fillColor}
-              cornerRadius={cornerRadius}
-              {...strokeProps}
-            />
-          </div>
-        </div>
-      );
-    }
-
-    case 'heart': {
-      // Heart: use Remotion's Heart component for consistency with mask path generation
-      // Heart output width = 1.1 × input height, so we scale input to fit within baseSize
-      // Using height = baseSize / 1.1 ensures output width = baseSize (fits container)
-      const heartHeight = baseSize / 1.1;
-      return (
-        <div style={centerStyle}>
-          <div style={scaleStyle}>
-            <Heart
-              height={heartHeight}
-              fill={fillColor}
-              stroke={strokeColor}
-              strokeWidth={strokeWidth}
-            />
-          </div>
-        </div>
-      );
-    }
-
-    default:
-      // Fallback to simple colored div for unknown types
-      return (
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            backgroundColor: fillColor,
-            borderRadius: cornerRadius,
-          }}
-        />
-      );
-  }
-};
+// ShapeContent extracted to ./shape-content.tsx
 
 
 export interface ItemProps {

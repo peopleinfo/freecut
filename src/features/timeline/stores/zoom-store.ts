@@ -13,15 +13,6 @@ export interface ZoomActions {
   zoomToFit: (containerWidth: number, contentDurationSeconds: number) => void;
 }
 
-// IMPORTANT: Always use granular selectors to prevent unnecessary re-renders!
-//
-// ✅ CORRECT: Use granular selectors
-// const zoomLevel = useZoomStore(s => s.level);
-// const zoomIn = useZoomStore(s => s.zoomIn);
-//
-// ❌ WRONG: Don't destructure the entire store
-// const { level, zoomIn } = useZoomStore();
-
 // Throttle zoom updates to reduce re-render frequency during rapid zoom
 // Set to 50ms to match typical render time - prevents queueing renders faster than they complete
 const ZOOM_THROTTLE_MS = 50;

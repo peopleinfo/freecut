@@ -7,6 +7,20 @@
 
 import type { DecodedVideoFrame, FrameCacheEntry, CacheStats } from './types';
 
+/** Chrome-only Performance.memory API */
+interface PerformanceMemory {
+  usedJSHeapSize: number;
+  totalJSHeapSize: number;
+  jsHeapSizeLimit: number;
+}
+
+function getPerformanceMemory(): PerformanceMemory | null {
+  if ('memory' in performance) {
+    return (performance as unknown as { memory: PerformanceMemory }).memory;
+  }
+  return null;
+}
+
 /**
  * Cache eviction policy
  */
@@ -436,35 +450,22 @@ export function createMemoryPressureDetector(): MemoryPressureDetector {
   let lastCheck = 0;
   const checkInterval = 1000; // Check every second
 
-  // Check for memory API (Chrome only)
-  const hasMemoryAPI = typeof performance !== 'undefined' &&
-    'memory' in performance;
-
   return {
     getUsedMemory(): number {
-      if (hasMemoryAPI) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return (performance as any).memory?.usedJSHeapSize ?? 0;
-      }
-      return 0;
+      const memory = getPerformanceMemory();
+      return memory?.usedJSHeapSize ?? 0;
     },
 
     getAvailableMemory(): number {
-      if (hasMemoryAPI) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const memory = (performance as any).memory;
-        return (memory?.jsHeapSizeLimit ?? 0) - (memory?.usedJSHeapSize ?? 0);
+      const memory = getPerformanceMemory();
+      if (memory) {
+        return memory.jsHeapSizeLimit - memory.usedJSHeapSize;
       }
       return Infinity;
     },
 
     isUnderPressure(): boolean {
-      if (!hasMemoryAPI) {
-        return false;
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const memory = (performance as any).memory;
+      const memory = getPerformanceMemory();
       if (!memory) {
         return false;
       }

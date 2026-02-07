@@ -4,8 +4,11 @@
  * Creates the best available render backend for the current environment.
  */
 
+import { createLogger } from '@/lib/logger';
 import type { RenderBackend, BackendOptions, BackendName } from './types';
 import { detectBestBackend, detectWebGPUSupport, detectWebGL2Support } from './capabilities';
+
+const log = createLogger('GPU');
 import { WebGPUBackend } from './webgpu-backend';
 import { WebGL2Backend } from './webgl2-backend';
 import { CanvasBackend } from './canvas-backend';
@@ -31,20 +34,20 @@ export async function createBackend(
     const isAvailable = await isBackendAvailable(preferredBackend, canvas);
     if (isAvailable) {
       backendName = preferredBackend;
-      if (debug) console.log(`[GPU] Using preferred backend: ${backendName}`);
+      if (debug) log.debug(`Using preferred backend: ${backendName}`);
     } else {
       backendName = await detectBestBackend(canvas);
-      if (debug) console.log(`[GPU] Preferred backend ${preferredBackend} not available, falling back to: ${backendName}`);
+      if (debug) log.debug(`Preferred backend ${preferredBackend} not available, falling back to: ${backendName}`);
     }
   } else {
     backendName = await detectBestBackend(canvas);
-    if (debug) console.log(`[GPU] Auto-detected backend: ${backendName}`);
+    if (debug) log.debug(`Auto-detected backend: ${backendName}`);
   }
 
   const backend = createBackendInstance(backendName);
   await backend.init(canvas);
 
-  if (debug) console.log(`[GPU] Initialized ${backendName} backend with capabilities:`, backend.capabilities);
+  if (debug) log.debug(`Initialized ${backendName} backend with capabilities:`, backend.capabilities);
 
   return backend;
 }

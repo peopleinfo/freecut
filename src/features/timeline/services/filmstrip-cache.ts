@@ -424,5 +424,6 @@ class FilmstripCacheService {
 // Singleton
 export const filmstripCache = new FilmstripCacheService();
 
-// Debug access
-(window as any).__filmstripCache = filmstripCache;
+if (import.meta.env.DEV) {
+  (window as any).__filmstripCache = filmstripCache;
+}

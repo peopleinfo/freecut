@@ -5,15 +5,6 @@ import type { ItemEffect } from '@/types/effects';
 import { calculateTransform } from '../utils/transform-calculations';
 import { applySnapping, applyScaleSnapping, type SnapLine } from '../utils/snap-utils';
 
-// IMPORTANT: Always use granular selectors to prevent unnecessary re-renders!
-//
-// ✅ CORRECT: Use granular selectors
-// const activeGizmo = useGizmoStore(s => s.activeGizmo);
-// const startTranslate = useGizmoStore(s => s.startTranslate);
-//
-// ❌ WRONG: Don't destructure the entire store
-// const { activeGizmo, startTranslate } = useGizmoStore();
-
 /** Item properties that can be previewed (non-transform) */
 export interface ItemPropertiesPreview {
   fadeIn?: number;

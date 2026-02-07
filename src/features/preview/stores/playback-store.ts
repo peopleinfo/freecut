@@ -2,15 +2,6 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { PlaybackState, PlaybackActions } from '../types';
 
-// IMPORTANT: Always use granular selectors to prevent unnecessary re-renders!
-//
-// ✅ CORRECT: Use granular selectors
-// const isPlaying = usePlaybackStore(s => s.isPlaying);
-// const togglePlayPause = usePlaybackStore(s => s.togglePlayPause);
-//
-// ❌ WRONG: Don't destructure the entire store
-// const { isPlaying, togglePlayPause } = usePlaybackStore();
-
 export const usePlaybackStore = create<PlaybackState & PlaybackActions>()(
   persist(
     (set) => ({

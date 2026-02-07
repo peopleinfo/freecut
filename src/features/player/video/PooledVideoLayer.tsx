@@ -25,6 +25,7 @@ import {
   getGlobalVideoSourcePool,
 } from './VideoSourcePool';
 import type { VideoItemData } from './types';
+import { createLogger } from '@/lib/logger';
 
 /**
  * Props for a single pooled video clip
@@ -95,11 +96,7 @@ const PooledVideoClip = memo<PooledVideoClipProps>(
     const elementRef = useRef<HTMLVideoElement | null>(null);
     const [isReady, setIsReady] = useState(false);
 
-    // DEBUG logging
-    const DEBUG = false;
-    const log = (...args: unknown[]) => {
-      if (DEBUG) console.log(`[PooledVideoClip ${clip.id.slice(0, 8)}]`, ...args);
-    };
+    const log = createLogger(`PooledVideoClip:${clip.id.slice(0, 8)}`);
 
     // Calculate source time for current frame
     const sourceTime = useMemo(() => {
@@ -116,12 +113,12 @@ const PooledVideoClip = memo<PooledVideoClipProps>(
 
     // Acquire element when clip becomes visible
     useEffect(() => {
-      log('visibility changed:', { isVisible, currentFrame, clipFrom: clip.from });
+      log.debug('visibility changed:', { isVisible, currentFrame, clipFrom: clip.from });
 
       if (!isVisible) {
         // Release when not visible - MUST pause and remove from DOM
         if (elementRef.current) {
-          log('releasing element (not visible)');
+          log.debug('releasing element (not visible)');
           const element = elementRef.current;
 
           // Pause to stop playback
@@ -140,13 +137,13 @@ const PooledVideoClip = memo<PooledVideoClipProps>(
       }
 
       // Acquire element for this clip
-      log('acquiring element for src:', clip.src);
+      log.debug('acquiring element for src:', clip.src);
       const element = pool.acquireForClip(clip.id, clip.src);
       if (!element) {
         console.error(`[PooledVideoClip] Failed to acquire element for ${clip.id}`);
         return;
       }
-      log('acquired element, readyState:', element.readyState);
+      log.debug('acquired element, readyState:', element.readyState);
 
       // IMPORTANT: Pause immediately when acquiring
       // The element might be playing from a previous clip
@@ -156,18 +153,18 @@ const PooledVideoClip = memo<PooledVideoClipProps>(
 
       // Set up event listeners BEFORE seeking (so we catch the seeked event)
       const handleCanPlay = () => {
-        log('canplay event, readyState:', element.readyState);
+        log.debug('canplay event, readyState:', element.readyState);
         setIsReady(true);
       };
       const handleSeeked = () => {
-        log('seeked event, readyState:', element.readyState, 'currentTime:', element.currentTime);
+        log.debug('seeked event, readyState:', element.readyState, 'currentTime:', element.currentTime);
         // Mark ready when seek completes and video has data
         if (element.readyState >= 3) {
           setIsReady(true);
         }
       };
       const handleError = () => {
-        log('error event:', element.error);
+        log.debug('error event:', element.error);
         const error = new Error(
           `Video error: ${element.error?.message || 'Unknown'}`
         );
@@ -180,7 +177,7 @@ const PooledVideoClip = memo<PooledVideoClipProps>(
 
       // Calculate and seek to initial position
       const initialSourceTime = calculateSourceTime(clip, currentFrame, fps);
-      log('seeking to initialSourceTime:', initialSourceTime, 'sourceStart:', clip.sourceStart);
+      log.debug('seeking to initialSourceTime:', initialSourceTime, 'sourceStart:', clip.sourceStart);
       element.currentTime = initialSourceTime;
 
       // Mount element into container
@@ -191,15 +188,15 @@ const PooledVideoClip = memo<PooledVideoClipProps>(
         element.style.objectFit = 'contain';
         element.style.display = 'block';
         container.appendChild(element);
-        log('mounted element to container');
+        log.debug('mounted element to container');
       }
 
       // If already ready (no seek needed or instant), mark immediately
       if (element.readyState >= 3) {
-        log('already ready, readyState:', element.readyState);
+        log.debug('already ready, readyState:', element.readyState);
         setIsReady(true);
       } else {
-        log('not ready yet, readyState:', element.readyState);
+        log.debug('not ready yet, readyState:', element.readyState);
       }
 
       return () => {
@@ -233,7 +230,7 @@ const PooledVideoClip = memo<PooledVideoClipProps>(
     // Sync play/pause state
     useEffect(() => {
       const element = elementRef.current;
-      log('play/pause effect:', {
+      log.debug('play/pause effect:', {
         hasElement: !!element,
         isVisible,
         isReady,
@@ -243,24 +240,24 @@ const PooledVideoClip = memo<PooledVideoClipProps>(
       });
 
       if (!element || !isVisible || !isReady) {
-        log('skipping play - conditions not met');
+        log.debug('skipping play - conditions not met');
         return;
       }
 
       if (isPlaying && element.paused) {
-        log('attempting to play...');
+        log.debug('attempting to play...');
         element.play().then(() => {
-          log('play succeeded!');
+          log.debug('play succeeded!');
         }).catch((error) => {
           if (error.name !== 'AbortError') {
             console.error('[PooledVideoClip] Play failed:', error);
             onError?.(clip.id, error);
           } else {
-            log('play aborted (normal during seeking)');
+            log.debug('play aborted (normal during seeking)');
           }
         });
       } else if (!isPlaying && !element.paused) {
-        log('pausing');
+        log.debug('pausing');
         element.pause();
       }
     }, [isPlaying, isVisible, isReady, clip.id, onError]);

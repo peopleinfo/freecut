@@ -8,15 +8,6 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('MediaLibraryStore');
 
-// IMPORTANT: Always use granular selectors to prevent unnecessary re-renders!
-//
-// ✅ CORRECT: Use granular selectors
-// const mediaItems = useMediaLibraryStore(s => s.mediaItems);
-// const uploadMedia = useMediaLibraryStore(s => s.uploadMedia);
-//
-// ❌ WRONG: Don't destructure the entire store
-// const { mediaItems, uploadMedia } = useMediaLibraryStore();
-
 export const useMediaLibraryStore = create<
   MediaLibraryState & MediaLibraryActions
 >()(

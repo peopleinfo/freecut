@@ -4,6 +4,7 @@
  * Handles lazy loading and initialization of the Rust frame buffer WASM module.
  */
 
+import { createLogger } from '@/lib/logger';
 import type {
   FrameBuffer,
   FrameInfo,
@@ -12,6 +13,8 @@ import type {
   BufferState,
   InitOutput,
 } from '../../../../crates/frame-buffer/pkg/frame_buffer';
+
+const log = createLogger('WASM');
 
 // Re-export types for convenience
 export type { FrameBuffer, FrameInfo, AVSync, BufferStats, BufferState };
@@ -47,7 +50,7 @@ export async function initWasm(): Promise<InitOutput> {
       wasmExports = module;
       wasmModule = output;
 
-      console.log('[WASM] Frame buffer module initialized');
+      log.debug('Frame buffer module initialized');
       return output;
     } catch (error) {
       initPromise = null;

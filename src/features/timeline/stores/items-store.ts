@@ -1,9 +1,12 @@
 import { create } from 'zustand';
+import { createLogger } from '@/lib/logger';
 import type { TimelineItem, TimelineTrack } from '@/types/timeline';
 import type { TransformProperties } from '@/types/transform';
 import type { VisualEffect, ItemEffect } from '@/types/effects';
 import { clampTrimAmount, calculateTrimSourceUpdate } from '../utils/trim-utils';
 import { getSourceProperties, isMediaItem, calculateSplitSourceBoundaries } from '../utils/source-calculations';
+
+const log = createLogger('ItemsStore');
 
 /**
  * Items state - timeline clips/items and tracks.
@@ -276,9 +279,8 @@ export const useItemsStore = create<ItemsState & ItemsActions>()(
         (rightItem as typeof item).sourceStart = boundaries.right.sourceStart;
         (rightItem as typeof item).sourceEnd = boundaries.right.sourceEnd;
 
-        // DEBUG: Log split operation values
-        console.log(`[_splitItem] Original sourceStart:${sourceStart} speed:${speed} leftDuration:${leftDuration} rightDuration:${rightDuration}`);
-        console.log(`[_splitItem] boundaries.right.sourceStart:${boundaries.right.sourceStart} rightItem.sourceStart:${(rightItem as any).sourceStart}`);
+        log.debug(`_splitItem: Original sourceStart:${sourceStart} speed:${speed} leftDuration:${leftDuration} rightDuration:${rightDuration}`);
+        log.debug(`_splitItem: boundaries.right.sourceStart:${boundaries.right.sourceStart} rightItem.sourceStart:${(rightItem as typeof item).sourceStart}`);
       }
 
       set((state) => ({

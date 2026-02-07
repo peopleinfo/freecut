@@ -1,8 +1,6 @@
 export { ExportDialog } from './components/export-dialog';
-export { ExportSettingsComponent } from './components/export-settings';
 export { useRender } from './hooks/use-render';
 export { useClientRender } from './hooks/use-client-render';
-export { renderAPI } from './api/render-api';
 export * from './types';
 export * from './utils/timeline-to-remotion';
 // Client renderer utilities (types exported with different names to avoid conflicts)

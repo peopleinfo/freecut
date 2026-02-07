@@ -524,10 +524,10 @@ const TransitionOverlay: React.FC<TransitionOverlayProps> = React.memo(function 
     // Clip-path
     if (styles.clipPath !== undefined && styles.clipPath !== 'none') {
       el.style.clipPath = styles.clipPath;
-      (el.style as any).webkitClipPath = styles.clipPath;
+      el.style.setProperty('-webkit-clip-path', styles.clipPath);
     } else {
       el.style.clipPath = '';
-      (el.style as any).webkitClipPath = '';
+      el.style.setProperty('-webkit-clip-path', '');
     }
 
     // Mask image (for clock wipe, iris, heart, star, diamond, etc.)
@@ -535,7 +535,7 @@ const TransitionOverlay: React.FC<TransitionOverlayProps> = React.memo(function 
       el.style.maskImage = styles.maskImage;
       el.style.webkitMaskImage = styles.maskImage;
       el.style.maskSize = '100% 100%';
-      (el.style as any).webkitMaskSize = '100% 100%';
+      el.style.setProperty('-webkit-mask-size', '100% 100%');
     } else {
       el.style.maskImage = '';
       el.style.webkitMaskImage = '';

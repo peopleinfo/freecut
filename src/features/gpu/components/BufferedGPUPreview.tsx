@@ -10,6 +10,7 @@ import { useBufferedPlayback } from '../hooks/use-buffered-playback';
 import { useMediaSource } from '../hooks/use-media-source';
 import { useRenderBackend } from '../hooks/use-render-backend';
 import type { PlaybackStats } from '../playback';
+import type { BufferedPlaybackController } from '../playback/buffered-playback-controller';
 
 export interface BufferedGPUPreviewProps {
   /** Video source URL */
@@ -158,10 +159,10 @@ export function BufferedGPUPreview({
   useEffect(() => {
     if (!isInitialized) return;
 
-    const controller = (window as any).__bufferedPlaybackController;
+    const controller = (window as Record<string, unknown>).__bufferedPlaybackController as BufferedPlaybackController | undefined;
     if (!controller) return;
 
-    const handleFrame = ({ frame, frameNumber, shouldDrop }: any) => {
+    const handleFrame = ({ frame, frameNumber, shouldDrop }: { frame: VideoFrame; frameNumber: number; shouldDrop: boolean }) => {
       if (shouldDrop) return;
 
       renderFrame(frame);

@@ -5,9 +5,12 @@
  * Run this test to confirm the transition system is working.
  */
 
+import { createLogger } from '@/lib/logger';
 import type { Transition, WipeDirection } from '@/types/transition';
 import type { VideoItem } from '@/types/timeline';
 import { calculateEasingCurve, calculateTransitionStyles, findActiveTransitions, buildClipMap } from './engine';
+
+const log = createLogger('TransitionTest');
 
 // Test data
 const testTransition: Transition = {
@@ -163,18 +166,18 @@ export function runTransitionTests(): { passed: number; failed: number; results:
  * Console test runner
  */
 export function runTestsInConsole(): void {
-  console.log('🧪 Running Transition System Tests...\n');
-  
+  log.info('Running Transition System Tests...');
+
   const { passed, failed, results } = runTransitionTests();
-  
-  results.forEach(result => console.log(result));
-  
-  console.log(`\n📊 Results: ${passed} passed, ${failed} failed`);
-  
+
+  results.forEach(result => log.info(result));
+
+  log.info(`Results: ${passed} passed, ${failed} failed`);
+
   if (failed === 0) {
-    console.log('✨ All tests passed! Transition system is working correctly.\n');
+    log.info('All tests passed! Transition system is working correctly.');
   } else {
-    console.log('⚠️  Some tests failed. Please check the implementation.\n');
+    log.warn('Some tests failed. Please check the implementation.');
   }
 }
 
