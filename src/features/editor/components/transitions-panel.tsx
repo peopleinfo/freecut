@@ -17,23 +17,6 @@ import {
   Circle,
   Info,
   Search,
-  Sparkles,
-  Sun,
-  Columns2,
-  AlignJustify,
-  TrendingUp,
-  ArrowRightFromLine,
-  Layers,
-  ArrowLeftRight,
-  Box,
-  BookOpen,
-  ZoomIn,
-  ZoomOut,
-  Heart,
-  Star,
-  Diamond,
-  Cloudy,
-  Zap,
   type LucideIcon,
 } from 'lucide-react';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
@@ -66,23 +49,6 @@ const ICON_MAP: Record<string, LucideIcon> = {
   FlipVertical2: FlipVertical,
   Clock,
   Circle,
-  Sparkles,
-  Sun,
-  Columns2,
-  AlignJustify,
-  TrendingUp,
-  ArrowRightFromLine,
-  Layers,
-  ArrowLeftRight,
-  Box,
-  BookOpen,
-  ZoomIn,
-  ZoomOut,
-  Heart,
-  Star,
-  Diamond,
-  Cloudy,
-  Zap,
 };
 
 // Category display info
@@ -91,16 +57,13 @@ const CATEGORY_INFO: Record<string, { title: string }> = {
   wipe: { title: 'Wipe' },
   slide: { title: 'Slide' },
   flip: { title: 'Flip' },
-  zoom: { title: 'Zoom' },
   mask: { title: 'Mask' },
-  blur: { title: 'Blur' },
-  distortion: { title: 'Distortion' },
   light: { title: 'Light' },
   custom: { title: 'Custom' },
 };
 
 const CATEGORY_ORDER: TransitionCategory[] = [
-  'basic', 'wipe', 'slide', 'flip', 'zoom', 'mask', 'blur', 'distortion',
+  'basic', 'wipe', 'slide', 'flip', 'mask',
 ];
 
 // Direction labels for directional transitions

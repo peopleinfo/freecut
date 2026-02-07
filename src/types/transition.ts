@@ -16,9 +16,6 @@ export type TransitionCategory =
   | 'wipe'
   | 'slide'
   | 'flip'
-  | 'zoom'
-  | 'blur'
-  | 'distortion'
   | 'mask'
   | 'light'
   | 'custom';
@@ -34,24 +31,7 @@ export type BuiltinTransitionPresentation =
   | 'flip'
   | 'clockWipe'
   | 'iris'
-  | 'none'
-  | 'dissolve'
-  | 'additive-dissolve'
-  | 'barn-door'
-  | 'venetian-blinds'
-  | 'diagonal-wipe'
-  | 'push'
-  | 'cover'
-  | 'swap'
-  | 'cube'
-  | 'page-turn'
-  | 'zoom-in'
-  | 'zoom-out'
-  | 'heart'
-  | 'star'
-  | 'diamond'
-  | 'blur-through'
-  | 'glitch';
+  | 'none';
 
 /**
  * Visual presentation styles for transitions.

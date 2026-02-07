@@ -1,7 +1,7 @@
 /**
  * Flip Transition Renderers
  *
- * Includes: flip, cube, page-turn
+ * Includes: flip
  */
 
 import type { TransitionRegistry, TransitionRenderer } from '../registry';
@@ -82,111 +82,9 @@ const flipDef: TransitionDefinition = {
 };
 
 // ============================================================================
-// Cube (3D cube rotation)
-// ============================================================================
-
-const cubeRenderer: TransitionRenderer = {
-  calculateStyles(progress, isOutgoing, canvasWidth, canvasHeight, direction): TransitionStyleCalculation {
-    const dir = (direction as FlipDirection) || 'from-left';
-    const p = Math.max(0, Math.min(1, progress));
-    const isHorizontal = dir === 'from-left' || dir === 'from-right';
-    const sign = dir === 'from-right' || dir === 'from-bottom' ? -1 : 1;
-
-    // Half the canvas dimension for perspective distance
-    const halfDim = isHorizontal ? canvasWidth / 2 : canvasHeight / 2;
-    const angle = p * 90;
-
-    let transform: string;
-    if (isOutgoing) {
-      const rotAxis = isHorizontal ? 'Y' : 'X';
-      const translateZ = halfDim;
-      transform = `perspective(${halfDim * 4}px) translateZ(-${translateZ}px) rotate${rotAxis}(${sign * angle}deg) translateZ(${translateZ}px)`;
-    } else {
-      const rotAxis = isHorizontal ? 'Y' : 'X';
-      const translateZ = halfDim;
-      transform = `perspective(${halfDim * 4}px) translateZ(-${translateZ}px) rotate${rotAxis}(${sign * (angle - 90)}deg) translateZ(${translateZ}px)`;
-    }
-
-    return { transform };
-  },
-  renderCanvas(ctx, leftCanvas, rightCanvas, progress, direction, canvas) {
-    // Canvas 2D fallback: use flip approximation
-    flipRenderer.renderCanvas!(ctx, leftCanvas, rightCanvas, progress, direction, canvas);
-  },
-};
-
-const cubeDef: TransitionDefinition = {
-  id: 'cube',
-  label: 'Cube',
-  description: '3D cube rotation between clips',
-  category: 'flip',
-  icon: 'Box',
-  hasDirection: true,
-  directions: ALL_DIRECTIONS,
-  supportedTimings: [...ALL_TIMINGS],
-  defaultDuration: 30,
-  minDuration: 10,
-  maxDuration: 60,
-};
-
-// ============================================================================
-// Page Turn
-// ============================================================================
-
-const pageTurnRenderer: TransitionRenderer = {
-  calculateStyles(progress, isOutgoing): TransitionStyleCalculation {
-    const p = Math.max(0, Math.min(1, progress));
-    if (isOutgoing) {
-      // Page curls away: combine rotation with origin at left edge
-      const angle = p * 90;
-      return {
-        transform: `perspective(1200px) rotateY(${-angle}deg)`,
-        // We'll use transform-origin via properties but CSS handles it
-      };
-    }
-    // Incoming appears underneath
-    return { opacity: p > 0.1 ? 1 : 0 };
-  },
-  renderCanvas(ctx, leftCanvas, rightCanvas, progress, _dir, canvas) {
-    const p = Math.max(0, Math.min(1, progress));
-    const w = canvas?.width ?? leftCanvas.width;
-    const h = canvas?.height ?? leftCanvas.height;
-
-    // Draw incoming underneath
-    ctx.drawImage(rightCanvas, 0, 0);
-
-    if (p < 1) {
-      // Draw outgoing with squeeze effect (page turn approximation)
-      ctx.save();
-      const scale = Math.cos(p * Math.PI / 2);
-      ctx.translate(0, 0);
-      ctx.scale(scale, 1);
-      ctx.globalAlpha = 1 - p * 0.3;
-      ctx.drawImage(leftCanvas, 0, 0, w, h);
-      ctx.restore();
-    }
-  },
-};
-
-const pageTurnDef: TransitionDefinition = {
-  id: 'page-turn',
-  label: 'Page Turn',
-  description: 'Page curl effect',
-  category: 'flip',
-  icon: 'BookOpen',
-  hasDirection: false,
-  supportedTimings: [...ALL_TIMINGS],
-  defaultDuration: 30,
-  minDuration: 10,
-  maxDuration: 60,
-};
-
-// ============================================================================
 // Registration
 // ============================================================================
 
 export function registerFlipTransitions(registry: TransitionRegistry): void {
   registry.register('flip', flipDef, flipRenderer);
-  registry.register('cube', cubeDef, cubeRenderer);
-  registry.register('page-turn', pageTurnDef, pageTurnRenderer);
 }

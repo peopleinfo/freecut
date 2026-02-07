@@ -896,7 +896,8 @@ async function createCompositionRenderer(
               videoElements,
               imageElements,
               keyframesMap,
-              adjustmentLayers
+              adjustmentLayers,
+              trackOrder
             );
 
             // Debug: Check content after transition (only in development - expensive getImageData)
@@ -1496,7 +1497,8 @@ async function createCompositionRenderer(
     videoElements: Map<string, HTMLVideoElement>,
     imageElements: Map<string, HTMLImageElement>,
     keyframesMap: Map<string, ItemKeyframes>,
-    _adjustmentLayers: AdjustmentLayerWithTrackOrder[]
+    adjustmentLayers: AdjustmentLayerWithTrackOrder[],
+    trackOrder: number
   ): Promise<void> {
     const { leftClip, rightClip, progress, transition, transitionStart } = activeTransition;
 
@@ -1521,6 +1523,17 @@ async function createCompositionRenderer(
     const leftTransform = getAnimatedTransform(leftClip, leftKeyframes, leftEffectiveFrame, canvas);
     await renderItem(leftCtx, leftClip, leftTransform, leftEffectiveFrame, canvas, videoElements, imageElements, 0);
 
+    // Apply effects to left (outgoing) clip
+    const leftAdjEffects = getAdjustmentLayerEffects(trackOrder, adjustmentLayers, leftEffectiveFrame);
+    const leftCombinedEffects = combineEffects(leftClip.effects, leftAdjEffects);
+    let leftFinalCanvas: OffscreenCanvas = leftCanvas;
+
+    if (leftCombinedEffects.length > 0) {
+      const { canvas: leftEffectCanvas, ctx: leftEffectCtx } = canvasPool.acquire();
+      applyAllEffects(leftEffectCtx, leftCanvas, leftCombinedEffects, leftEffectiveFrame, canvas);
+      leftFinalCanvas = leftEffectCanvas;
+    }
+
     // For right clip: use effective frame for timeline position
     // Apply -halfDuration offset to source time to prevent rewind at transition end
     // Matches Remotion's rightClipSourceOffset = -halfDuration
@@ -1532,12 +1545,25 @@ async function createCompositionRenderer(
     const rightTransform = getAnimatedTransform(rightClip, rightKeyframes, rightEffectiveFrame, canvas);
     await renderItem(rightCtx, rightClip, rightTransform, rightEffectiveFrame, canvas, videoElements, imageElements, rightSourceOffset);
 
-    // Render transition
-    const transitionSettings: TransitionCanvasSettings = canvas;
-    renderTransition(ctx, activeTransition, leftCanvas, rightCanvas, transitionSettings);
+    // Apply effects to right (incoming) clip
+    const rightAdjEffects = getAdjustmentLayerEffects(trackOrder, adjustmentLayers, rightEffectiveFrame);
+    const rightCombinedEffects = combineEffects(rightClip.effects, rightAdjEffects);
+    let rightFinalCanvas: OffscreenCanvas = rightCanvas;
 
-    // Release transition canvases back to pool
+    if (rightCombinedEffects.length > 0) {
+      const { canvas: rightEffectCanvas, ctx: rightEffectCtx } = canvasPool.acquire();
+      applyAllEffects(rightEffectCtx, rightCanvas, rightCombinedEffects, rightEffectiveFrame, canvas);
+      rightFinalCanvas = rightEffectCanvas;
+    }
+
+    // Render transition with effect-applied canvases
+    const transitionSettings: TransitionCanvasSettings = canvas;
+    renderTransition(ctx, activeTransition, leftFinalCanvas, rightFinalCanvas, transitionSettings);
+
+    // Release all canvases back to pool
+    if (leftFinalCanvas !== leftCanvas) canvasPool.release(leftFinalCanvas);
     canvasPool.release(leftCanvas);
+    if (rightFinalCanvas !== rightCanvas) canvasPool.release(rightFinalCanvas);
     canvasPool.release(rightCanvas);
   }
 

@@ -11,10 +11,7 @@ import {
   registerWipeTransitions,
   registerSlideTransitions,
   registerFlipTransitions,
-  registerZoomTransitions,
   registerMaskTransitions,
-  registerBlurTransitions,
-  registerDistortionTransitions,
 } from './renderers';
 
 let registered = false;
@@ -27,8 +24,5 @@ export function registerBuiltinTransitions(): void {
   registerWipeTransitions(transitionRegistry);
   registerSlideTransitions(transitionRegistry);
   registerFlipTransitions(transitionRegistry);
-  registerZoomTransitions(transitionRegistry);
   registerMaskTransitions(transitionRegistry);
-  registerBlurTransitions(transitionRegistry);
-  registerDistortionTransitions(transitionRegistry);
 }
