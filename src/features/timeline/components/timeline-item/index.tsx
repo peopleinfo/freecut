@@ -728,6 +728,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     prevItem.speed === nextItem.speed &&
     prevIsMask === nextIsMask &&
     prevProps.timelineDuration === nextProps.timelineDuration &&
-    prevProps.trackLocked === nextProps.trackLocked
+    prevProps.trackLocked === nextProps.trackLocked &&
+    prevProps.trackHidden === nextProps.trackHidden
   );
 });
