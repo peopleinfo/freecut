@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware';
 /**
  * App-wide settings stored in localStorage
  */
-export interface AppSettings {
+interface AppSettings {
   // Timeline defaults
   defaultFps: number;
   snapEnabled: boolean;
@@ -29,7 +29,7 @@ interface SettingsActions {
   resetToDefaults: () => void;
 }
 
-export type SettingsStore = AppSettings & SettingsActions;
+type SettingsStore = AppSettings & SettingsActions;
 
 const DEFAULT_SETTINGS: AppSettings = {
   // Timeline defaults

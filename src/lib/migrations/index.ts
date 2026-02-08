@@ -27,7 +27,6 @@ const logger = createLogger('Migrations');
 
 // Re-export types and constants
 export { CURRENT_SCHEMA_VERSION } from './types';
-export type { MigrationResult } from './types';
 
 /**
  * Get the schema version from a project.

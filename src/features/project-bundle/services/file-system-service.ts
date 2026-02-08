@@ -5,7 +5,7 @@
  * and file writing during bundle import.
  */
 
-export interface FileSystemServiceError {
+interface FileSystemServiceError {
   type: 'permission_denied' | 'user_cancelled' | 'write_failed' | 'unknown';
   message: string;
   originalError?: unknown;

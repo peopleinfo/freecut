@@ -43,7 +43,7 @@ interface PendingRequest {
   abortController: AbortController;
 }
 
-export type GifFrameUpdateCallback = (gifFrames: CachedGifFrames) => void;
+type GifFrameUpdateCallback = (gifFrames: CachedGifFrames) => void;
 
 class GifFrameCacheService {
   private memoryCache = new Map<string, CachedGifFrames>();

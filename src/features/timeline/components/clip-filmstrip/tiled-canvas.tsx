@@ -3,7 +3,7 @@ import { useRef, useEffect, memo } from 'react';
 // Tile width - 1000px for faster individual renders and better cache granularity
 const TILE_WIDTH = 1000;
 
-export interface TiledCanvasProps {
+interface TiledCanvasProps {
   /** Total width of the content in pixels */
   width: number;
   /** Canvas height in pixels */

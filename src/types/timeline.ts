@@ -134,27 +134,6 @@ export interface TimelineTrack {
   items: TimelineItem[];
 }
 
-export interface Gap {
-  start: number;
-  end: number;
-  duration: number;
-}
-
-export interface SnapTarget {
-  id: string;
-  time: number;
-  type: 'clip-start' | 'clip-end' | 'playhead' | 'marker';
-  label?: string;
-}
-
-// Ruler tick markers (for time ruler display)
-export interface RulerMarker {
-  time: number;
-  position: number;
-  label: string;
-  major: boolean;
-}
-
 // Project markers (user-created timeline markers)
 export interface ProjectMarker {
   id: string;

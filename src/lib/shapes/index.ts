@@ -13,7 +13,6 @@ export {
   makeStar,
   makePolygon,
   makeHeart,
-  type ShapeResult,
 } from './shape-generators';
 
 // Path transformation utilities

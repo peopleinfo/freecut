@@ -32,7 +32,7 @@ export interface PassExecutionContext {
 /**
  * Callback for pass execution
  */
-export type PassExecuteCallback = (
+type PassExecuteCallback = (
   pass: CompiledPass,
   context: PassExecutionContext
 ) => void;

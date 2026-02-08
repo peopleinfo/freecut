@@ -141,16 +141,6 @@ export interface TransitionBreakage {
 }
 
 /**
- * Result of transition validation
- */
-export interface TransitionValidationResult {
-  /** Transitions that are still valid */
-  valid: Transition[];
-  /** Transitions that have become invalid */
-  broken: TransitionBreakage[];
-}
-
-/**
  * Result of transition auto-repair
  */
 export interface TransitionRepairResult {
@@ -173,30 +163,9 @@ export interface ClipTransitionIndex {
 }
 
 /**
- * A chain of clips connected by transitions on the same track.
- * Pre-computed for efficient transition lookups.
- */
-export interface TransitionChain {
-  /** Unique identifier for the chain (based on first clip) */
-  id: string;
-  /** Version number for cache invalidation */
-  version: number;
-  /** Ordered clip IDs in the chain (left to right) */
-  clipIds: string[];
-  /** Transition IDs connecting the clips (length = clipIds.length - 1) */
-  transitionIds: string[];
-  /** Track where the chain resides */
-  trackId: string;
-  /** Start frame of the chain (first clip's from) */
-  startFrame: number;
-  /** End frame in original timeline (last clip's from + duration) */
-  endFrame: number;
-}
-
-/**
  * Configuration for transition types
  */
-export interface TransitionConfig {
+interface TransitionConfig {
   label: string;
   description: string;
   /** Default duration in frames */
@@ -251,33 +220,6 @@ export interface TransitionDefinition {
   requiresWebGL?: boolean;
 }
 
-/**
- * A saved transition preset with specific configuration.
- */
-export interface TransitionPreset {
-  /** Unique identifier */
-  id: string;
-  /** Display name */
-  name: string;
-  /** Category for filtering */
-  category: TransitionCategory;
-  /** The transition configuration */
-  config: {
-    presentation: TransitionPresentation;
-    timing: TransitionTiming;
-    durationInFrames: number;
-    direction?: WipeDirection | SlideDirection | FlipDirection;
-    alignment?: number;
-    bezierPoints?: BezierPoints;
-    properties?: Record<string, unknown>;
-  };
-  /** Whether this is a built-in preset (cannot be deleted) */
-  builtIn: boolean;
-  /** Optional thumbnail URL */
-  thumbnailUrl?: string;
-  /** Tags for search */
-  tags: string[];
-}
 
 /**
  * Configuration for each presentation type.

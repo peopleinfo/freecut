@@ -80,8 +80,8 @@ export function filterByFps(projects: Project[], fps?: number): Project[] {
 /**
  * Sort projects
  */
-export type SortField = 'name' | 'createdAt' | 'updatedAt' | 'resolution';
-export type SortDirection = 'asc' | 'desc';
+type SortField = 'name' | 'createdAt' | 'updatedAt' | 'resolution';
+type SortDirection = 'asc' | 'desc';
 
 export function sortProjects(
   projects: Project[],

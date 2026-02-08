@@ -8,7 +8,7 @@ const MAX_HISTORY = 100;
  * Command store state.
  * Maintains undo/redo stacks and provides atomic history management.
  */
-export interface CommandStoreState {
+interface CommandStoreState {
   undoStack: CommandEntry[];
   redoStack: CommandEntry[];
   canUndo: boolean;
@@ -19,7 +19,7 @@ export interface CommandStoreState {
  * Command store actions.
  * The execute() function is the core API - it captures state before running an action.
  */
-export interface CommandStoreActions {
+interface CommandStoreActions {
   /**
    * Execute a command with automatic undo support.
    * Captures a snapshot before running the action, enabling undo.

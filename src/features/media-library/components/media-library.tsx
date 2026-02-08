@@ -29,7 +29,7 @@ import { UnsupportedAudioCodecDialog } from './unsupported-audio-codec-dialog';
 import { useMediaLibraryStore } from '../stores/media-library-store';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 
-export interface MediaLibraryProps {
+interface MediaLibraryProps {
   onMediaSelect?: (mediaId: string) => void;
 }
 

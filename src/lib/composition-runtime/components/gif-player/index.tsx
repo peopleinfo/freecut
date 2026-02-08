@@ -4,7 +4,7 @@ import { useVideoConfig } from '../../hooks/use-player-compat';
 import { useGifFrames } from '../../../../features/timeline/hooks/use-gif-frames';
 import { GifCanvas } from './gif-canvas';
 
-export interface GifPlayerProps {
+interface GifPlayerProps {
   /** Media ID for cache lookup */
   mediaId: string;
   /** Blob URL for the GIF file */

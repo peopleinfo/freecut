@@ -26,7 +26,7 @@ import {
  * Enriched visual item with track metadata for rendering.
  * Matches the structure expected by MainComposition.
  */
-export type EnrichedVisualItem = TimelineItem & {
+type EnrichedVisualItem = TimelineItem & {
   zIndex: number;
   muted: boolean;
   trackOrder: number;

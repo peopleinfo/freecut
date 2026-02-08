@@ -37,7 +37,7 @@ import {
 /**
  * Debug API interface
  */
-export interface ProjectDebugAPI {
+interface ProjectDebugAPI {
   // Export functions
   exportProject: (projectId: string, options?: SnapshotExportOptions) => Promise<ProjectSnapshot>;
   exportProjectString: (projectId: string, options?: SnapshotExportOptions) => Promise<string>;

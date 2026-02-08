@@ -3,7 +3,7 @@ import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useTimelineZoomContext } from '../contexts/timeline-zoom-context';
 import { formatTimecode } from '@/utils/time-utils';
 
-export interface TimelinePreviewScrubberProps {
+interface TimelinePreviewScrubberProps {
   inRuler?: boolean;
 }
 

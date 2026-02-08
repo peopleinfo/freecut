@@ -875,6 +875,3 @@ export const ValueGraphEditor = memo(function ValueGraphEditor({
     </div>
   );
 });
-
-// Re-export types and components
-export type { GraphViewport, GraphKeyframePoint, GraphPadding } from './types';

@@ -9,7 +9,7 @@ import {
 } from '@/lib/composition-runtime/utils/transform-resolver';
 import { resolveAnimatedTransform } from '../utils/animated-transform-resolver';
 
-export interface AnimatedTransformResult {
+interface AnimatedTransformResult {
   /** The fully resolved transform with keyframe animation applied */
   transform: ResolvedTransform;
   /** Whether this item has any keyframes */

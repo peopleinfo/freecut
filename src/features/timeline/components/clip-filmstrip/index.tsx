@@ -4,7 +4,7 @@ import { useFilmstrip, type FilmstripFrame } from '../../hooks/use-filmstrip';
 import { mediaLibraryService } from '@/features/media-library/services/media-library-service';
 import { THUMBNAIL_WIDTH } from '../../services/filmstrip-cache';
 
-export interface ClipFilmstripProps {
+interface ClipFilmstripProps {
   /** Media ID from the timeline item */
   mediaId: string;
   /** Width of the clip in pixels */

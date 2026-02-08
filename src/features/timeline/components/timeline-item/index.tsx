@@ -24,7 +24,7 @@ import { ItemContextMenu } from './item-context-menu';
 // Width in pixels for edge hover detection (trim/rate-stretch handles)
 const EDGE_HOVER_ZONE = 8;
 
-export interface TimelineItemProps {
+interface TimelineItemProps {
   item: TimelineItemType;
   timelineDuration?: number;
   trackLocked?: boolean;

@@ -49,7 +49,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 
-export interface TimelineTrackProps {
+interface TimelineTrackProps {
   track: TimelineTrackType;
   timelineWidth?: number;
 }

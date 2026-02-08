@@ -637,7 +637,7 @@ const VideoContent: React.FC<{
 // ShapeContent extracted to ./shape-content.tsx
 
 
-export interface ItemProps {
+interface ItemProps {
   item: TimelineItem;
   muted?: boolean;
   /** Active masks that should clip this item's content */

@@ -16,12 +16,12 @@ import { TRANSITION_CONFIGS } from '@/types/transition';
  * pendingBreakages is ephemeral - not tracked in undo/redo.
  */
 
-export interface TransitionsState {
+interface TransitionsState {
   transitions: Transition[];
   pendingBreakages: TransitionBreakage[];
 }
 
-export interface TransitionsActions {
+interface TransitionsActions {
   // Bulk setters for snapshot restore
   setTransitions: (transitions: Transition[]) => void;
   setPendingBreakages: (breakages: TransitionBreakage[]) => void;

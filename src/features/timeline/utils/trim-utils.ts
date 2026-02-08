@@ -8,7 +8,7 @@ import {
 
 export type TrimHandle = 'start' | 'end';
 
-export interface TrimClampResult {
+interface TrimClampResult {
   clampedAmount: number;
   maxExtend: number | null;
 }
@@ -97,7 +97,7 @@ function clampToMinDuration(
 /**
  * Calculate new source boundaries after a trim operation.
  */
-export interface TrimSourceUpdate {
+interface TrimSourceUpdate {
   sourceStart?: number;
   sourceEnd?: number;
 }

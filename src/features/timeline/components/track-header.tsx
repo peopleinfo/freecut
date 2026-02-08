@@ -5,7 +5,7 @@ import type { TimelineTrack } from '@/types/timeline';
 import { useTrackDrag, trackDragOffsetRef } from '../hooks/use-track-drag';
 import { useSelectionStore } from '@/features/editor/stores/selection-store';
 
-export interface TrackHeaderProps {
+interface TrackHeaderProps {
   track: TimelineTrack;
   isActive: boolean;
   isSelected: boolean;

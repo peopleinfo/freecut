@@ -17,7 +17,7 @@ export type DataType = 'color' | 'alpha' | 'number' | 'vec2' | 'vec4' | 'texture
 /**
  * Parameter types for node controls
  */
-export type ParamType = 'number' | 'boolean' | 'color' | 'select' | 'string';
+type ParamType = 'number' | 'boolean' | 'color' | 'select' | 'string';
 
 /**
  * Blend modes for compositing

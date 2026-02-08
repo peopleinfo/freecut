@@ -16,7 +16,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
 
-export interface TransitionItemProps {
+interface TransitionItemProps {
   transition: Transition;
   trackHeight: number;
   trackHidden?: boolean;

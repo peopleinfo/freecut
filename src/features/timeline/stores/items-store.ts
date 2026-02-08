@@ -15,12 +15,12 @@ const log = createLogger('ItemsStore');
  * by timeline-actions.ts using the command system.
  */
 
-export interface ItemsState {
+interface ItemsState {
   items: TimelineItem[];
   tracks: TimelineTrack[];
 }
 
-export interface ItemsActions {
+interface ItemsActions {
   // Bulk setters for snapshot restore
   setItems: (items: TimelineItem[]) => void;
   setTracks: (tracks: TimelineTrack[]) => void;

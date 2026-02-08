@@ -17,11 +17,6 @@ export type MediaSourceState = 'idle' | 'loading' | 'ready' | 'error' | 'closed'
 export type PixelFormat = 'rgba' | 'rgb' | 'yuv420' | 'yuv422' | 'yuv444' | 'nv12';
 
 /**
- * Media track type
- */
-export type TrackType = 'video' | 'audio';
-
-/**
  * Probe result from format detection
  */
 export interface ProbeResult {

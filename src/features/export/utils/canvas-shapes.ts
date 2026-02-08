@@ -16,7 +16,7 @@ const log = createLogger('CanvasShapes');
 /**
  * Canvas dimensions for shape rendering
  */
-export interface ShapeCanvasSettings {
+interface ShapeCanvasSettings {
   width: number;
   height: number;
 }

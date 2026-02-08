@@ -5,17 +5,17 @@
  * This reduces GPU draw calls and texture reads for chained effects.
  */
 
-import type { CompiledPass, ShaderNode } from './types';
+import type { CompiledPass } from './types';
 
 /**
  * Categories of operations that can be merged
  */
-export type MergeCategory = 'color' | 'transform' | 'blur' | 'blend' | 'unknown';
+type MergeCategory = 'color' | 'transform' | 'blur' | 'blend' | 'unknown';
 
 /**
  * Information about a pass's merge compatibility
  */
-export interface PassMergeInfo {
+interface PassMergeInfo {
   pass: CompiledPass;
   category: MergeCategory;
   canMerge: boolean;
@@ -25,7 +25,7 @@ export interface PassMergeInfo {
 /**
  * Result of pass merging
  */
-export interface MergeResult {
+interface MergeResult {
   passes: CompiledPass[];
   mergedCount: number;
   originalCount: number;

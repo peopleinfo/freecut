@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 
-export interface ZoomState {
+interface ZoomState {
   level: number;
   pixelsPerSecond: number;
 }
 
-export interface ZoomActions {
+interface ZoomActions {
   setZoomLevel: (level: number) => void;
   setZoomLevelImmediate: (level: number) => void; // Bypasses throttle for smooth momentum zoom
   zoomIn: () => void;

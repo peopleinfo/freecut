@@ -22,7 +22,7 @@ export interface AdjustmentLayerWithTrackOrder {
 /**
  * Canvas settings for effect rendering
  */
-export interface EffectCanvasSettings {
+interface EffectCanvasSettings {
   width: number;
   height: number;
 }

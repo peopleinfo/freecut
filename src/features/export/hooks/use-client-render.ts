@@ -26,7 +26,7 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('useClientRender');
 
-export type ClientRenderStatus =
+type ClientRenderStatus =
   | 'idle'
   | 'preparing'
   | 'rendering'

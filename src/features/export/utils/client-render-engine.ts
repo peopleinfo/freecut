@@ -76,7 +76,7 @@ type MediabunnyModule = typeof import('mediabunny');
 
 // CanvasPool, TextMeasurementCache, and VideoFrameExtractor are imported from separate modules
 
-export interface RenderEngineOptions {
+interface RenderEngineOptions {
   settings: ClientExportSettings;
   composition: CompositionInputProps;
   onProgress: (progress: RenderProgress) => void;
@@ -1598,7 +1598,7 @@ async function createCompositionRenderer(
 // SINGLE FRAME RENDERING (for thumbnails)
 // =============================================================================
 
-export interface SingleFrameOptions {
+interface SingleFrameOptions {
   composition: CompositionInputProps;
   frame: number;
   width?: number;
@@ -1656,7 +1656,7 @@ export async function renderSingleFrame(options: SingleFrameOptions): Promise<Bl
 // AUDIO-ONLY RENDERING
 // =============================================================================
 
-export interface AudioRenderOptions {
+interface AudioRenderOptions {
   settings: ClientExportSettings;
   composition: CompositionInputProps;
   onProgress: (progress: RenderProgress) => void;

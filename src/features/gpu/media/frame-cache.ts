@@ -24,12 +24,12 @@ function getPerformanceMemory(): PerformanceMemory | null {
 /**
  * Cache eviction policy
  */
-export type EvictionPolicy = 'lru' | 'lfu' | 'fifo';
+type EvictionPolicy = 'lru' | 'lfu' | 'fifo';
 
 /**
  * Frame cache configuration
  */
-export interface FrameCacheConfig {
+interface FrameCacheConfig {
   /** Maximum cache size in bytes */
   maxSizeBytes: number;
   /** Eviction policy (default: 'lru') */
@@ -431,7 +431,7 @@ export function createFrameCache(maxSizeMB: number = 500): FrameCache {
 /**
  * Memory pressure detector
  */
-export interface MemoryPressureDetector {
+interface MemoryPressureDetector {
   /** Current memory usage in bytes */
   getUsedMemory(): number;
   /** Available memory in bytes */

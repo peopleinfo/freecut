@@ -44,7 +44,7 @@ function preloadBundleExportDialog() {
 }
 
 /** Project metadata passed from route loader (timeline loaded separately via loadTimeline) */
-export interface EditorProps {
+interface EditorProps {
   projectId: string;
   project: {
     id: string;

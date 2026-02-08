@@ -45,18 +45,9 @@ interface PooledTexture {
 }
 
 /**
- * Texture pool key
- */
-interface PoolKey {
-  width: number;
-  height: number;
-  format: TextureFormat;
-}
-
-/**
  * Texture importer configuration
  */
-export interface TextureImporterConfig {
+interface TextureImporterConfig {
   /** Maximum pooled textures per resolution */
   maxPooledPerSize?: number;
   /** Pool cleanup interval in ms */
@@ -379,6 +370,7 @@ export class TextureImporter {
    * Destroy a texture through the backend
    */
   private destroyTexture(handle: TextureHandle): void {
+    void handle;
     // Backend doesn't have a destroy method in the interface,
     // but WebGPU/WebGL2 backends have releaseTexture internally
     // For now, we just let the texture be garbage collected

@@ -4,7 +4,7 @@ import type { TimelineItem } from '@/types/timeline';
 /**
  * Result of auto-keyframing a property
  */
-export interface AutoKeyframeResult {
+interface AutoKeyframeResult {
   /** Whether this property was auto-keyframed */
   handled: boolean;
   /** Action to perform: 'add' new keyframe or 'update' existing */

@@ -10,7 +10,7 @@ import type { ShaderNode } from '../types';
 /**
  * Transform parameters
  */
-export interface TransformParams {
+interface TransformParams {
   /** Scale X factor (1.0 = no scale) */
   scaleX?: number;
   /** Scale Y factor (1.0 = no scale) */

@@ -15,7 +15,7 @@ const log = createLogger('CanvasMasks');
 /**
  * Mask shape with its track order for scope calculation
  */
-export interface MaskWithTrackOrder {
+interface MaskWithTrackOrder {
   mask: ShapeItem;
   trackOrder: number;
 }

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-export interface DebugOverlayProps {
+interface DebugOverlayProps {
   /** Unique identifier for the item */
   id?: string;
   /** Playback speed multiplier */

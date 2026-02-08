@@ -44,7 +44,7 @@ export interface PrefetchRequest {
 /**
  * Prefetch statistics
  */
-export interface PrefetchStats {
+interface PrefetchStats {
   /** Total requests made */
   totalRequests: number;
   /** Completed requests */
@@ -62,7 +62,7 @@ export interface PrefetchStats {
 /**
  * Prefetcher configuration
  */
-export interface PrefetcherConfig {
+interface PrefetcherConfig {
   /** Maximum concurrent fetches */
   maxConcurrent?: number;
   /** Default frames ahead to prefetch */
@@ -283,7 +283,7 @@ export class FramePrefetcher {
     this.isRunning = true;
 
     // Schedule initial prefetch for all sources
-    for (const [sourceId, _info] of this.sources) {
+    for (const [sourceId] of this.sources) {
       const playhead = this.currentPlayhead.get(sourceId) ?? 0;
       this.schedulePrefetch(sourceId, playhead);
     }

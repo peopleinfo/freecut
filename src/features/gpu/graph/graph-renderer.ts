@@ -39,7 +39,7 @@ export interface SourceTextureInfo {
 /**
  * Render result information
  */
-export interface RenderResult {
+interface RenderResult {
   /** Total passes executed */
   passCount: number;
   /** Time spent rendering (ms) */

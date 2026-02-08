@@ -63,7 +63,7 @@ export interface TransitionRenderer {
 /**
  * Entry stored in the registry for each transition.
  */
-export interface TransitionRegistryEntry {
+interface TransitionRegistryEntry {
   definition: TransitionDefinition;
   renderer: TransitionRenderer;
 }

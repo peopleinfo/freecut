@@ -30,7 +30,7 @@ import type React from 'react';
  * Consolidated visual state for an item.
  * Single source of truth for all rendering-related state.
  */
-export interface ItemVisualState {
+interface ItemVisualState {
   /** Resolved transform (handles: unified preview > gizmo preview > keyframes > base) */
   transform: ResolvedTransform;
   /** CSS style for positioning (from toTransformStyle) */

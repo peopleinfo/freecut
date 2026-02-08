@@ -16,7 +16,7 @@ import { createProjectObject, duplicateProject } from '../utils/project-helpers'
 // v3: Import media service for cascade operations
 import { mediaLibraryService } from '@/features/media-library/services/media-library-service';
 
-export interface ProjectState {
+interface ProjectState {
   // Data
   projects: Project[];
   currentProject: Project | null;
@@ -33,7 +33,7 @@ export interface ProjectState {
   filterFps?: number;
 }
 
-export interface ProjectActions {
+interface ProjectActions {
   // CRUD Operations
   loadProjects: () => Promise<void>;
   loadProject: (id: string) => Promise<Project | null>;

@@ -12,7 +12,7 @@ export interface AdjustmentLayerWithTrackOrder {
   trackOrder: number;
 }
 
-export interface ItemEffectWrapperProps {
+interface ItemEffectWrapperProps {
   /** The item's track order (used to determine if effects should apply) */
   itemTrackOrder: number;
   /** All adjustment layers (from visible tracks) */

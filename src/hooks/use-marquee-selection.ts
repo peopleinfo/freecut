@@ -34,7 +34,7 @@ export interface MarqueeItem {
 /**
  * Options for marquee selection
  */
-export interface UseMarqueeSelectionOptions {
+interface UseMarqueeSelectionOptions {
   /** The container element that marquee selection is scoped to */
   containerRef: React.RefObject<HTMLElement>;
 

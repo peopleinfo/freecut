@@ -53,10 +53,8 @@ export const SCROLL_SMOOTHING = 0.15;
 export const SCROLL_GESTURE_TIMEOUT = 100; // ms
 
 // Zoom momentum (shared between ctrl+scroll and slider)
-export const ZOOM_SENSITIVITY = 0.003; // Lower = finer zoom control
 export const ZOOM_FRICTION = 0; // 0 = instant zoom (no momentum drift after gesture)
 export const ZOOM_MIN_VELOCITY = 0.001;
-export const ZOOM_SMOOTHING = 1; // 1 = instant (no velocity blending)
 
 // Aliases for zoom limits (used by momentum code)
 export const ZOOM_MIN = MIN_ZOOM_LEVEL;

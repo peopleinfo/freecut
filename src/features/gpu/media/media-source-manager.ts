@@ -12,16 +12,12 @@ import type {
   DecodedVideoFrame,
   DecodedAudioSamples,
   SeekTarget,
-  VideoTrackInfo,
-  AudioTrackInfo,
   MediaEventType,
   MediaEvent,
   MediaEventListener,
 } from './types';
 import type { DecoderPath, VideoCodec, AudioCodec } from './codec-support';
 import {
-  parseVideoCodec,
-  parseAudioCodec,
   getVideoDecoderPath,
   getAudioDecoderPath,
 } from './codec-support';
@@ -32,7 +28,7 @@ import { FrameCache, createFrameCache } from './frame-cache';
 /**
  * Media source configuration
  */
-export interface MediaSourceConfig {
+interface MediaSourceConfig {
   /** Frame cache to use (shared across sources) */
   frameCache?: FrameCache;
   /** Preferred decoder path */
@@ -46,7 +42,7 @@ export interface MediaSourceConfig {
 /**
  * Media source manager configuration
  */
-export interface MediaSourceManagerConfig {
+interface MediaSourceManagerConfig {
   /** Maximum number of concurrent sources */
   maxConcurrentSources?: number;
   /** Default frame cache size in MB */
@@ -182,6 +178,8 @@ export class ManagedMediaSource implements MediaSource {
     startMs: number,
     durationMs: number
   ): Promise<DecodedAudioSamples | null> {
+    void startMs;
+    void durationMs;
     if (this._state !== 'ready' || !this._probeResult?.audio) {
       return null;
     }

@@ -13,7 +13,7 @@ export type CSSFilterType =
 export type GlitchVariant = 'rgb-split' | 'scanlines' | 'color-glitch';
 
 // Canvas-based effect variants (require pixel-level processing)
-export type CanvasEffectVariant = 'halftone';
+type CanvasEffectVariant = 'halftone';
 
 // Halftone pattern types
 export type HalftonePatternType = 'dots' | 'lines' | 'rays' | 'ripples';
@@ -21,11 +21,8 @@ export type HalftonePatternType = 'dots' | 'lines' | 'rays' | 'ripples';
 // Halftone blend modes
 export type HalftoneBlendMode = 'multiply' | 'screen' | 'overlay' | 'soft-light';
 
-// Halftone fade directions for gradient blend (legacy - kept for backwards compatibility)
-export type HalftoneFadeDirection = 'none' | 'top' | 'bottom' | 'left' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-
 // Overlay effect variants (CSS-based overlays)
-export type OverlayEffectVariant = 'vignette';
+type OverlayEffectVariant = 'vignette';
 
 // CSS filter effect configuration
 export interface CSSFilterEffect {
@@ -82,7 +79,7 @@ export interface ItemEffect {
 }
 
 // Filter configuration metadata for UI
-export interface FilterConfig {
+interface FilterConfig {
   label: string;
   min: number;
   max: number;
@@ -158,7 +155,7 @@ export const OVERLAY_EFFECT_CONFIGS: Record<OverlayEffectVariant, { label: strin
 };
 
 // Effect presets (combinations of multiple effects)
-export interface EffectPreset {
+interface EffectPreset {
   id: string;
   name: string;
   effects: VisualEffect[];

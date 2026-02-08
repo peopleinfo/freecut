@@ -19,7 +19,7 @@ import { DEFAULT_TRACK_HEIGHT } from '@/features/timeline/constants';
 // Hoisted RegExp - avoids recreation on every render (js-hoist-regexp)
 const TRACK_NUMBER_REGEX = /^Track (\d+)$/;
 
-export interface TimelineProps {
+interface TimelineProps {
   duration: number; // Total timeline duration in seconds
   /** Callback when graph panel open state changes - used by parent to resize panel */
   onGraphPanelOpenChange?: (isOpen: boolean) => void;

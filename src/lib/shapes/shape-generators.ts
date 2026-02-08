@@ -5,7 +5,7 @@
  * All paths are generated at origin (0,0) and can be translated/scaled as needed.
  */
 
-export interface ShapeResult {
+interface ShapeResult {
   path: string;
   width: number;
   height: number;

@@ -22,7 +22,7 @@ import { getVideoDecoderPath, getAudioDecoderPath } from './codec-support';
 /**
  * FFmpeg.wasm loading state
  */
-export type FFmpegLoadState = 'unloaded' | 'loading' | 'loaded' | 'error';
+type FFmpegLoadState = 'unloaded' | 'loading' | 'loaded' | 'error';
 
 /**
  * FFmpeg decoder state
@@ -32,7 +32,7 @@ type FFmpegDecoderState = 'unconfigured' | 'configured' | 'closed';
 /**
  * FFmpeg load progress event
  */
-export interface FFmpegLoadProgress {
+interface FFmpegLoadProgress {
   /** Bytes received */
   received: number;
   /** Total bytes (if known) */
@@ -44,7 +44,7 @@ export interface FFmpegLoadProgress {
 /**
  * FFmpeg load options
  */
-export interface FFmpegLoadOptions {
+interface FFmpegLoadOptions {
   /** Custom path to ffmpeg-core.wasm */
   corePath?: string;
   /** Custom path to ffmpeg-core.worker.js */

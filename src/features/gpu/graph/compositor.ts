@@ -5,7 +5,7 @@
  * Generates shader graph for efficient GPU-based compositing.
  */
 
-import type { ShaderNode, CompiledPass, BlendMode } from './types';
+import type { CompiledPass, BlendMode } from './types';
 import { ShaderGraphBuilder } from './shader-graph';
 import { GraphCompiler } from './compiler';
 import { createTextureSourceNode } from './nodes/source-node';
@@ -66,7 +66,7 @@ export interface CompositionSettings {
 /**
  * Result of compositor build
  */
-export interface CompositorResult {
+interface CompositorResult {
   /** Generated shader graph */
   graph: ShaderGraphBuilder;
   /** Compiled render passes */

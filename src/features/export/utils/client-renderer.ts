@@ -15,7 +15,7 @@
 import type { ExportSettings } from '@/types/export';
 
 // Codec mapping for mediabunny
-export type ClientVideoCodec = 'avc' | 'hevc' | 'vp8' | 'vp9' | 'av1';
+type ClientVideoCodec = 'avc' | 'hevc' | 'vp8' | 'vp9' | 'av1';
 export type ClientAudioCodec = 'aac' | 'opus' | 'mp3' | 'flac' | 'pcm-s16';
 export type ClientCodec = ClientVideoCodec; // Alias for backwards compatibility
 

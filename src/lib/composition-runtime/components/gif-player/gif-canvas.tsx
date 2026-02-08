@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, memo } from 'react';
 
-export interface GifCanvasProps {
+interface GifCanvasProps {
   /** The ImageBitmap frame to render */
   frame: ImageBitmap | null;
   /** How to fit the frame within the container */

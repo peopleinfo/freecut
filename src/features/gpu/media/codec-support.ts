@@ -45,7 +45,7 @@ export type DecoderPath = 'webcodecs' | 'ffmpeg' | 'unsupported';
 /**
  * Codec support result
  */
-export interface CodecSupportResult {
+interface CodecSupportResult {
   codec: VideoCodec | AudioCodec;
   supported: boolean;
   decoderPath: DecoderPath;
@@ -55,7 +55,7 @@ export interface CodecSupportResult {
 /**
  * WebCodecs support check result
  */
-export interface WebCodecsSupport {
+interface WebCodecsSupport {
   available: boolean;
   videoDecoder: boolean;
   audioDecoder: boolean;

@@ -55,11 +55,6 @@ export const useProjectsLoading = () => useProjectStore((s) => s.isLoading);
 export const useProjectsError = () => useProjectStore((s) => s.error);
 
 /**
- * Get search query
- */
-export const useSearchQuery = () => useProjectStore((s) => s.searchQuery);
-
-/**
  * Get sort field
  */
 export const useSortField = () => useProjectStore((s) => s.sortField);

@@ -8,7 +8,7 @@
 
 import { getMimeType } from './validation';
 
-export interface ThumbnailOptions {
+interface ThumbnailOptions {
   maxSize?: number; // Max dimension (width or height) - aspect ratio preserved
   quality?: number;
   timestamp?: number; // For video, timestamp in seconds

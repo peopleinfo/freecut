@@ -362,12 +362,8 @@ const snapshotSchema = z.object({
 // Type Exports (inferred from schemas)
 // ============================================================================
 
-export type ValidatedProject = z.infer<typeof projectSchema>;
-export type ValidatedTimeline = z.infer<typeof timelineSchema>;
-export type ValidatedTimelineItem = z.infer<typeof timelineItemSchema>;
-export type ValidatedTrack = z.infer<typeof trackSchema>;
-export type ValidatedMediaReference = z.infer<typeof mediaReferenceSchema>;
-export type ValidatedSnapshot = z.infer<typeof snapshotSchema>;
+type ValidatedProject = z.infer<typeof projectSchema>;
+type ValidatedSnapshot = z.infer<typeof snapshotSchema>;
 
 // ============================================================================
 // Validation Functions

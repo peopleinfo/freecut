@@ -17,10 +17,8 @@ import {
   SCROLL_MIN_VELOCITY,
   SCROLL_SMOOTHING,
   SCROLL_GESTURE_TIMEOUT,
-  ZOOM_SENSITIVITY,
   ZOOM_FRICTION,
   ZOOM_MIN_VELOCITY,
-  ZOOM_SMOOTHING,
 } from '../constants';
 
 // Components
@@ -32,7 +30,7 @@ import { TimelineGuidelines } from './timeline-guidelines';
 import { TimelineSplitIndicator } from './timeline-split-indicator';
 import { MarqueeOverlay } from '@/components/marquee-overlay';
 
-export interface TimelineContentProps {
+interface TimelineContentProps {
   duration: number; // Total timeline duration in seconds
   scrollRef?: React.RefObject<HTMLDivElement | null>; // Optional ref for scroll syncing
   onZoomHandlersReady?: (handlers: {
@@ -56,6 +54,7 @@ export interface TimelineContentProps {
  * Memoized to prevent re-renders when props haven't changed.
  */
 export const TimelineContent = memo(function TimelineContent({ duration, scrollRef, onZoomHandlersReady }: TimelineContentProps) {
+  void duration;
   // Use granular selectors - Zustand v5 best practice
   const tracks = useTimelineStore((s) => s.tracks);
   const fps = useTimelineStore((s) => s.fps);
@@ -68,7 +67,7 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
   const furthestItemEndFrame = useTimelineStore((s) =>
     s.items.reduce((max, item) => Math.max(max, item.from + item.durationInFrames), 0)
   );
-  const { timeToPixels, pixelsToTime, frameToPixels, pixelsToFrame, setZoom, setZoomImmediate, zoomLevel } = useTimelineZoom({
+  const { timeToPixels, frameToPixels, pixelsToFrame, setZoom, setZoomImmediate, zoomLevel } = useTimelineZoom({
     minZoom: 0.01,
     maxZoom: 2, // Match slider range
   });
@@ -94,7 +93,6 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
 
   const tracksContainerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const [scrollLeft, setScrollLeft] = useState(0);
   const marqueeWasActiveRef = useRef(false);
   const dragWasActiveRef = useRef(false);
   const scrubWasActiveRef = useRef(false);
@@ -178,9 +176,6 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
   const frameToPixelsRef = useRef(frameToPixels);
   frameToPixelsRef.current = frameToPixels;
 
-  const fpsRef = useRef(fps);
-  fpsRef.current = fps;
-
   const zoomLevelRef = useRef(zoomLevel);
   zoomLevelRef.current = zoomLevel;
 
@@ -195,7 +190,6 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
   const momentumIdRef = useRef<number | null>(null);
   const lastWheelTimeRef = useRef(0);
   const zoomCursorXRef = useRef(0); // Cursor X position (relative to container) for zoom anchor
-  const lastZoomWheelTimeRef = useRef(0); // Track zoom gesture separately
   const pendingScrollRef = useRef<number | null>(null); // Queued scroll to apply after render
   const lastZoomApplyTimeRef = useRef(0); // Throttle zoom updates in momentum loop
   const ZOOM_UPDATE_INTERVAL = 50; // Match store throttle - update at most 20fps during momentum
@@ -259,7 +253,6 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
       if (scrollUpdateTimeoutRef.current === null) {
         scrollUpdateTimeoutRef.current = setTimeout(() => {
           scrollUpdateTimeoutRef.current = null;
-          setScrollLeft(scrollLeftRef.current);
           // Sync to store for persistence (debounced to avoid excessive updates)
           setScrollPosition(scrollLeftRef.current);
         }, SCROLL_THROTTLE_MS);
@@ -287,7 +280,6 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
     if (savedScrollPosition > 0) {
       container.scrollLeft = savedScrollPosition;
       scrollLeftRef.current = savedScrollPosition;
-      setScrollLeft(savedScrollPosition);
     }
     initialScrollRestored.current = true;
   }, []);
@@ -522,7 +514,6 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
     const container = containerRef.current;
     if (!container) return;
 
-    const fps = fpsRef.current;
     const currentZoom = zoomLevelRef.current;
 
     // Clamp zoom to valid range
@@ -620,7 +611,6 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
         handleZoomToFit,
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps - only call once on mount
 
   // Momentum scroll/zoom loop using requestAnimationFrame

@@ -33,7 +33,7 @@ export function clearAudioDecodeCache(): void {
 /**
  * Audio segment representing a timeline item's audio
  */
-export interface AudioSegment {
+interface AudioSegment {
   itemId: string;
   trackId: string;
   src: string;
@@ -51,7 +51,7 @@ export interface AudioSegment {
 /**
  * Decoded audio data
  */
-export interface DecodedAudio {
+interface DecodedAudio {
   itemId: string;
   sampleRate: number;
   channels: number;
@@ -62,7 +62,7 @@ export interface DecodedAudio {
 /**
  * Audio processing configuration
  */
-export interface AudioProcessingConfig {
+interface AudioProcessingConfig {
   sampleRate: number;
   channels: number;
   fps: number;
@@ -862,14 +862,6 @@ export function createAudioBuffer(
   }
 
   return audioBuffer;
-}
-
-/**
- * Audio encoding configuration for mediabunny
- */
-export interface AudioEncodingOptions {
-  codec: 'aac' | 'opus' | 'mp3';
-  bitrate: number;
 }
 
 /**
