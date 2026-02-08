@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo, useCallback } from 'react';
+import { useEffect, useRef, useState, memo, useCallback, useMemo } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { TimelineHeader } from './timeline-header';
 import { TimelineContent } from './timeline-content';
@@ -52,6 +52,7 @@ export const Timeline = memo(function Timeline({ duration, onGraphPanelOpenChang
   const selectedTrackIds = useSelectionStore((s) => s.selectedTrackIds);
   const setActiveTrack = useSelectionStore((s) => s.setActiveTrack);
   const toggleTrackSelection = useSelectionStore((s) => s.toggleTrackSelection);
+  const selectedTrackIdsSet = useMemo(() => new Set(selectedTrackIds), [selectedTrackIds]);
 
   // Refs for syncing scroll between track headers and timeline content
   const trackHeadersContainerRef = useRef<HTMLDivElement>(null);
@@ -191,25 +192,25 @@ export const Timeline = memo(function Timeline({ duration, onGraphPanelOpenChang
   /**
    * Generate a unique track name by finding the next available number
    */
-  const getNextTrackName = () => {
+  const getNextTrackName = useCallback(() => {
     // Extract existing track numbers from names like "Track 1", "Track 2", etc.
     // Uses hoisted TRACK_NUMBER_REGEX to avoid RegExp recreation
-    const existingNumbers: number[] = [];
+    const existingNumbers = new Set<number>();
     for (const t of tracks) {
       const match = t.name.match(TRACK_NUMBER_REGEX);
       if (match?.[1]) {
         const num = parseInt(match[1], 10);
-        if (num > 0) existingNumbers.push(num);
+        if (num > 0) existingNumbers.add(num);
       }
     }
 
     // Find the smallest available number starting from 1
     let nextNumber = 1;
-    while (existingNumbers.includes(nextNumber)) {
+    while (existingNumbers.has(nextNumber)) {
       nextNumber++;
     }
     return `Track ${nextNumber}`;
-  };
+  }, [tracks]);
 
   /**
    * Handle adding a new track
@@ -263,7 +264,8 @@ export const Timeline = memo(function Timeline({ duration, onGraphPanelOpenChang
     if (tracksToRemove.length === 0) return;
 
     // Don't allow removing all tracks
-    if (tracksToRemove.length >= tracks.length) {
+    const tracksToRemoveSet = new Set(tracksToRemove);
+    if (tracksToRemoveSet.size >= tracks.length) {
       console.warn('Cannot remove all tracks');
       return;
     }
@@ -271,7 +273,7 @@ export const Timeline = memo(function Timeline({ duration, onGraphPanelOpenChang
     removeTracks(tracksToRemove);
 
     // Find the next track to select (first remaining track not being removed)
-    const remainingTrack = tracks.find((t) => !tracksToRemove.includes(t.id));
+    const remainingTrack = tracks.find((t) => !tracksToRemoveSet.has(t.id));
     if (remainingTrack) {
       setActiveTrack(remainingTrack.id);
     }
@@ -342,7 +344,7 @@ export const Timeline = memo(function Timeline({ duration, onGraphPanelOpenChang
                   key={track.id}
                   track={track}
                   isActive={activeTrackId === track.id}
-                  isSelected={selectedTrackIds.includes(track.id)}
+                  isSelected={selectedTrackIdsSet.has(track.id)}
                   onToggleLock={() => toggleTrackLock(track.id)}
                   onToggleVisibility={() => toggleTrackVisibility(track.id)}
                   onToggleMute={() => toggleTrackMute(track.id)}
