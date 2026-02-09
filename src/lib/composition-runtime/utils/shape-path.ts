@@ -8,9 +8,11 @@ import {
   makeStar,
   makePolygon,
   makeHeart,
+} from '@/lib/shapes/shape-generators';
+import {
   scalePath,
   translatePath,
-} from '@/lib/shapes';
+} from '@/lib/shapes/path-utils';
 
 /**
  * Generates SVG path data for shape items using Composition's shape utilities.

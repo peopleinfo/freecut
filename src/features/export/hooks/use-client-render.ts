@@ -27,15 +27,6 @@ import type {
   ExportRenderWorkerRequest,
   ExportRenderWorkerResponse,
 } from '../workers/export-render-worker.types';
-import {
-  appendExportTelemetry,
-  mapFallbackReasonToUi,
-  readExportTelemetry,
-  summarizeExportTelemetry,
-  type ExportExecutionEngine,
-  type ExportTelemetryEvent,
-  type ExportTelemetrySummary,
-} from '../utils/export-telemetry';
 
 const log = createLogger('useClientRender');
 
@@ -58,10 +49,6 @@ interface UseClientRenderReturn {
   status: ClientRenderStatus;
   error: string | null;
   result: ClientRenderResult | null;
-  executionEngine: ExportExecutionEngine | null;
-  executionDetail: string | null;
-  lastTelemetry: ExportTelemetryEvent | null;
-  telemetrySummary: ExportTelemetrySummary | null;
 
   // Actions
   startExport: (settings: ExportSettings | ExtendedExportSettings) => Promise<void>;
@@ -82,14 +69,6 @@ export function useClientRender(): UseClientRenderReturn {
   const [status, setStatus] = useState<ClientRenderStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ClientRenderResult | null>(null);
-  const [executionEngine, setExecutionEngine] = useState<ExportExecutionEngine | null>(null);
-  const [executionDetail, setExecutionDetail] = useState<string | null>(null);
-  const [lastTelemetry, setLastTelemetry] = useState<ExportTelemetryEvent | null>(null);
-  const [telemetrySummary, setTelemetrySummary] = useState<ExportTelemetrySummary | null>(() => {
-    const events = readExportTelemetry();
-    if (events.length === 0) return null;
-    return summarizeExportTelemetry(events);
-  });
 
   // AbortController for cancellation
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -225,9 +204,12 @@ export function useClientRender(): UseClientRenderReturn {
         }
       };
 
-      worker.onerror = (event) => {
+      worker.onerror = (event: ErrorEvent) => {
         cleanup();
-        reject(new Error(`EXPORT_WORKER_RUNTIME_ERROR:${event.message}`));
+        const location = event.filename
+          ? ` @${event.filename}:${event.lineno}:${event.colno}`
+          : '';
+        reject(new Error(`EXPORT_WORKER_RUNTIME_ERROR:${event.message}${location}`));
       };
 
       const startMessage: ExportRenderWorkerRequest = {
@@ -245,23 +227,12 @@ export function useClientRender(): UseClientRenderReturn {
    */
   const startExport = useCallback(
     async (settings: ExportSettings | ExtendedExportSettings) => {
-      const exportStartTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      let usedEngine: ExportExecutionEngine | null = null;
-      let fallbackReasonRaw: string | null = null;
-      let exportModeForTelemetry: 'video' | 'audio' = 'video';
-      let clientSettingsForTelemetry: ReturnType<typeof mapToClientSettings> | null = null;
-      let totalFramesForTelemetry = 0;
-      let succeeded = false;
-      let cancelled = false;
-
       try {
         setIsExporting(true);
         setProgress(0);
         setError(null);
         setResult(null);
         setStatus('preparing');
-        setExecutionEngine(null);
-        setExecutionDetail(null);
 
         // Create abort controller for cancellation
         abortControllerRef.current = new AbortController();
@@ -279,7 +250,6 @@ export function useClientRender(): UseClientRenderReturn {
 
         // Determine export mode and container from extended settings
         const exportMode = isExtendedSettings(settings) ? settings.mode : 'video';
-        exportModeForTelemetry = exportMode;
         const videoContainer = isExtendedSettings(settings) ? settings.videoContainer : undefined;
         const audioContainer = isExtendedSettings(settings) ? settings.audioContainer : undefined;
         const renderWholeProject = isExtendedSettings(settings) ? settings.renderWholeProject : false;
@@ -305,7 +275,6 @@ export function useClientRender(): UseClientRenderReturn {
 
         // Map settings to client-compatible settings
         const clientSettings = mapToClientSettings(settings, fps);
-        clientSettingsForTelemetry = clientSettings;
 
         // Override container if specified in extended settings
         if (exportMode === 'video' && videoContainer) {
@@ -377,7 +346,6 @@ export function useClientRender(): UseClientRenderReturn {
         }));
         const totalCompositionItems = composition.tracks.reduce((sum, t) => sum + (t.items?.length ?? 0), 0);
         const compositionDuration = composition.durationInFrames ?? 0;
-        totalFramesForTelemetry = compositionDuration;
 
         log.debug('Composition created', {
           durationInFrames: compositionDuration,
@@ -430,9 +398,6 @@ export function useClientRender(): UseClientRenderReturn {
         const signal = abortControllerRef.current.signal;
 
         try {
-          usedEngine = 'worker';
-          setExecutionEngine('worker');
-          setExecutionDetail('Worker thread rendering');
           renderResult = await renderInWorker(clientSettings, composition, signal);
         } catch (workerError) {
           if (workerError instanceof DOMException && workerError.name === 'AbortError') {
@@ -451,14 +416,9 @@ export function useClientRender(): UseClientRenderReturn {
             throw workerError;
           }
 
-          log.warn('Worker export unavailable for this composition, falling back to main thread', {
-            reason: workerMessage,
-          });
-
-          usedEngine = 'main-thread';
-          fallbackReasonRaw = workerMessage;
-          setExecutionEngine('main-thread');
-          setExecutionDetail(mapFallbackReasonToUi(workerMessage));
+          log.warn(
+            `Worker export unavailable for this composition, falling back to main thread (${workerMessage})`
+          );
 
           renderResult = await renderOnMainThread(exportMode, clientSettings, composition, signal);
         }
@@ -466,7 +426,6 @@ export function useClientRender(): UseClientRenderReturn {
         setResult(renderResult);
         setStatus('completed');
         setProgress(100);
-        succeeded = true;
 
         log.debug('Render completed', {
           fileSize: formatBytes(renderResult.fileSize),
@@ -476,7 +435,6 @@ export function useClientRender(): UseClientRenderReturn {
         if (err instanceof DOMException && err.name === 'AbortError') {
           log.debug('Render cancelled');
           setStatus('cancelled');
-          cancelled = true;
         } else {
           log.error('Export error:', err);
           const message = err instanceof Error ? err.message : 'Failed to export';
@@ -484,39 +442,6 @@ export function useClientRender(): UseClientRenderReturn {
           setStatus('failed');
         }
       } finally {
-        const exportEndTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        const durationMs = Math.max(0, Math.round(exportEndTime - exportStartTime));
-
-        if (usedEngine && clientSettingsForTelemetry) {
-          const telemetryEvent: ExportTelemetryEvent = {
-            timestamp: Date.now(),
-            success: succeeded,
-            cancelled,
-            durationMs,
-            engine: usedEngine,
-            fallbackReason: fallbackReasonRaw,
-            exportMode: exportModeForTelemetry,
-            container: clientSettingsForTelemetry.container,
-            codec: exportModeForTelemetry === 'audio'
-              ? (clientSettingsForTelemetry.audioCodec ?? 'audio')
-              : clientSettingsForTelemetry.codec,
-            fps: clientSettingsForTelemetry.fps,
-            width: clientSettingsForTelemetry.resolution.width,
-            height: clientSettingsForTelemetry.resolution.height,
-            totalFrames: totalFramesForTelemetry,
-          };
-
-          appendExportTelemetry(telemetryEvent);
-          const summary = summarizeExportTelemetry(readExportTelemetry());
-          setLastTelemetry(telemetryEvent);
-          setTelemetrySummary(summary);
-
-          log.info('Export telemetry recorded', {
-            event: telemetryEvent,
-            summary,
-          });
-        }
-
         terminateExportWorker();
         setIsExporting(false);
         abortControllerRef.current = null;
@@ -587,8 +512,6 @@ export function useClientRender(): UseClientRenderReturn {
     setStatus('idle');
     setError(null);
     setResult(null);
-    setExecutionEngine(null);
-    setExecutionDetail(null);
     abortControllerRef.current = null;
   }, [terminateExportWorker]);
 
@@ -625,10 +548,6 @@ export function useClientRender(): UseClientRenderReturn {
     status,
     error,
     result,
-    executionEngine,
-    executionDetail,
-    lastTelemetry,
-    telemetrySummary,
     startExport,
     cancelExport,
     downloadVideo,

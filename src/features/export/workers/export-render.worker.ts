@@ -8,6 +8,13 @@ import type {
   ExportRenderWorkerResponse,
 } from './export-render-worker.types';
 
+// Some third-party browser libs assume `window` exists.
+// In dedicated workers, alias it to `globalThis` to avoid runtime crashes.
+const workerGlobal = globalThis as typeof globalThis & { window?: typeof globalThis };
+if (typeof workerGlobal.window === 'undefined') {
+  workerGlobal.window = workerGlobal;
+}
+
 const log = createLogger('ExportRenderWorker');
 
 const activeRequests = new Map<string, AbortController>();
@@ -20,6 +27,22 @@ function compositionHasAnimatedGif(
       if (item.type !== 'image') continue;
       const imageItem = item as ImageItem;
       if (isGifUrl(imageItem.src) || (imageItem.label ?? '').toLowerCase().endsWith('.gif')) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function compositionHasAudio(
+  tracks: Array<{ items: Array<{ type: string; muted?: boolean }> }>
+): boolean {
+  for (const track of tracks) {
+    for (const item of track.items ?? []) {
+      if (item.type === 'audio' && item.muted !== true) {
+        return true;
+      }
+      if (item.type === 'video' && item.muted !== true) {
         return true;
       }
     }
@@ -47,8 +70,13 @@ self.onmessage = async (event: MessageEvent<ExportRenderWorkerRequest>) => {
   activeRequests.set(requestId, controller);
 
   try {
+    const tracks = composition.tracks ?? [];
+
     if (settings.mode === 'video' && compositionHasAnimatedGif(composition.tracks ?? [])) {
       throw new Error('WORKER_REQUIRES_MAIN_THREAD:gif');
+    }
+    if (compositionHasAudio(tracks) && typeof OfflineAudioContext === 'undefined') {
+      throw new Error('WORKER_REQUIRES_MAIN_THREAD:audio-context');
     }
 
     const onProgress = (progress: RenderProgress) => {

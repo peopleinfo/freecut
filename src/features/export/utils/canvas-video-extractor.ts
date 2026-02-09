@@ -38,6 +38,8 @@ interface MediabunnyVideoTrack {
 
 export class VideoFrameExtractor {
   private static readonly TIMESTAMP_EPSILON = 1e-4;
+  private static readonly LOOKAHEAD_TOLERANCE_SECONDS = 0.05;
+  private static readonly STREAM_BACKTRACK_SECONDS = 1.0;
 
   private sink: MediabunnySink | null = null;
   private input: MediabunnyInput | null = null;
@@ -51,6 +53,7 @@ export class VideoFrameExtractor {
   private iteratorDone = false;
   private lastRequestedTimestamp: number | null = null;
   private sampleLoopError: unknown = null;
+  private lastFailureKind: 'none' | 'no-sample' | 'decode-error' = 'none';
 
   constructor(
     private src: string,
@@ -130,38 +133,35 @@ export class VideoFrameExtractor {
 
     const maxTime = Math.max(0, this.duration - 0.001);
     const clampedTime = Math.max(0, Math.min(timestamp, maxTime));
-    let videoFrame: VideoFrame | null = null;
     let lastError: unknown = this.sampleLoopError;
 
     try {
       await this.ensureSampleForTimestamp(clampedTime);
-      const sample = this.currentSample;
-      if (!sample) {
-        return this.reportDrawFailure(timestamp, clampedTime, lastError);
+      const drawOk = this.drawCurrentSample(ctx, x, y, width, height);
+      if (drawOk) {
+        this.drawFailureCount = 0;
+        this.lastFailureKind = 'none';
+        return true;
       }
-
-      videoFrame = sample.toVideoFrame();
-      if (!videoFrame) {
-        lastError = new Error('Decoded sample could not be converted to VideoFrame');
-        this.sampleLoopError = lastError;
-        return this.reportDrawFailure(timestamp, clampedTime, lastError);
-      }
-
-      ctx.drawImage(videoFrame, x, y, width, height);
-      this.drawFailureCount = 0;
-      return true;
+      lastError = this.sampleLoopError;
+      return this.reportDrawFailure(timestamp, clampedTime, lastError);
     } catch (error) {
       lastError = error;
       this.sampleLoopError = error;
-      return this.reportDrawFailure(timestamp, clampedTime, lastError);
-    } finally {
-      if (videoFrame) {
-        try {
-          videoFrame.close();
-        } catch {
-          // Ignore close errors
+
+      const recovered = await this.recoverAndPrime(clampedTime, error);
+      if (recovered) {
+        const drawOk = this.drawCurrentSample(ctx, x, y, width, height);
+        if (drawOk) {
+          this.drawFailureCount = 0;
+          this.lastFailureKind = 'none';
+          return true;
         }
+        lastError = this.sampleLoopError;
       }
+
+      this.lastFailureKind = this.lastFailureKind === 'no-sample' ? 'no-sample' : 'decode-error';
+      return this.reportDrawFailure(timestamp, clampedTime, lastError);
     }
   }
 
@@ -192,6 +192,17 @@ export class VideoFrameExtractor {
         this.nextSample = null;
         continue;
       }
+
+      // If this is the first sample after stream start/restart and it's only
+      // slightly ahead of the requested timestamp, use it to avoid false misses
+      // caused by timestamp quantization/drift.
+      if (
+        !this.currentSample
+        && candidate.timestamp - timestamp <= VideoFrameExtractor.LOOKAHEAD_TOLERANCE_SECONDS
+      ) {
+        this.currentSample = candidate;
+        this.nextSample = null;
+      }
       break;
     }
   }
@@ -214,20 +225,80 @@ export class VideoFrameExtractor {
     return this.nextSample;
   }
 
-  private resetSampleIterator(startTimestamp: number, reason: 'init' | 'backward'): void {
+  private resetSampleIterator(startTimestamp: number, reason: 'init' | 'backward' | 'recover'): void {
     this.closeStreamState();
     if (!this.sink) return;
 
-    if (reason === 'backward') {
-      log.debug('Restarting mediabunny sample stream after backward time request', {
+    const streamStart = Math.max(0, startTimestamp - VideoFrameExtractor.STREAM_BACKTRACK_SECONDS);
+    if (reason !== 'init') {
+      log.debug('Restarting mediabunny sample stream', {
         itemId: this.itemId,
+        reason,
         startTimestamp,
+        streamStart,
       });
     }
 
-    this.sampleIterator = this.sink.samples(startTimestamp, Infinity);
+    this.sampleIterator = this.sink.samples(streamStart, Infinity);
     this.iteratorDone = false;
     this.lastRequestedTimestamp = null;
+  }
+
+  private drawCurrentSample(
+    ctx: OffscreenCanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ): boolean {
+    const sample = this.currentSample;
+    if (!sample) {
+      this.lastFailureKind = 'no-sample';
+      return false;
+    }
+
+    let videoFrame: VideoFrame | null = null;
+    try {
+      videoFrame = sample.toVideoFrame();
+      if (!videoFrame) {
+        this.sampleLoopError = new Error('Decoded sample could not be converted to VideoFrame');
+        this.lastFailureKind = 'decode-error';
+        return false;
+      }
+
+      ctx.drawImage(videoFrame, x, y, width, height);
+      return true;
+    } catch (error) {
+      this.sampleLoopError = error;
+      this.lastFailureKind = 'decode-error';
+      return false;
+    } finally {
+      if (videoFrame) {
+        try {
+          videoFrame.close();
+        } catch {
+          // Ignore close errors
+        }
+      }
+    }
+  }
+
+  private async recoverAndPrime(timestamp: number, error: unknown): Promise<boolean> {
+    const message = error instanceof Error ? error.message : String(error);
+    const looksRecoverable = /key frame|configure\(\)|flush\(\)|InvalidStateError|decode/i.test(message);
+    if (!looksRecoverable) {
+      return false;
+    }
+
+    try {
+      this.resetSampleIterator(timestamp, 'recover');
+      await this.ensureSampleForTimestamp(timestamp);
+      return this.currentSample !== null;
+    } catch (recoveryError) {
+      this.sampleLoopError = recoveryError;
+      this.lastFailureKind = 'decode-error';
+      return false;
+    }
   }
 
   private closeStreamState(): void {
@@ -262,6 +333,7 @@ export class VideoFrameExtractor {
       clampedTime,
       duration: this.duration,
       failures: this.drawFailureCount,
+      reason: this.lastFailureKind,
       error: error instanceof Error ? error.message : String(error),
     };
 
@@ -271,6 +343,10 @@ export class VideoFrameExtractor {
       log.debug('Mediabunny frame extraction failed', logData);
     }
     return false;
+  }
+
+  getLastFailureKind(): 'none' | 'no-sample' | 'decode-error' {
+    return this.lastFailureKind;
   }
 
   /**
@@ -309,5 +385,6 @@ export class VideoFrameExtractor {
     this.videoTrack = null;
     this.ready = false;
     this.drawFailureCount = 0;
+    this.lastFailureKind = 'none';
   }
 }

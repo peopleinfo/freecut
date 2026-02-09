@@ -1132,25 +1132,35 @@ async function createCompositionRenderer(
         }
 
         // If frame draw failed, fall through to HTML5 fallback.
-        // After repeated failures, stop retrying mediabunny for this item.
-        const failureCount = (mediabunnyFailureCountByItem.get(item.id) ?? 0) + 1;
-        mediabunnyFailureCountByItem.set(item.id, failureCount);
-
-        if (failureCount >= 3) {
-          mediabunnyDisabledItems.add(item.id);
-          log.warn('Disabling mediabunny for item after repeated failures; using fallback for remainder of export', {
+        // Distinguish transient "no-sample-yet" misses from decode failures.
+        const failureKind = extractor.getLastFailureKind();
+        if (failureKind === 'no-sample') {
+          log.debug('Mediabunny had no sample for timestamp, using per-frame fallback', {
             itemId: item.id,
             frame,
             sourceTime: clampedTime,
-            failureCount,
           });
         } else {
-          log.warn('Mediabunny frame draw failed, using fallback', {
-            itemId: item.id,
-            frame,
-            sourceTime: clampedTime,
-            failureCount,
-          });
+          // After repeated decode failures, stop retrying mediabunny for this item.
+          const failureCount = (mediabunnyFailureCountByItem.get(item.id) ?? 0) + 1;
+          mediabunnyFailureCountByItem.set(item.id, failureCount);
+
+          if (failureCount >= 3) {
+            mediabunnyDisabledItems.add(item.id);
+            log.warn('Disabling mediabunny for item after repeated failures; using fallback for remainder of export', {
+              itemId: item.id,
+              frame,
+              sourceTime: clampedTime,
+              failureCount,
+            });
+          } else {
+            log.warn('Mediabunny frame draw failed, using fallback', {
+              itemId: item.id,
+              frame,
+              sourceTime: clampedTime,
+              failureCount,
+            });
+          }
         }
       }
     }
