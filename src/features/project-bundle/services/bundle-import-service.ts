@@ -22,6 +22,7 @@ import {
   createMedia,
   saveThumbnail,
   associateMediaWithProject,
+  updateProject,
 } from '@/lib/storage/indexeddb';
 import { generateThumbnail } from '@/features/media-library/utils/thumbnail-generator';
 import { fileSystemService } from './file-system-service';
@@ -233,7 +234,6 @@ export async function importProjectBundle(
       // Update project with thumbnailId
       project.thumbnailId = thumbnailId;
       // Note: Project already created above, need to update it
-      const { updateProject } = await import('@/lib/storage/indexeddb');
       await updateProject(newProjectId, { thumbnailId });
     } catch (err) {
       // Thumbnail restoration is optional, continue without it

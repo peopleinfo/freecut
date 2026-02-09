@@ -21,6 +21,23 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: (id) => {
+          // Application feature chunks
+          if (id.includes('/src/features/timeline/')) {
+            return 'feature-timeline';
+          }
+          if (id.includes('/src/features/media-library/')) {
+            return 'feature-media-library';
+          }
+          if (id.includes('/src/features/gpu/')) {
+            return 'feature-gpu';
+          }
+          if (id.includes('/src/features/effects/')) {
+            return 'feature-effects';
+          }
+          if (id.includes('/src/lib/composition-runtime/')) {
+            return 'feature-composition-runtime';
+          }
+
           // React must be in its own chunk, loaded first to ensure proper initialization
           // This prevents "Cannot set properties of undefined" errors with React 19.2 features
           if (id.includes('node_modules/react-dom')) {
@@ -29,9 +46,30 @@ export default defineConfig({
           if (id.includes('node_modules/react/')) {
             return 'react-vendor';
           }
+          // Router framework
+          if (id.includes('@tanstack/react-router')) {
+            return 'router-vendor';
+          }
+          // State management
+          if (id.includes('/node_modules/zustand/') || id.includes('/node_modules/zundo/')) {
+            return 'state-vendor';
+          }
           // Media processing - loaded on demand
-          if (id.includes('mediabunny')) {
+          if (id.includes('@mediabunny/mp3-encoder')) {
+            return 'media-mp3-encoder';
+          }
+          if (id.includes('/node_modules/mediabunny/')) {
+            return 'media-bunny-core';
+          }
+          if (id.includes('@mediabunny/')) {
             return 'media-processing';
+          }
+          // Audio/video processing helpers
+          if (id.includes('/node_modules/soundtouchjs/')) {
+            return 'audio-processing';
+          }
+          if (id.includes('/node_modules/gifuct-js/')) {
+            return 'gif-processing';
           }
           // UI framework
           if (id.includes('@radix-ui/')) {

@@ -5,6 +5,8 @@ import type { MediaMetadata } from '@/types/storage';
 import { mediaLibraryService } from '../services/media-library-service';
 import { getMimeType } from '../utils/validation';
 import { createLogger } from '@/lib/logger';
+import { removeItems, updateItem } from '@/features/timeline/stores/timeline-actions';
+import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store';
 
 const logger = createLogger('MediaLibraryStore');
 
@@ -599,10 +601,6 @@ export const useMediaLibraryStore = create<
             return false;
           }
 
-          // Import timeline actions dynamically to avoid circular dependency
-          const { updateItem } = await import('@/features/timeline/stores/timeline-actions');
-          const { useTimelineSettingsStore } = await import('@/features/timeline/stores/timeline-settings-store');
-
           // Build updates for the timeline item
           const fps = useTimelineSettingsStore.getState().fps;
           const updates: Record<string, unknown> = {
@@ -655,8 +653,7 @@ export const useMediaLibraryStore = create<
       },
 
       removeOrphanedClips: (itemIds: string[]) => {
-        // Import timeline actions dynamically to avoid circular dependency
-        import('@/features/timeline/stores/timeline-actions').then(({ removeItems }) => {
+        try {
           removeItems(itemIds);
 
           // Remove from orphaned clips list
@@ -668,9 +665,9 @@ export const useMediaLibraryStore = create<
             type: 'info',
             message: `Removed ${itemIds.length} orphaned clip${itemIds.length !== 1 ? 's' : ''}`,
           });
-        }).catch((error) => {
+        } catch (error) {
           logger.error(`[MediaLibraryStore] removeOrphanedClips error:`, error);
-        });
+        }
       },
 
       // Unsupported audio codec dialog actions

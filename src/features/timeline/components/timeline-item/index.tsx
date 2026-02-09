@@ -20,6 +20,7 @@ import { JoinIndicators } from './join-indicators';
 import { AnchorDragGhost, FollowerDragGhost } from './drag-ghosts';
 import { DragBlockedTooltip } from './drag-blocked-tooltip';
 import { ItemContextMenu } from './item-context-menu';
+import { useClearKeyframesDialogStore } from '@/features/editor/components/clear-keyframes-dialog';
 
 // Width in pixels for edge hover detection (trim/rate-stretch handles)
 const EDGE_HOVER_ZONE = 8;
@@ -544,15 +545,11 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   }, []);
 
   const handleClearAllKeyframes = useCallback(() => {
-    import('@/features/editor/components/clear-keyframes-dialog').then(({ useClearKeyframesDialogStore }) => {
-      useClearKeyframesDialogStore.getState().openClearAll([item.id]);
-    });
+    useClearKeyframesDialogStore.getState().openClearAll([item.id]);
   }, [item.id]);
 
   const handleClearPropertyKeyframes = useCallback((property: 'x' | 'y' | 'width' | 'height' | 'rotation' | 'opacity' | 'cornerRadius') => {
-    import('@/features/editor/components/clear-keyframes-dialog').then(({ useClearKeyframesDialogStore }) => {
-      useClearKeyframesDialogStore.getState().openClearProperty([item.id], property);
-    });
+    useClearKeyframesDialogStore.getState().openClearProperty([item.id], property);
   }, [item.id]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {

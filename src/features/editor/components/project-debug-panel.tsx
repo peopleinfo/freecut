@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { useDebugStore } from '@/features/editor/stores/debug-store';
 import type { FixtureType } from '@/features/project-bundle/services/test-fixtures';
+import { createProject, getDBStats } from '@/lib/storage/indexeddb';
 
 interface DebugAction {
   label: string;
@@ -139,7 +140,6 @@ export function ProjectDebugPanel({ projectId }: ProjectDebugPanelProps) {
   }, [projectId]);
 
   const handleLogDBStats = useCallback(async () => {
-    const { getDBStats } = await import('@/lib/storage/indexeddb');
     const stats = await getDBStats();
     console.table(stats);
   }, []);
@@ -165,7 +165,6 @@ export function ProjectDebugPanel({ projectId }: ProjectDebugPanelProps) {
     const { generateFixture } = await import(
       '@/features/project-bundle/services/test-fixtures'
     );
-    const { createProject } = await import('@/lib/storage/indexeddb');
 
     const { project } = generateFixture(selectedFixture);
     await createProject(project);

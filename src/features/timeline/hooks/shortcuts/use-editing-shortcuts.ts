@@ -14,6 +14,7 @@ import { resolveTransform, getSourceDimensions } from '@/lib/composition-runtime
 import { resolveAnimatedTransform } from '@/features/keyframes/utils/animated-transform-resolver';
 import { isFrameInTransitionRegion } from '@/features/keyframes/utils/transition-region';
 import type { TimelineShortcutCallbacks } from '../use-timeline-shortcuts';
+import { useClearKeyframesDialogStore } from '@/features/editor/components/clear-keyframes-dialog';
 
 export function useEditingShortcuts(callbacks: TimelineShortcutCallbacks) {
   const selectedItemIds = useSelectionStore((s) => s.selectedItemIds);
@@ -258,9 +259,7 @@ export function useEditingShortcuts(callbacks: TimelineShortcutCallbacks) {
 
       if (itemsWithKeyframes.length === 0) return;
 
-      import('@/features/editor/components/clear-keyframes-dialog').then(({ useClearKeyframesDialogStore }) => {
-        useClearKeyframesDialogStore.getState().openClearAll(itemsWithKeyframes);
-      });
+      useClearKeyframesDialogStore.getState().openClearAll(itemsWithKeyframes);
     },
     HOTKEY_OPTIONS,
     [selectedItemIds]
