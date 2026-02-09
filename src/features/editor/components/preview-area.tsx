@@ -115,7 +115,7 @@ export const PreviewArea = memo(function PreviewArea({ project }: PreviewAreaPro
         </div>
 
         {/* Center: Playback Controls */}
-        <PlaybackControls totalFrames={totalFrames} fps={fps} />
+        <PlaybackControls totalFrames={totalFrames} />
 
         {/* Right: Zoom Controls */}
         <div className="absolute right-6">

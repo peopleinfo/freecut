@@ -333,6 +333,7 @@ export class WebCodecsDecoder implements MediaDecoder {
    * Seek to a position
    */
   async seek(target: SeekTarget): Promise<void> {
+    void target;
     // Reset decoder state for seek
     await this.flush();
     this.frameCounter = 0;

@@ -157,6 +157,7 @@ const DefaultControls: React.FC<{
   isFullscreen: boolean;
   onTogglePlay: () => void;
   onSeek: (frame: number) => void;
+  onPlaybackRateChange: (rate: number) => void;
   onToggleFullscreen: () => void;
 }> = ({
   isPlaying,
@@ -167,6 +168,7 @@ const DefaultControls: React.FC<{
   isFullscreen,
   onTogglePlay,
   onSeek,
+  onPlaybackRateChange,
   onToggleFullscreen,
 }) => {
   const formatTime = (frame: number) => {
@@ -201,6 +203,9 @@ const DefaultControls: React.FC<{
         <div className="flex items-center gap-2">
           <select
             value={playbackRate}
+            onChange={(event) => {
+              onPlaybackRateChange(Number(event.target.value));
+            }}
             className="bg-transparent text-sm text-white border border-white/30 rounded px-2 py-1"
             aria-label="Playback rate"
           >
@@ -234,7 +239,6 @@ const DefaultControls: React.FC<{
 /**
  * Inner Player Component
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const PlayerInner = forwardRef<PlayerRef, PlayerProps>(
   (
     {
@@ -296,7 +300,12 @@ const PlayerInner = forwardRef<PlayerRef, PlayerProps>(
     const player = usePlayer(durationInFrames, { loop, onEnded });
     
     // Get context values
-    const { frame: currentFrame, playing, playbackRate } = useBridgedTimelineContext();
+    const {
+      frame: currentFrame,
+      playing,
+      playbackRate,
+      setPlaybackRate,
+    } = useBridgedTimelineContext();
     const emitter = usePlayerEmitter();
     
     // Sync initial frame
@@ -329,6 +338,8 @@ const PlayerInner = forwardRef<PlayerRef, PlayerProps>(
       
       if (!document.fullscreenElement) {
         await containerRef.current.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
       }
     }, []);
     
@@ -421,6 +432,7 @@ const PlayerInner = forwardRef<PlayerRef, PlayerProps>(
                 isFullscreen={isFullscreen}
                 onTogglePlay={player.toggle}
                 onSeek={player.seek}
+                onPlaybackRateChange={setPlaybackRate}
                 onToggleFullscreen={toggleFullscreen}
               />
             </div>
