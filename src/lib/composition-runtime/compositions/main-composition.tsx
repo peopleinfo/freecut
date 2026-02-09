@@ -622,7 +622,6 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
       if (canMergeContinuousBoundary(active, segment)) {
         const mergedEnd = segment.from + segment.durationInFrames;
         active.durationInFrames = mergedEnd - active.from;
-        active.key = `${active.key}__${segment.clip.id}`;
         active.audioFadeOut = segment.audioFadeOut;
         active.crossfadeFadeOut = segment.crossfadeFadeOut;
         active.clip = segment.clip;
