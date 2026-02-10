@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
+import { Columns2 } from 'lucide-react';
 import { VideoPreview } from '@/features/preview/components/video-preview';
 import { PlaybackControls } from '@/features/preview/components/playback-controls';
 import { TimecodeDisplay } from '@/features/preview/components/timecode-display';
@@ -20,7 +21,6 @@ const PREVIEW_PADDING_PX = 48;
 const DEFAULT_EMPTY_TIMELINE_SECONDS = 10;
 const PREVIEW_RESIZE_MIN_UPDATE_MS = 33;
 const SPLIT_DRAG_MIN_UPDATE_MS = 33;
-const SPLIT_DRAG_LIVE_COMMIT_MS = 90;
 
 /**
  * Preview Area Component
@@ -125,25 +125,25 @@ export const PreviewArea = memo(function PreviewArea({ project }: PreviewAreaPro
 
   // Split ratio for source/program monitors (percentage for left panel)
   const [splitPercent, setSplitPercent] = useState(50);
-  const [dragGhostPercent, setDragGhostPercent] = useState<number | null>(null);
   const [isSplitDragging, setIsSplitDragging] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isDraggingSplitRef = useRef(false);
-  const splitPercentRef = useRef(50);
   const pendingSplitPercentRef = useRef<number | null>(null);
   const splitDragRafRef = useRef<number | null>(null);
   const lastSplitDragUpdateTsRef = useRef(0);
-  const lastSplitLiveCommitTsRef = useRef(0);
 
   const handleCloseSourceMonitor = useCallback(() => {
     useEditorStore.getState().setSourcePreviewMediaId(null);
+  }, []);
+
+  const handleResetSplit = useCallback(() => {
+    setSplitPercent(50);
   }, []);
 
   const handleSplitDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isDraggingSplitRef.current = true;
     setIsSplitDragging(true);
-    setDragGhostPercent(splitPercentRef.current);
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
 
@@ -164,14 +164,7 @@ export const PreviewArea = memo(function PreviewArea({ project }: PreviewAreaPro
         lastSplitDragUpdateTsRef.current = now;
         const next = pendingSplitPercentRef.current;
         if (next !== null) {
-          const clamped = Math.min(75, Math.max(25, next));
-          splitPercentRef.current = clamped;
-          setDragGhostPercent(clamped);
-
-          if (now - lastSplitLiveCommitTsRef.current >= SPLIT_DRAG_LIVE_COMMIT_MS) {
-            lastSplitLiveCommitTsRef.current = now;
-            setSplitPercent(clamped);
-          }
+          setSplitPercent(Math.min(75, Math.max(25, next)));
         }
       });
     };
@@ -183,8 +176,6 @@ export const PreviewArea = memo(function PreviewArea({ project }: PreviewAreaPro
         cancelAnimationFrame(splitDragRafRef.current);
         splitDragRafRef.current = null;
       }
-      setSplitPercent(splitPercentRef.current);
-      setDragGhostPercent(null);
       setIsSplitDragging(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
@@ -211,11 +202,23 @@ export const PreviewArea = memo(function PreviewArea({ project }: PreviewAreaPro
             />
           </div>
 
-          {/* Resizable divider */}
+          {/* Resizable divider with reset button */}
           <div
             onMouseDown={handleSplitDragStart}
-            className="w-1 cursor-col-resize hover:bg-primary/50 active:bg-primary/70 bg-border transition-colors flex-shrink-0"
-          />
+            className="w-1.5 cursor-col-resize hover:bg-primary/50 active:bg-primary/70 bg-border transition-colors flex-shrink-0 relative group"
+          >
+            {splitPercent !== 50 && (
+              <button
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={handleResetSplit}
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-muted border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:bg-primary hover:border-primary hover:[&>svg]:text-primary-foreground"
+                aria-label="Reset split to 50/50"
+                data-tooltip="Reset Split View"
+              >
+                <Columns2 className="w-4 h-4 text-muted-foreground" />
+              </button>
+            )}
+          </div>
         </>
       )}
 
@@ -242,24 +245,20 @@ export const PreviewArea = memo(function PreviewArea({ project }: PreviewAreaPro
           </div>
 
           {/* Playback Controls */}
-          <div className="h-16 border-t border-border panel-header flex items-center justify-center px-6 flex-shrink-0 relative">
-            <div className="absolute left-6">
+          <div className="h-16 border-t border-border panel-header flex items-center px-3 flex-shrink-0 gap-3 overflow-hidden">
+            <div className="flex-shrink-0">
               <TimecodeDisplay fps={fps} totalFrames={totalFrames} />
             </div>
+            <div className="flex-1 min-w-0" />
             <PlaybackControls totalFrames={totalFrames} />
-            <div className="absolute right-6">
+            <div className="flex-1 min-w-0" />
+            <div className="flex-shrink-0">
               <PreviewZoomControls />
             </div>
           </div>
         </div>
       </div>
 
-      {dragGhostPercent !== null && (
-        <div
-          className="absolute top-0 bottom-0 w-px bg-primary/80 pointer-events-none z-20"
-          style={{ left: `${dragGhostPercent}%` }}
-        />
-      )}
     </div>
   );
 });
