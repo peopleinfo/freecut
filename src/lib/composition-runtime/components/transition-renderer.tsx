@@ -570,6 +570,12 @@ const OptimizedEffectsBasedTransitionRenderer = React.memo<OptimizedTransitionPr
     const premountFrames = Math.round(fps * 2);
     const effectsZIndex = Math.max(leftClip.zIndex, rightClip.zIndex) + 200;
 
+    // Flip transitions scale clips to edge-on mid-transition, exposing uncovered
+    // area. A solid background prevents the underlying regular clips from bleeding
+    // through, matching the canvas-based export where the composition background
+    // is visible behind the flipping clip.
+    const needsBackground = window.transition.presentation === 'flip';
+
     // Global frame offsets for ClipContent's adjustment layer calculations
     // Both use startFrame since localFrame + startFrame = actual global frame
     const leftClipGlobalFrom = window.startFrame;
@@ -585,6 +591,7 @@ const OptimizedEffectsBasedTransitionRenderer = React.memo<OptimizedTransitionPr
           style={{
             zIndex: effectsZIndex,
             visibility: leftClip.trackVisible && rightClip.trackVisible ? 'visible' : 'hidden',
+            backgroundColor: needsBackground ? '#000' : undefined,
           }}
         >
           {/* Incoming clip (below outgoing) */}
