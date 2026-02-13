@@ -439,6 +439,7 @@ const ClipContent: React.FC<ClipContentProps> = React.memo(function ClipContent(
 
 interface TransitionOverlayProps {
   transition: Transition;
+  durationInFrames: number;
   isOutgoing: boolean;
   children: React.ReactNode;
   zIndex: number;
@@ -458,6 +459,7 @@ interface TransitionOverlayProps {
  */
 const TransitionOverlay: React.FC<TransitionOverlayProps> = React.memo(function TransitionOverlay({
   transition,
+  durationInFrames,
   isOutgoing,
   children,
   zIndex,
@@ -475,17 +477,20 @@ const TransitionOverlay: React.FC<TransitionOverlayProps> = React.memo(function 
       calculateEasingCurve({
         timing: transition.timing,
         fps,
-        durationInFrames: transition.durationInFrames,
+        durationInFrames,
         bezierPoints: transition.bezierPoints,
       }),
-    [transition.timing, fps, transition.durationInFrames, transition.bezierPoints]
+    [transition.timing, fps, durationInFrames, transition.bezierPoints]
   );
 
   // Apply styles directly to DOM each frame (bypasses React for performance)
   useEffect(() => {
     if (!containerRef.current || frame < 0) return;
 
-    const index = Math.max(0, Math.min(frame, easingCurve.length - 1));
+    // localFrame can be fractional if a transition window starts on a non-integer frame.
+    // Easing arrays are integer-indexed, so quantize before indexing.
+    const frameIndex = Math.floor(Number.isFinite(frame) ? frame : 0);
+    const index = Math.max(0, Math.min(frameIndex, easingCurve.length - 1));
     const progress = easingCurve[index] ?? 0;
 
     const styles = calculateTransitionStyles(
@@ -550,6 +555,29 @@ const TransitionOverlay: React.FC<TransitionOverlayProps> = React.memo(function 
 });
 
 // ============================================================================
+// Transition Background (for flip etc. — only visible during active frames)
+// ============================================================================
+
+const transitionBgStyle: React.CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  backgroundColor: '#000',
+  zIndex: 0,
+};
+
+/**
+ * Solid background behind transitions where clips don't cover the full frame
+ * mid-transition (e.g. flip). Only renders when localFrame >= 0 so it stays
+ * hidden during the premount window and doesn't black out clips before the
+ * transition starts.
+ */
+const TransitionBackground: React.FC = () => {
+  const ctx = useSequenceContext();
+  if (!ctx || ctx.localFrame < 0) return null;
+  return <div style={transitionBgStyle} />;
+};
+
+// ============================================================================
 // Main Transition Renderer
 // ============================================================================
 
@@ -564,6 +592,13 @@ const OptimizedEffectsBasedTransitionRenderer = React.memo<OptimizedTransitionPr
 
     const premountFrames = Math.round(fps * 2);
     const effectsZIndex = Math.max(leftClip.zIndex, rightClip.zIndex) + 200;
+
+    // Flip transitions scale clips to edge-on mid-transition, exposing uncovered
+    // area. A solid background prevents the underlying regular clips from bleeding
+    // through, matching the canvas-based export where the composition background
+    // is visible behind the flipping clip. Rendered as a child (not on the
+    // AbsoluteFill) so it's hidden during premount when frame < 0.
+    const needsBackground = window.transition.presentation === 'flip';
 
     // Global frame offsets for ClipContent's adjustment layer calculations
     // Both use startFrame since localFrame + startFrame = actual global frame
@@ -582,9 +617,11 @@ const OptimizedEffectsBasedTransitionRenderer = React.memo<OptimizedTransitionPr
             visibility: leftClip.trackVisible && rightClip.trackVisible ? 'visible' : 'hidden',
           }}
         >
+          {needsBackground && <TransitionBackground />}
           {/* Incoming clip (below outgoing) */}
           <TransitionOverlay
             transition={window.transition}
+            durationInFrames={window.durationInFrames}
             isOutgoing={false}
             zIndex={1}
             canvasWidth={canvasWidth}
@@ -607,6 +644,7 @@ const OptimizedEffectsBasedTransitionRenderer = React.memo<OptimizedTransitionPr
           {/* Both overlap clips are aligned to timeline chronology at window.startFrame. */}
           <TransitionOverlay
             transition={window.transition}
+            durationInFrames={window.durationInFrames}
             isOutgoing={true}
             zIndex={2}
             canvasWidth={canvasWidth}
@@ -670,3 +708,4 @@ export const OptimizedEffectsBasedTransitionsLayer = React.memo<{
     </>
   );
 });
+

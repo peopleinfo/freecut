@@ -187,7 +187,7 @@ async function extractAndSave(
 
     // Extract and save each frame with parallel writes
     const pendingSaves: Promise<void>[] = [];
-    const MAX_PARALLEL_SAVES = 10;
+    const MAX_PARALLEL_SAVES = 4;
 
     for await (const wrapped of sink.canvasesAtTimestamps(timestampGenerator())) {
       if (state.aborted) break;
@@ -264,7 +264,7 @@ async function extractAndSave(
     }
   } finally {
     // Clean up mediabunny resources to free memory
-    sink?.dispose?.();
+    (sink as any)?.dispose?.();
     input?.dispose();
   }
 }

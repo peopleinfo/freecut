@@ -1,15 +1,8 @@
 import { mediaLibraryService, FileAccessError } from '@/features/media-library/services/media-library-service';
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store';
+import { proxyService } from '@/features/media-library/services/proxy-service';
+import { blobUrlManager } from '@/lib/blob-url-manager';
 import type { TimelineTrack } from '@/types/timeline';
-
-/**
- * Cache to prevent creating duplicate blob URLs for the same media.
- *
- * IMPORTANT: This cache persists for the lifetime of the page. Blob URLs are
- * only revoked when explicitly requested (e.g., media deleted) or on page unload.
- * This prevents race conditions where components try to use revoked URLs.
- */
-const blobUrlCache = new Map<string, string>();
 
 /**
  * Pending requests to prevent concurrent OPFS access to the same file
@@ -24,9 +17,10 @@ const pendingRequests = new Map<string, Promise<string>>();
  * @returns Blob URL for the media, or empty string if not found
  */
 export async function resolveMediaUrl(mediaId: string): Promise<string> {
-  // Check cache first - URLs persist until page unload or explicit revocation
-  if (blobUrlCache.has(mediaId)) {
-    return blobUrlCache.get(mediaId)!;
+  // Check centralized manager first - URLs persist until explicit release
+  const cached = blobUrlManager.get(mediaId);
+  if (cached) {
+    return cached;
   }
 
   // Check if there's already a pending request for this media
@@ -53,13 +47,8 @@ export async function resolveMediaUrl(mediaId: string): Promise<string> {
         return '';
       }
 
-      // Create blob URL from the Blob object
-      const blobUrl = URL.createObjectURL(blob);
-
-      // Cache it to prevent memory leaks and improve performance
-      blobUrlCache.set(mediaId, blobUrl);
-
-      return blobUrl;
+      // Acquire blob URL through centralized manager (handles caching + ref counting)
+      return blobUrlManager.acquire(mediaId, blob);
     } catch (error) {
       console.error(`Failed to resolve media ${mediaId}:`, error);
 
@@ -87,13 +76,28 @@ export async function resolveMediaUrl(mediaId: string): Promise<string> {
 }
 
 /**
+ * Resolves a proxy URL for a media item if available.
+ * Returns null if no proxy exists (caller should fall back to full-res).
+ */
+function resolveProxyUrl(mediaId: string): string | null {
+  return proxyService.getProxyBlobUrl(mediaId);
+}
+
+/**
  * Resolves all media URLs in timeline tracks
  * Creates a deep clone of tracks with resolved blob URLs
  *
  * @param tracks - Timeline tracks with media items
+ * @param options.useProxy - If true, prefer proxy URLs for video items (default: true)
  * @returns Tracks with resolved blob URLs in item.src
  */
-export async function resolveMediaUrls(tracks: TimelineTrack[]): Promise<TimelineTrack[]> {
+export async function resolveMediaUrls(
+  tracks: TimelineTrack[],
+  options?: { useProxy?: boolean; signal?: AbortSignal }
+): Promise<TimelineTrack[]> {
+  const useProxy = options?.useProxy ?? true;
+  const signal = options?.signal;
+
   // Deep clone tracks to avoid mutating original
   const resolvedTracks: TimelineTrack[] = JSON.parse(JSON.stringify(tracks));
 
@@ -108,7 +112,13 @@ export async function resolveMediaUrls(tracks: TimelineTrack[]): Promise<Timelin
         (item.type === 'video' || item.type === 'audio' || item.type === 'image')
       ) {
         const promise = resolveMediaUrl(item.mediaId).then((blobUrl) => {
-          item.src = blobUrl;
+          // For video items in preview mode, prefer proxy URL if available
+          if (useProxy && item.type === 'video') {
+            const proxyUrl = resolveProxyUrl(item.mediaId!);
+            item.src = proxyUrl || blobUrl;
+          } else {
+            item.src = blobUrl;
+          }
         });
         resolutionPromises.push(promise);
       }
@@ -118,6 +128,11 @@ export async function resolveMediaUrls(tracks: TimelineTrack[]): Promise<Timelin
   // Wait for all resolutions to complete
   await Promise.all(resolutionPromises);
 
+  // Check if aborted after resolution
+  if (signal?.aborted) {
+    throw new DOMException('Media resolution aborted', 'AbortError');
+  }
+
   return resolvedTracks;
 }
 
@@ -126,9 +141,6 @@ export async function resolveMediaUrls(tracks: TimelineTrack[]): Promise<Timelin
  * Call this on component unmount to prevent memory leaks
  */
 export function cleanupBlobUrls(): void {
-  for (const url of blobUrlCache.values()) {
-    URL.revokeObjectURL(url);
-  }
-  blobUrlCache.clear();
-  pendingRequests.clear(); // Clear any pending requests
+  blobUrlManager.releaseAll();
+  pendingRequests.clear();
 }

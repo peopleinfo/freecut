@@ -192,6 +192,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
       if (transformRef.current) {
         transformRef.current.style.transition = 'none';
         transformRef.current.style.transform = '';
+        // Clear imperative opacity so React's inline style takes precedence
         transformRef.current.style.opacity = '';
         transformRef.current.style.pointerEvents = '';
         transformRef.current.style.zIndex = '';
@@ -268,7 +269,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
       cleanupDragStyles();
       if (dragWasActiveTimeout) clearTimeout(dragWasActiveTimeout);
     };
-  }, [item.id, isDragging]); // Use refs for position values to avoid recreation on drag
+  }, [item.id, isDragging]); // Only re-create when item identity or drag anchor status changes
 
   // Computed values from refs for rendering
   const isPartOfMultiDrag = dragParticipationRef.current > 0;
@@ -409,7 +410,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
       const tracksContainer = e.currentTarget.closest('.timeline-tracks') as HTMLElement | null;
       const tracksRect = tracksContainer?.getBoundingClientRect();
       const cursorX = tracksRect
-        ? e.clientX - tracksRect.left + tracksContainer.scrollLeft
+        ? e.clientX - tracksRect.left + tracksContainer!.scrollLeft
         : frameToPixels(item.from) + (e.clientX - e.currentTarget.getBoundingClientRect().left);
       const { currentFrame, isPlaying } = usePlaybackStore.getState();
       const { splitFrame } = getRazorSplitPosition({
@@ -420,6 +421,9 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         pixelsToFrame,
       });
       useTimelineStore.getState().splitItem(item.id, splitFrame);
+      // Keep selection focused on the split clip so downstream panels
+      // (like transitions) immediately evaluate the new adjacency.
+      useSelectionStore.getState().selectItems([item.id]);
       return;
     }
 
@@ -618,7 +622,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
             width: `${visualWidth}px`,
             transform: isDragging && !isAltDrag ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
             opacity: isDragging && !isAltDrag ? DRAG_OPACITY : trackHidden ? 0.3 : trackLocked ? 0.6 : 1,
-            pointerEvents: isDragging || trackHidden ? 'none' : 'auto',
+            pointerEvents: isDragging ? 'none' : 'auto',
             zIndex: isBeingDragged ? 50 : undefined,
             contentVisibility: 'auto',
             containIntrinsicSize: `0 ${DEFAULT_TRACK_HEIGHT}px`,
