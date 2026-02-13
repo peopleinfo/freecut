@@ -159,8 +159,9 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
   }, []);
 
   const handleDragOver = (e: React.DragEvent) => {
-    // Don't allow drops on locked tracks
-    if (track.locked) {
+    // Don't allow drops on locked or group tracks
+    if (track.locked || track.isGroup) {
+      e.preventDefault();
       e.dataTransfer.dropEffect = 'none';
       return;
     }
@@ -255,8 +256,8 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
     setIsDragOver(false);
     setGhostPreviews([]);
 
-    // Don't allow drops on locked tracks
-    if (track.locked) {
+    // Don't allow drops on locked or group tracks
+    if (track.locked || track.isGroup) {
       return;
     }
 
