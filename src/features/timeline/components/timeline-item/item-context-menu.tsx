@@ -10,6 +10,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { useSelectionStore } from '@/features/editor/stores/selection-store';
 import { PROPERTY_LABELS, type AnimatableProperty } from '@/types/keyframe';
 import type { PropertyKeyframes } from '@/types/keyframe';
 
@@ -24,8 +25,6 @@ interface ItemContextMenuProps {
   closerEdge: 'left' | 'right' | null;
   /** Keyframed properties for the item (used to build clear submenu) */
   keyframedProperties?: PropertyKeyframes[];
-  /** Number of currently selected items (for multi-selection features) */
-  selectedCount: number;
   onJoinSelected: () => void;
   onJoinLeft: () => void;
   onJoinRight: () => void;
@@ -54,11 +53,11 @@ export const ItemContextMenu = memo(function ItemContextMenu({
   onJoinRight,
   onRippleDelete,
   onDelete,
-  selectedCount,
   onClearAllKeyframes,
   onClearPropertyKeyframes,
   onBentoLayout,
 }: ItemContextMenuProps) {
+  const selectedCount = useSelectionStore((s) => s.selectedItemIds.length);
   // Filter to only properties that actually have keyframes
   const propertiesWithKeyframes = useMemo(() => {
     if (!keyframedProperties) return [];

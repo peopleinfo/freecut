@@ -82,6 +82,7 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
   const needsInitialSyncRef = useRef<boolean>(true);
   // Track last frame for scrub detection (only seek on pause if frame changed)
   const lastFrameRef = useRef<number>(-1);
+  const preWarmTimerRef = useRef<number | null>(null);
 
   // Read preview values from unified preview system
   const itemPreview = useGizmoStore(
@@ -219,6 +220,10 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
       gainNodeRef.current?.disconnect();
       gainNodeRef.current = null;
       sourceNodeRef.current = null;
+      if (preWarmTimerRef.current !== null) {
+        clearTimeout(preWarmTimerRef.current);
+        preWarmTimerRef.current = null;
+      }
     };
   }, [src]);
 
@@ -311,6 +316,12 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
     }
 
     if (playing) {
+      // Cancel any pending pre-warm since we're about to play
+      if (preWarmTimerRef.current !== null) {
+        clearTimeout(preWarmTimerRef.current);
+        preWarmTimerRef.current = null;
+      }
+
       const currentTime = audio.currentTime;
       const now = Date.now();
 
@@ -341,8 +352,10 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
         }
       }
 
-      // Play if paused and audio is ready
-      if (audio.paused && audio.readyState >= 2) {
+      // Play if paused and audio has buffered ahead (HAVE_FUTURE_DATA).
+      // >= 3 ensures the decoder has data beyond the current position,
+      // preventing audio stutter on play start after seeking.
+      if (audio.paused && audio.readyState >= 3) {
         // Resume shared context when this clip is using Web Audio gain.
         const sharedContext = gainNodeRef.current ? getSharedAudioContext() : null;
         if (sharedContext?.state === 'suspended') {
@@ -364,6 +377,32 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
         } catch {
           // Seek failed - audio may not be ready yet
         }
+
+        // Pre-warm audio decoder at the new position (debounced).
+        // A brief muted play/pause fills the decode buffer so audio
+        // starts without a pop/stutter when the user presses play.
+        if (preWarmTimerRef.current !== null) {
+          clearTimeout(preWarmTimerRef.current);
+        }
+        preWarmTimerRef.current = window.setTimeout(() => {
+          preWarmTimerRef.current = null;
+          const a = audioRef.current;
+          if (a && a.paused && a.readyState >= 2 && !usePlaybackStore.getState().isPlaying) {
+            const prevVolume = a.volume;
+            a.volume = 0;
+            a.play().then(() => {
+              if (!usePlaybackStore.getState().isPlaying) {
+                a.pause();
+                a.volume = prevVolume;
+              }
+              // If playback started, leave volume to the volume sync effect
+            }).catch(() => {
+              if (!usePlaybackStore.getState().isPlaying) {
+                a.volume = prevVolume;
+              }
+            });
+          }
+        }, 50);
       }
     }
   }, [frame, fps, playing, playbackRate, trimBefore]);
