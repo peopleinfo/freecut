@@ -43,11 +43,11 @@ const NativePreviewVideo: React.FC<{
   const elementRef = useRef<HTMLVideoElement | null>(null);
   const forceRenderTimeoutRef = useRef<number | null>(null);
   const preWarmTimerRef = useRef<number | null>(null);
+  const preWarmGenRef = useRef(0);
   const audioVolumeRef = useRef(audioVolume);
   const lastSyncTimeRef = useRef<number>(Date.now());
   const needsInitialSyncRef = useRef<boolean>(true);
   const lastFrameRef = useRef<number>(-1);
-  const [isReady, setIsReady] = useState(false);
   audioVolumeRef.current = audioVolume;
 
   // Clock instance for imperative access in rVFC callback
@@ -150,13 +150,9 @@ const NativePreviewVideo: React.FC<{
     // Set up event listeners
     const handleCanPlay = () => {
       videoLog.debug(`[${shortId}] canplay:`, element.readyState);
-      setIsReady(true);
     };
     const handleSeeked = () => {
       videoLog.debug(`[${shortId}] seeked:`, element.currentTime);
-      if (element.readyState >= 3) {
-        setIsReady(true);
-      }
     };
     const handleError = () => {
       const error = new Error(`Video error: ${element.error?.message || 'Unknown'}`);
@@ -223,11 +219,6 @@ const NativePreviewVideo: React.FC<{
     // Try after a short delay to allow the seek to complete
     forceRenderTimeoutRef.current = window.setTimeout(forceFrameRender, 100);
 
-    // Check if already ready
-    if (element.readyState >= 3) {
-      setIsReady(true);
-    }
-
     return () => {
       element.removeEventListener('canplay', handleCanPlay);
       element.removeEventListener('seeked', handleSeeked);
@@ -251,7 +242,6 @@ const NativePreviewVideo: React.FC<{
       // Release back to pool
       pool.releaseClip(itemId);
       elementRef.current = null;
-      setIsReady(false);
 
       videoLog.debug(`[${shortId}] released`);
     };
@@ -322,6 +312,8 @@ const NativePreviewVideo: React.FC<{
         clearTimeout(preWarmTimerRef.current);
         preWarmTimerRef.current = null;
       }
+      // Invalidate any in-flight pre-warm promise so its .then()/.catch() no-ops
+      preWarmGenRef.current += 1;
 
       // Initial sync is always needed (first play after mount/seek)
       if (needsInitialSyncRef.current && canSeek) {
@@ -383,24 +375,29 @@ const NativePreviewVideo: React.FC<{
         if (preWarmTimerRef.current !== null) {
           clearTimeout(preWarmTimerRef.current);
         }
+        preWarmGenRef.current += 1;
+        const gen = preWarmGenRef.current;
         preWarmTimerRef.current = window.setTimeout(() => {
           preWarmTimerRef.current = null;
           const v = elementRef.current;
           if (v && v.paused && v.readyState >= 2 && !usePlaybackStore.getState().isPlaying) {
             v.muted = true;
             v.play().then(() => {
-              if (!usePlaybackStore.getState().isPlaying) {
+              // Only pause+unmute if this pre-warm is still current and playback hasn't started
+              if (gen === preWarmGenRef.current && !usePlaybackStore.getState().isPlaying) {
                 v.pause();
+                v.muted = false;
               }
-              v.muted = false;
             }).catch(() => {
-              v.muted = false;
+              if (gen === preWarmGenRef.current && !usePlaybackStore.getState().isPlaying) {
+                v.muted = false;
+              }
             });
           }
         }, 50);
       }
     }
-  }, [frame, fps, isPlaying, isReady, playbackRate, safeTrimBefore, targetTime]);
+  }, [frame, fps, isPlaying, playbackRate, safeTrimBefore, targetTime]);
 
   // requestVideoFrameCallback-based drift correction.
   // Runs outside React's render cycle — the browser calls us exactly when a

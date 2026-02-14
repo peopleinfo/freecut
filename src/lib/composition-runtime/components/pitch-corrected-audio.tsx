@@ -393,10 +393,13 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
             a.play().then(() => {
               if (!usePlaybackStore.getState().isPlaying) {
                 a.pause();
+                a.volume = prevVolume;
               }
-              a.volume = prevVolume;
+              // If playback started, leave volume to the volume sync effect
             }).catch(() => {
-              a.volume = prevVolume;
+              if (!usePlaybackStore.getState().isPlaying) {
+                a.volume = prevVolume;
+              }
             });
           }
         }, 50);

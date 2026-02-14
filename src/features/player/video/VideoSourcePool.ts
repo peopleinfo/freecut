@@ -105,6 +105,14 @@ class SourceController {
       // this is a harmless no-op in that case.
       this.primary = element;
       this._pendingPrimary = null;
+    }).catch((err) => {
+      // Don't leave a broken element where acquire() can find it
+      if (this._pendingPrimary === element) {
+        this._pendingPrimary = null;
+      }
+      // Allow retries by clearing the rejected promise
+      this.loadPromise = null;
+      throw err;
     });
 
     await this.loadPromise;
