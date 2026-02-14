@@ -13,6 +13,7 @@ export interface TimelineState {
   fps: number;
   scrollPosition: number;
   snapEnabled: boolean;
+  magneticMode: boolean;
   inPoint: number | null;
   outPoint: number | null;
   isDirty: boolean; // Track unsaved changes
@@ -34,6 +35,7 @@ export interface TimelineActions {
   rippleDeleteItems: (ids: string[]) => void;
   closeGapAtPosition: (trackId: string, frame: number) => void;
   toggleSnap: () => void;
+  toggleMagneticMode: () => void;
   setScrollPosition: (position: number) => void;
   moveItem: (id: string, newFrom: number, newTrackId?: string) => void;
   moveItems: (updates: Array<{ id: string; from: number; trackId?: string }>) => void;
@@ -43,6 +45,7 @@ export interface TimelineActions {
   splitItem: (id: string, splitFrame: number) => void;
   joinItems: (itemIds: string[]) => void;
   rateStretchItem: (id: string, newFrom: number, newDuration: number, newSpeed: number) => void;
+  toggleReverse: (id: string) => void;
   setInPoint: (frame: number) => void;
   setOutPoint: (frame: number) => void;
   clearInOutPoints: () => void;

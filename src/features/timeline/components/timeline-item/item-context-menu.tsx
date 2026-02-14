@@ -33,6 +33,23 @@ interface ItemContextMenuProps {
   onClearAllKeyframes?: () => void;
   onClearPropertyKeyframes?: (property: AnimatableProperty) => void;
   onBentoLayout?: () => void;
+  /** Whether this item is a video clip (enables freeze frame option) */
+  isVideoItem?: boolean;
+  /** Whether the playhead is within this item's bounds */
+  playheadInBounds?: boolean;
+  onFreezeFrame?: () => void;
+  /** Whether this item is a media item (video/audio) that supports reverse */
+  isReversible?: boolean;
+  /** Whether the clip is currently reversed */
+  isReversed?: boolean;
+  onToggleReverse?: () => void;
+  /** Whether this item is a composition item (enables enter/dissolve options) */
+  isCompositionItem?: boolean;
+  onEnterComposition?: () => void;
+  onDissolveComposition?: () => void;
+  /** Whether multiple items are selected (enables pre-comp creation) */
+  canCreatePreComp?: boolean;
+  onCreatePreComp?: () => void;
 }
 
 /**
@@ -56,6 +73,17 @@ export const ItemContextMenu = memo(function ItemContextMenu({
   onClearAllKeyframes,
   onClearPropertyKeyframes,
   onBentoLayout,
+  isVideoItem,
+  playheadInBounds,
+  onFreezeFrame,
+  isReversible,
+  isReversed,
+  onToggleReverse,
+  isCompositionItem,
+  onEnterComposition,
+  onDissolveComposition,
+  canCreatePreComp,
+  onCreatePreComp,
 }: ItemContextMenuProps) {
   const selectedCount = useSelectionStore((s) => s.selectedItemIds.length);
   // Filter to only properties that actually have keyframes
@@ -139,6 +167,48 @@ export const ItemContextMenu = memo(function ItemContextMenu({
             </ContextMenuItem>
             <ContextMenuSeparator />
           </>
+        )}
+
+        {/* Reverse Clip - only show for video/audio items */}
+        {isReversible && onToggleReverse && (
+          <>
+            <ContextMenuItem onClick={onToggleReverse}>
+              {isReversed ? 'Remove Reverse' : 'Reverse Clip'}
+              <ContextMenuShortcut>Alt+R</ContextMenuShortcut>
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
+
+        {/* Freeze Frame - only show for video items when playhead is within bounds */}
+        {isVideoItem && playheadInBounds && onFreezeFrame && (
+          <>
+            <ContextMenuItem onClick={onFreezeFrame}>
+              Insert Freeze Frame
+              <ContextMenuShortcut>Shift+F</ContextMenuShortcut>
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
+
+        {/* Composition operations */}
+        {isCompositionItem && onEnterComposition && (
+          <ContextMenuItem onClick={onEnterComposition}>
+            Enter Composition
+          </ContextMenuItem>
+        )}
+        {isCompositionItem && onDissolveComposition && (
+          <ContextMenuItem onClick={onDissolveComposition}>
+            Dissolve Pre-Comp
+          </ContextMenuItem>
+        )}
+        {canCreatePreComp && onCreatePreComp && (
+          <ContextMenuItem onClick={onCreatePreComp}>
+            Create Pre-Composition
+          </ContextMenuItem>
+        )}
+        {(isCompositionItem || canCreatePreComp) && (
+          <ContextMenuSeparator />
         )}
 
         <ContextMenuItem

@@ -22,6 +22,8 @@ export const HOTKEYS = {
   DELETE_SELECTED_ALT: 'backspace',
   RIPPLE_DELETE: 'mod+delete',
   RIPPLE_DELETE_ALT: 'mod+backspace',
+  FREEZE_FRAME: 'shift+f',
+  REVERSE_CLIP: 'alt+r',
 
   // History
   UNDO: 'mod+z',
@@ -46,6 +48,7 @@ export const HOTKEYS = {
 
   // UI
   TOGGLE_SNAP: 's',
+  TOGGLE_MAGNETIC_MODE: 'n',
 
   // Markers
   ADD_MARKER: 'm',
@@ -93,6 +96,8 @@ export const HOTKEY_DESCRIPTIONS: Record<HotkeyKey, string> = {
   DELETE_SELECTED_ALT: 'Delete selected items (alternative)',
   RIPPLE_DELETE: 'Ripple delete selected items',
   RIPPLE_DELETE_ALT: 'Ripple delete selected items (alternative)',
+  FREEZE_FRAME: 'Insert freeze frame at playhead',
+  REVERSE_CLIP: 'Reverse selected clip playback',
 
   // History
   UNDO: 'Undo',
@@ -117,6 +122,7 @@ export const HOTKEY_DESCRIPTIONS: Record<HotkeyKey, string> = {
 
   // UI
   TOGGLE_SNAP: 'Toggle snap',
+  TOGGLE_MAGNETIC_MODE: 'Toggle magnetic timeline mode',
 
   // Markers
   ADD_MARKER: 'Add marker at playhead',

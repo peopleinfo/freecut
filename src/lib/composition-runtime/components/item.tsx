@@ -10,6 +10,7 @@ import { ItemVisualWrapper } from './item-visual-wrapper';
 import { TextContent } from './text-content';
 import { ShapeContent } from './shape-content';
 import { VideoContent } from './video-content';
+import { CompositionContent } from './composition-content';
 import {
   timelineToSourceFrames,
   isValidSeekPosition,
@@ -135,6 +136,12 @@ export const Item = React.memo<ItemProps>(({ item, muted = false, masks = [] }) 
       );
     }
 
+    // Reversed playback: calculate the source end position for reverse time mapping
+    const isReversed = item.reversed === true;
+    const sourceEndForReverse = isReversed
+      ? (item.sourceEnd ?? (safeTrimBefore + sourceFramesNeeded))
+      : 0;
+
     const videoContent = (
       <>
         <VideoContent
@@ -142,6 +149,8 @@ export const Item = React.memo<ItemProps>(({ item, muted = false, masks = [] }) 
           muted={muted}
           safeTrimBefore={safeTrimBefore}
           playbackRate={playbackRate}
+          reversed={isReversed}
+          sourceEndFrame={sourceEndForReverse}
         />
         {showDebugOverlay && (
           <DebugOverlay
@@ -181,6 +190,9 @@ export const Item = React.memo<ItemProps>(({ item, muted = false, masks = [] }) 
     // Get playback rate from speed property
     const playbackRate = item.speed ?? DEFAULT_SPEED;
 
+    // Mute audio when clip is reversed (reverse audio playback not supported in MVP)
+    const isAudioReversed = item.reversed === true;
+
     // Use PitchCorrectedAudio for pitch-preserved playback during preview
     // and toneFrequency correction during rendering
     return (
@@ -190,7 +202,7 @@ export const Item = React.memo<ItemProps>(({ item, muted = false, masks = [] }) 
         trimBefore={trimBefore}
         volume={item.volume ?? 0}
         playbackRate={playbackRate}
-        muted={muted}
+        muted={muted || isAudioReversed}
         durationInFrames={item.durationInFrames}
         audioFadeIn={item.audioFadeIn}
         audioFadeOut={item.audioFadeOut}
@@ -273,6 +285,20 @@ export const Item = React.memo<ItemProps>(({ item, muted = false, masks = [] }) 
         <ShapeContent item={item} />
       </ItemVisualWrapper>
     );
+  }
+
+  if (item.type === 'composition') {
+    // Render sub-composition contents inline
+    return (
+      <ItemVisualWrapper item={item} masks={masks}>
+        <CompositionContent item={item} />
+      </ItemVisualWrapper>
+    );
+  }
+
+  // adjustment items render nothing visually (they apply effects to other items)
+  if (item.type === 'adjustment') {
+    return null;
   }
 
   throw new Error(`Unknown item type: ${JSON.stringify(item)}`);

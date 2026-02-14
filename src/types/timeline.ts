@@ -36,6 +36,7 @@ export type VideoItem = BaseTimelineItem & {
   src: string;
   thumbnailUrl?: string;
   offset?: number; // Trim offset in source video
+  reversed?: boolean; // Play clip in reverse (default: false)
   // Source dimensions (intrinsic size from media metadata)
   sourceWidth?: number;
   sourceHeight?: number;
@@ -46,6 +47,7 @@ export type AudioItem = BaseTimelineItem & {
   src: string;
   waveformData?: number[];
   offset?: number; // Trim offset in source audio
+  reversed?: boolean; // Play clip in reverse (default: false, audio muted when reversed)
 };
 
 export type TextItem = BaseTimelineItem & {
@@ -118,8 +120,17 @@ export type AdjustmentItem = BaseTimelineItem & {
   effectOpacity?: number; // 0-1, defaults to 1
 };
 
+// Composition item - references a sub-composition (pre-comp)
+export type CompositionItem = BaseTimelineItem & {
+  type: 'composition';
+  compositionId: string; // References a SubComposition in compositions-store
+  // Dimensions of the sub-composition canvas
+  compositionWidth: number;
+  compositionHeight: number;
+};
+
 // Union type for all timeline items
-export type TimelineItem = VideoItem | AudioItem | TextItem | ImageItem | ShapeItem | AdjustmentItem;
+export type TimelineItem = VideoItem | AudioItem | TextItem | ImageItem | ShapeItem | AdjustmentItem | CompositionItem;
 
 export interface TimelineTrack {
   id: string;
