@@ -597,8 +597,6 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   }, [item.id]);
 
   // Bento layout
-  const selectedCount = useSelectionStore((s) => s.selectedItemIds.length);
-
   const handleBentoLayout = useCallback(() => {
     const selectedItemIds = useSelectionStore.getState().selectedItemIds;
     if (selectedItemIds.length < 2) return;
@@ -643,7 +641,6 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         onJoinRight={handleJoinRight}
         onRippleDelete={handleRippleDelete}
         onDelete={handleDelete}
-        selectedCount={selectedCount}
         onClearAllKeyframes={handleClearAllKeyframes}
         onClearPropertyKeyframes={handleClearPropertyKeyframes}
         onBentoLayout={handleBentoLayout}

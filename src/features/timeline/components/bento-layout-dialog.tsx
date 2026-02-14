@@ -179,36 +179,38 @@ function LayoutCanvas({
     return () => observer.disconnect();
   }, []);
 
-  // Compute display scale
-  const aspectRatio = canvasWidth / canvasHeight;
+  // Compute display scale (guard against zero/missing canvas dimensions)
+  const safeCanvasWidth = canvasWidth > 0 ? canvasWidth : 1920;
+  const safeCanvasHeight = canvasHeight > 0 ? canvasHeight : 1080;
+  const aspectRatio = safeCanvasWidth / safeCanvasHeight;
   const displayWidth = containerWidth;
-  const displayHeight = displayWidth / aspectRatio;
-  const scale = displayWidth / canvasWidth;
+  const displayHeight = containerWidth > 0 ? displayWidth / aspectRatio : 200;
+  const scale = containerWidth > 0 ? displayWidth / safeCanvasWidth : 1;
 
   // Build layout items and compute layout
   const layoutItems: BentoLayoutItem[] = useMemo(() => {
     return itemOrder.map((id) => {
       const item = itemsLookup.get(id);
-      const sw = item && 'sourceWidth' in item && item.sourceWidth ? item.sourceWidth : canvasWidth;
-      const sh = item && 'sourceHeight' in item && item.sourceHeight ? item.sourceHeight : canvasHeight;
+      const sw = item && 'sourceWidth' in item && item.sourceWidth ? item.sourceWidth : safeCanvasWidth;
+      const sh = item && 'sourceHeight' in item && item.sourceHeight ? item.sourceHeight : safeCanvasHeight;
       return { id, sourceWidth: sw, sourceHeight: sh };
     });
-  }, [itemOrder, itemsLookup, canvasWidth, canvasHeight]);
+  }, [itemOrder, itemsLookup, safeCanvasWidth, safeCanvasHeight]);
 
   const transformsMap = useMemo(() => {
     if (layoutItems.length === 0) return new Map<string, { x?: number; y?: number; width?: number; height?: number }>();
-    return computeLayout(layoutItems, canvasWidth, canvasHeight, config);
-  }, [layoutItems, canvasWidth, canvasHeight, config]);
+    return computeLayout(layoutItems, safeCanvasWidth, safeCanvasHeight, config);
+  }, [layoutItems, safeCanvasWidth, safeCanvasHeight, config]);
 
   // Convert center-relative coords to absolute top-left, then scale
   const canvasRects: CanvasItemRect[] = useMemo(() => {
-    const cx = canvasWidth / 2;
-    const cy = canvasHeight / 2;
+    const cx = safeCanvasWidth / 2;
+    const cy = safeCanvasHeight / 2;
     return itemOrder.map((id) => {
       const t = transformsMap.get(id);
       const item = itemsLookup.get(id);
-      const w = t?.width ?? canvasWidth;
-      const h = t?.height ?? canvasHeight;
+      const w = t?.width ?? safeCanvasWidth;
+      const h = t?.height ?? safeCanvasHeight;
       const absLeft = cx + (t?.x ?? 0) - w / 2;
       const absTop = cy + (t?.y ?? 0) - h / 2;
       return {
@@ -221,7 +223,7 @@ function LayoutCanvas({
         height: h * scale,
       };
     });
-  }, [itemOrder, transformsMap, itemsLookup, canvasWidth, canvasHeight, scale]);
+  }, [itemOrder, transformsMap, itemsLookup, safeCanvasWidth, safeCanvasHeight, scale]);
 
   // Drag state
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -356,16 +358,16 @@ export function BentoLayoutDialog() {
     }
   }, [isOpen, itemIds]);
 
-  // Look up items from store (memoized)
+  // Look up items from store (reactive)
+  const items = useItemsStore((state) => state.items);
   const itemsLookup = useMemo(() => {
-    const allItems = useItemsStore.getState().items;
     const map = new Map<string, TimelineItem>();
     for (const id of itemIds) {
-      const item = allItems.find((i) => i.id === id);
+      const item = items.find((i) => i.id === id);
       if (item) map.set(id, item);
     }
     return map;
-  }, [itemIds]);
+  }, [items, itemIds]);
 
   const itemCount = itemIds.length;
 
@@ -415,14 +417,16 @@ export function BentoLayoutDialog() {
   }, [itemOrder, canvasWidth, canvasHeight, resolveConfig, close]);
 
   const handleSavePreset = useCallback(() => {
-    if (!presetName.trim()) return;
+    if (!presetName.trim() || itemCount < 1) return;
 
     const cfg = resolveConfig();
+    const safeCols = cfg.cols ?? Math.max(1, Math.ceil(Math.sqrt(itemCount)));
+    const safeRows = cfg.rows ?? Math.max(1, Math.ceil(itemCount / safeCols));
     addPreset({
       name: presetName.trim(),
       preset: cfg.preset,
-      cols: cfg.cols ?? Math.ceil(Math.sqrt(itemCount)),
-      rows: cfg.rows ?? Math.ceil(itemCount / Math.ceil(Math.sqrt(itemCount))),
+      cols: safeCols,
+      rows: safeRows,
       gap: cfg.gap ?? 0,
       padding: cfg.padding ?? 0,
     });
