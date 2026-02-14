@@ -10,6 +10,7 @@ import { useTimelineSettingsStore } from '../timeline-settings-store';
 import { useCompositionsStore, type SubComposition } from '../compositions-store';
 import { useSelectionStore } from '@/features/editor/stores/selection-store';
 import { DEFAULT_TRACK_HEIGHT } from '../../constants';
+import { useCompositionNavigationStore } from '../composition-navigation-store';
 import { execute } from './shared';
 
 /**
@@ -21,14 +22,18 @@ import { execute } from './shared';
  * 4. Removes original items from the main timeline.
  * 5. Inserts a CompositionItem at the bounding box position on the first
  *    available track (or the first selected item's track).
+ *
+ * Only allowed on the root timeline (1-level nesting limit).
  */
-export function createPreComp(name?: string): CompositionItem | null {
+export function createPreComp(name?: string, itemIds?: string[]): CompositionItem | null {
   return execute('CREATE_PRE_COMP', () => {
+    // Block pre-comp creation inside a sub-composition (1-level nesting limit)
+    if (useCompositionNavigationStore.getState().activeCompositionId !== null) return null;
     const { items, tracks } = useItemsStore.getState();
     const { transitions } = useTransitionsStore.getState();
     const { keyframes } = useKeyframesStore.getState();
     const { fps } = useTimelineSettingsStore.getState();
-    const selectedIds = useSelectionStore.getState().selectedItemIds;
+    const selectedIds = itemIds ?? useSelectionStore.getState().selectedItemIds;
 
     if (selectedIds.length === 0) return null;
 
@@ -188,18 +193,50 @@ export function dissolvePreComp(compositionItemId: string): boolean {
     );
     if (!subComp) return false;
 
-    // Map sub-comp track IDs to main timeline tracks
-    // For simplicity, place all sub-comp items on the composition item's track
-    // and create additional tracks as needed
     const compFrom = compositionItem.from;
     const targetTrackId = compositionItem.trackId;
+    const { tracks } = useItemsStore.getState();
 
-    // Reposition items back to absolute timeline positions
+    // Find the composition item's track to get its order for inserting new tracks nearby
+    const compTrack = tracks.find((t) => t.id === targetTrackId);
+    const compTrackOrder = compTrack?.order ?? 0;
+
+    // Map sub-comp tracks to main timeline tracks.
+    // First sub-comp track reuses the composition item's track;
+    // additional sub-comp tracks get new main-timeline tracks created for them.
+    const sortedSubTracks = [...subComp.tracks].sort((a, b) => a.order - b.order);
+    const trackIdMapping = new Map<string, string>();
+    const newTracks: typeof tracks = [];
+
+    for (let i = 0; i < sortedSubTracks.length; i++) {
+      const subTrack = sortedSubTracks[i]!;
+      if (i === 0) {
+        // First sub-comp track maps to the composition item's existing track
+        trackIdMapping.set(subTrack.id, targetTrackId);
+      } else {
+        // Create a new track for additional sub-comp tracks
+        const newTrackId = crypto.randomUUID();
+        trackIdMapping.set(subTrack.id, newTrackId);
+        newTracks.push({
+          ...subTrack,
+          id: newTrackId,
+          order: compTrackOrder + i * 0.01, // Insert right after the comp track
+          parentTrackId: compTrack?.parentTrackId, // Preserve group membership
+        });
+      }
+    }
+
+    // Add new tracks to the store
+    if (newTracks.length > 0) {
+      useItemsStore.getState().setTracks([...tracks, ...newTracks]);
+    }
+
+    // Reposition items back to absolute timeline positions with correct track mapping
     const restoredItems: TimelineItem[] = subComp.items.map((item) => ({
       ...item,
       id: crypto.randomUUID(),
       from: item.from + compFrom,
-      trackId: targetTrackId, // Place all on the same track initially
+      trackId: trackIdMapping.get(item.trackId) ?? targetTrackId,
     }));
 
     // Remove the composition item

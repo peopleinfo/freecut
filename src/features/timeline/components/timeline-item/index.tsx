@@ -27,6 +27,7 @@ import { useClearKeyframesDialogStore } from '@/features/editor/components/clear
 import type { AnimatableProperty } from '@/types/keyframe';
 import { useBentoLayoutDialogStore } from '../bento-layout-dialog-store';
 import { getRazorSplitPosition } from '../../utils/razor-snap';
+import { useCompositionNavigationStore } from '../../stores/composition-navigation-store';
 
 // Width in pixels for edge hover detection (trim/rate-stretch handles)
 const EDGE_HOVER_ZONE = 8;
@@ -638,11 +639,14 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   // Composition operations
   const isCompositionItem = item.type === 'composition';
   const selectedItemIds = useSelectionStore((s) => s.selectedItemIds);
-  const canCreatePreComp = selectedItemIds.length >= 1 && isSelected;
+  const isInsideSubComp = useCompositionNavigationStore((s) => s.activeCompositionId !== null);
+  const canCreatePreComp = selectedItemIds.length >= 1 && isSelected && !isInsideSubComp;
 
   const handleCreatePreComp = useCallback(() => {
+    // Capture selection synchronously — context menu close may clear it before the dynamic import resolves
+    const ids = useSelectionStore.getState().selectedItemIds;
     void import('../../stores/actions/composition-actions').then(({ createPreComp }) => {
-      createPreComp();
+      createPreComp(undefined, ids);
     });
   }, []);
 

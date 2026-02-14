@@ -1,4 +1,7 @@
 import { create } from 'zustand';
+import type { TimelineItem, TimelineTrack } from '@/types/timeline';
+import type { Transition } from '@/types/transition';
+import type { ItemKeyframes } from '@/types/keyframe';
 
 /**
  * Navigation breadcrumb entry for composition hierarchy.
@@ -11,11 +14,25 @@ export interface CompositionBreadcrumb {
   label: string;
 }
 
+/**
+ * Stashed timeline state — saved when entering a composition so it can be
+ * restored when exiting back.
+ */
+interface StashedTimeline {
+  compositionId: string | null;
+  items: TimelineItem[];
+  tracks: TimelineTrack[];
+  transitions: Transition[];
+  keyframes: ItemKeyframes[];
+}
+
 interface CompositionNavigationState {
   /** Stack of composition breadcrumbs — last entry is the current view */
   breadcrumbs: CompositionBreadcrumb[];
   /** The compositionId currently being viewed (null = root timeline) */
   activeCompositionId: string | null;
+  /** Stack of stashed timeline states for navigation history */
+  stashStack: StashedTimeline[];
 }
 
 interface CompositionNavigationActions {
@@ -29,49 +46,166 @@ interface CompositionNavigationActions {
   resetToRoot: () => void;
 }
 
+import { useItemsStore } from './items-store';
+import { useTransitionsStore } from './transitions-store';
+import { useKeyframesStore } from './keyframes-store';
+import { useCompositionsStore } from './compositions-store';
+import { useSelectionStore } from '@/features/editor/stores/selection-store';
+
+/** Save current items/tracks/transitions/keyframes from domain stores into a stash entry. */
+function captureCurrentTimeline(compositionId: string | null): StashedTimeline {
+  return {
+    compositionId,
+    items: useItemsStore.getState().items,
+    tracks: useItemsStore.getState().tracks,
+    transitions: useTransitionsStore.getState().transitions,
+    keyframes: useKeyframesStore.getState().keyframes,
+  };
+}
+
+/** Restore a stashed timeline into the domain stores. */
+function restoreTimeline(stash: StashedTimeline) {
+  useItemsStore.getState().setItems(stash.items);
+  useItemsStore.getState().setTracks(stash.tracks);
+  useTransitionsStore.getState().setTransitions(stash.transitions);
+  useKeyframesStore.getState().setKeyframes(stash.keyframes);
+  useSelectionStore.getState().clearSelection();
+}
+
+/** Save current timeline data back to the compositions store (for sub-comps only). */
+function saveCurrentToComposition(compositionId: string) {
+  useCompositionsStore.getState().updateComposition(compositionId, {
+    items: useItemsStore.getState().items,
+    tracks: useItemsStore.getState().tracks,
+    transitions: useTransitionsStore.getState().transitions,
+    keyframes: useKeyframesStore.getState().keyframes,
+  });
+}
+
+/** Load a sub-composition's data into the domain stores. */
+function loadComposition(compositionId: string): boolean {
+  const subComp = useCompositionsStore.getState().getComposition(compositionId);
+  if (!subComp) return false;
+
+  useItemsStore.getState().setItems(subComp.items);
+  useItemsStore.getState().setTracks(subComp.tracks);
+  useTransitionsStore.getState().setTransitions(subComp.transitions ?? []);
+  useKeyframesStore.getState().setKeyframes(subComp.keyframes ?? []);
+  useSelectionStore.getState().clearSelection();
+  return true;
+}
+
+const MAX_DEPTH = 2;
+
 export const useCompositionNavigationStore = create<
   CompositionNavigationState & CompositionNavigationActions
->()((set) => ({
+>()((set, get) => ({
   breadcrumbs: [{ compositionId: null, label: 'Main Timeline' }],
   activeCompositionId: null,
+  stashStack: [],
 
-  enterComposition: (compositionId, label) =>
-    set((state) => {
-      const newBreadcrumbs = [
-        ...state.breadcrumbs,
-        { compositionId, label },
-      ];
-      return {
-        breadcrumbs: newBreadcrumbs,
-        activeCompositionId: compositionId,
-      };
-    }),
+  enterComposition: (compositionId, label) => {
+    const state = get();
 
-  exitComposition: () =>
-    set((state) => {
-      if (state.breadcrumbs.length <= 1) return state;
-      const newBreadcrumbs = state.breadcrumbs.slice(0, -1);
-      const lastEntry = newBreadcrumbs[newBreadcrumbs.length - 1]!;
-      return {
-        breadcrumbs: newBreadcrumbs,
-        activeCompositionId: lastEntry.compositionId,
-      };
-    }),
+    // Prevent infinite nesting
+    if (state.breadcrumbs.length >= MAX_DEPTH) return;
 
-  navigateTo: (index) =>
-    set((state) => {
-      if (index < 0 || index >= state.breadcrumbs.length) return state;
-      const newBreadcrumbs = state.breadcrumbs.slice(0, index + 1);
-      const lastEntry = newBreadcrumbs[newBreadcrumbs.length - 1]!;
-      return {
-        breadcrumbs: newBreadcrumbs,
-        activeCompositionId: lastEntry.compositionId,
-      };
-    }),
+    // Prevent entering the same composition we're already in
+    if (state.activeCompositionId === compositionId) return;
 
-  resetToRoot: () =>
+    // Prevent entering a composition that's already in the breadcrumb stack (circular)
+    if (state.breadcrumbs.some((b) => b.compositionId === compositionId)) return;
+
+    // If currently inside a sub-comp, save changes back before leaving
+    if (state.activeCompositionId !== null) {
+      saveCurrentToComposition(state.activeCompositionId);
+    }
+
+    // Stash current timeline state
+    const stash = captureCurrentTimeline(state.activeCompositionId);
+
+    // Load the sub-composition data into domain stores
+    if (!loadComposition(compositionId)) return;
+
+    set({
+      breadcrumbs: [...state.breadcrumbs, { compositionId, label }],
+      activeCompositionId: compositionId,
+      stashStack: [...state.stashStack, stash],
+    });
+  },
+
+  exitComposition: () => {
+    const state = get();
+    if (state.breadcrumbs.length <= 1) return;
+    if (state.stashStack.length === 0) return;
+
+    // Save current sub-comp changes back to compositions store
+    if (state.activeCompositionId !== null) {
+      saveCurrentToComposition(state.activeCompositionId);
+    }
+
+    // Pop the stash and restore
+    const stash = state.stashStack[state.stashStack.length - 1]!;
+    restoreTimeline(stash);
+
+    const newBreadcrumbs = state.breadcrumbs.slice(0, -1);
+    const lastEntry = newBreadcrumbs[newBreadcrumbs.length - 1]!;
+
+    set({
+      breadcrumbs: newBreadcrumbs,
+      activeCompositionId: lastEntry.compositionId,
+      stashStack: state.stashStack.slice(0, -1),
+    });
+  },
+
+  navigateTo: (index) => {
+    const state = get();
+    if (index < 0 || index >= state.breadcrumbs.length) return;
+
+    // Already at this level
+    if (index === state.breadcrumbs.length - 1) return;
+
+    // Save current sub-comp changes
+    if (state.activeCompositionId !== null) {
+      saveCurrentToComposition(state.activeCompositionId);
+    }
+
+    // Pop stash entries down to the target level
+    const levelsToExit = state.breadcrumbs.length - 1 - index;
+    const targetStash = state.stashStack[state.stashStack.length - levelsToExit];
+
+    if (targetStash) {
+      restoreTimeline(targetStash);
+    }
+
+    const newBreadcrumbs = state.breadcrumbs.slice(0, index + 1);
+    const lastEntry = newBreadcrumbs[newBreadcrumbs.length - 1]!;
+
+    set({
+      breadcrumbs: newBreadcrumbs,
+      activeCompositionId: lastEntry.compositionId,
+      stashStack: state.stashStack.slice(0, state.stashStack.length - levelsToExit),
+    });
+  },
+
+  resetToRoot: () => {
+    const state = get();
+
+    // Save current sub-comp changes
+    if (state.activeCompositionId !== null) {
+      saveCurrentToComposition(state.activeCompositionId);
+    }
+
+    // Restore root stash (first entry if exists)
+    if (state.stashStack.length > 0) {
+      const rootStash = state.stashStack[0]!;
+      restoreTimeline(rootStash);
+    }
+
     set({
       breadcrumbs: [{ compositionId: null, label: 'Main Timeline' }],
       activeCompositionId: null,
-    }),
+      stashStack: [],
+    });
+  },
 }));
