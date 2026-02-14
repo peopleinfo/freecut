@@ -1,6 +1,5 @@
 import React from 'react';
 import { AbsoluteFill, Sequence } from '@/features/player/composition';
-import { useCurrentFrame, useVideoConfig } from '../hooks/use-player-compat';
 import type { CompositionItem as CompositionItemType } from '@/types/timeline';
 import { useCompositionsStore } from '@/features/timeline/stores/compositions-store';
 import { Item } from './item';

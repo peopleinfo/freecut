@@ -177,7 +177,7 @@ export function createPreComp(name?: string): CompositionItem | null {
  */
 export function dissolvePreComp(compositionItemId: string): boolean {
   return execute('DISSOLVE_PRE_COMP', () => {
-    const { items, tracks } = useItemsStore.getState();
+    const { items } = useItemsStore.getState();
     const compositionItem = items.find(
       (i) => i.id === compositionItemId && i.type === 'composition'
     );
