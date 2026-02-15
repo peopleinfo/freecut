@@ -232,12 +232,42 @@ export function dissolvePreComp(compositionItemId: string): boolean {
     }
 
     // Reposition items back to absolute timeline positions with correct track mapping
-    const restoredItems: TimelineItem[] = subComp.items.map((item) => ({
-      ...item,
-      id: crypto.randomUUID(),
-      from: item.from + compFrom,
-      trackId: trackIdMapping.get(item.trackId) ?? targetTrackId,
-    }));
+    const itemIdMapping = new Map<string, string>();
+    const restoredItems: TimelineItem[] = subComp.items.map((item) => {
+      const newId = crypto.randomUUID();
+      itemIdMapping.set(item.id, newId);
+      return {
+        ...item,
+        id: newId,
+        from: item.from + compFrom,
+        trackId: trackIdMapping.get(item.trackId) ?? targetTrackId,
+      };
+    });
+
+    // Restore transitions with remapped IDs
+    const subTransitions = subComp.transitions ?? [];
+    if (subTransitions.length > 0) {
+      const currentTransitions = useTransitionsStore.getState().transitions;
+      const restoredTransitions = subTransitions.map((t) => ({
+        ...t,
+        id: crypto.randomUUID(),
+        leftClipId: itemIdMapping.get(t.leftClipId) ?? t.leftClipId,
+        rightClipId: itemIdMapping.get(t.rightClipId) ?? t.rightClipId,
+        trackId: trackIdMapping.get(t.trackId) ?? t.trackId,
+      }));
+      useTransitionsStore.getState().setTransitions([...currentTransitions, ...restoredTransitions]);
+    }
+
+    // Restore keyframes with remapped item IDs
+    const subKeyframes = subComp.keyframes ?? [];
+    if (subKeyframes.length > 0) {
+      const currentKeyframes = useKeyframesStore.getState().keyframes;
+      const restoredKeyframes = subKeyframes.map((kf) => ({
+        ...kf,
+        itemId: itemIdMapping.get(kf.itemId) ?? kf.itemId,
+      }));
+      useKeyframesStore.getState().setKeyframes([...currentKeyframes, ...restoredKeyframes]);
+    }
 
     // Remove the composition item
     useItemsStore.getState()._removeItems([compositionItemId]);
