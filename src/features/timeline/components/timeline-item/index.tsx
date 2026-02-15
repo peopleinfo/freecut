@@ -456,9 +456,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
 
     // Composition items: enter the sub-composition
     if (item.type === 'composition') {
-      void import('../../stores/composition-navigation-store').then(({ useCompositionNavigationStore }) => {
-        useCompositionNavigationStore.getState().enterComposition(item.compositionId, item.label);
-      });
+      useCompositionNavigationStore.getState().enterComposition(item.compositionId, item.label);
       return;
     }
 
@@ -643,9 +641,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
 
   const handleEnterComposition = useCallback(() => {
     if (item.type !== 'composition') return;
-    void import('../../stores/composition-navigation-store').then(({ useCompositionNavigationStore }) => {
-      useCompositionNavigationStore.getState().enterComposition(item.compositionId, item.label);
-    });
+    useCompositionNavigationStore.getState().enterComposition(item.compositionId, item.label);
   }, [item]);
 
   const handleDissolveComposition = useCallback(() => {
