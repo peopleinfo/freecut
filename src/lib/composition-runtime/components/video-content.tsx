@@ -14,6 +14,7 @@ import {
 } from './video-audio-context';
 
 const videoLog = createLogger('NativePreviewVideo');
+videoLog.setLevel(2); // WARN — suppress noisy per-frame debug logs
 
 // Feature detection for requestVideoFrameCallback (avoids per-frame React sync)
 const supportsRVFC = typeof HTMLVideoElement !== 'undefined' &&
@@ -29,11 +30,12 @@ const NativePreviewVideo: React.FC<{
   itemId: string;
   src: string;
   safeTrimBefore: number;
+  sourceFps: number;
   playbackRate: number;
   audioVolume: number;
   onError: (error: Error) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
-}> = ({ itemId, src, safeTrimBefore, playbackRate, audioVolume, onError, containerRef }) => {
+}> = ({ itemId, src, safeTrimBefore, sourceFps, playbackRate, audioVolume, onError, containerRef }) => {
   // Get local frame from Sequence context (not global frame from Clock)
   // The Sequence provides localFrame which is 0-based within this sequence
   const sequenceContext = useSequenceContext();
@@ -55,9 +57,11 @@ const NativePreviewVideo: React.FC<{
   const sequenceFromRef = useRef(0);
   // Stable refs for rVFC callback (avoids stale closures)
   const safeTrimBeforeRef = useRef(safeTrimBefore);
+  const sourceFpsRef = useRef(sourceFps);
   const playbackRateRef = useRef(playbackRate);
   const fpsRef = useRef(fps);
   safeTrimBeforeRef.current = safeTrimBefore;
+  sourceFpsRef.current = sourceFps;
   playbackRateRef.current = playbackRate;
   fpsRef.current = fps;
 
@@ -67,9 +71,8 @@ const NativePreviewVideo: React.FC<{
   // Calculate target time in the source video
   // safeTrimBefore is in SOURCE frames (where playback starts in the source)
   // frame is in TIMELINE frames (current position within the Sequence)
-  // For seeking, we need: sourceStart + localFrame * speed
-  // The playbackRate affects how many source frames we advance per timeline frame
-  const targetTime = (safeTrimBefore / fps) + (frame * playbackRate / fps);
+  // For seeking, convert source start to seconds using source FPS.
+  const targetTime = (safeTrimBefore / sourceFps) + (frame * playbackRate / fps);
 
   const shortId = itemId?.slice(0, 8) ?? 'no-id';
 
@@ -125,7 +128,7 @@ const NativePreviewVideo: React.FC<{
     // The pool may return the same element that was just released by cleanup.
     // If the element is already near the correct position, keep it playing
     // to avoid a decode restart stutter.
-    const initialTargetTime = (safeTrimBefore / fps) + (frame * playbackRate / fps);
+    const initialTargetTime = (safeTrimBefore / sourceFps) + (frame * playbackRate / fps);
     const clampedInitial = Math.min(initialTargetTime, (element.duration || Infinity) - 0.1);
     const currentlyPlaying = usePlaybackStore.getState().isPlaying;
     const isNearTarget = Math.abs(element.currentTime - clampedInitial) < 0.2;
@@ -274,7 +277,7 @@ const NativePreviewVideo: React.FC<{
     // During premount, seek to the start of the clip (frame 0 position), not negative time
     // This ensures the video is ready at the correct starting frame when playback reaches this clip
     const effectiveTargetTime = isPremounted
-      ? (safeTrimBefore / fps)
+      ? (safeTrimBefore / sourceFps)
       : targetTime;
 
     // Clamp target time to video duration to prevent seeking past the end
@@ -398,7 +401,7 @@ const NativePreviewVideo: React.FC<{
         }, 50);
       }
     }
-  }, [frame, fps, isPlaying, playbackRate, safeTrimBefore, targetTime]);
+  }, [frame, fps, isPlaying, playbackRate, safeTrimBefore, sourceFps, targetTime]);
 
   // requestVideoFrameCallback-based drift correction.
   // Runs outside React's render cycle — the browser calls us exactly when a
@@ -424,9 +427,10 @@ const NativePreviewVideo: React.FC<{
       }
 
       const rate = playbackRateRef.current;
-      const f = fpsRef.current;
+      const timelineFps = fpsRef.current;
+      const clipSourceFps = sourceFpsRef.current;
       const trim = safeTrimBeforeRef.current;
-      const target = (trim / f) + (localFrame * rate / f);
+      const target = (trim / clipSourceFps) + (localFrame * rate / timelineFps);
       const dur = v.duration || Infinity;
       const clamped = Math.min(Math.max(0, target), dur - 0.05);
 
@@ -502,7 +506,8 @@ export const VideoContent: React.FC<{
   muted: boolean;
   safeTrimBefore: number;
   playbackRate: number;
-}> = ({ item, muted, safeTrimBefore, playbackRate }) => {
+  sourceFps: number;
+}> = ({ item, muted, safeTrimBefore, playbackRate, sourceFps }) => {
   const audioVolume = useVideoAudioVolume(item, muted);
   const [hasError, setHasError] = useState(false);
 
@@ -540,6 +545,7 @@ export const VideoContent: React.FC<{
       itemId={item.id}
       src={item.src!}
       safeTrimBefore={safeTrimBefore}
+      sourceFps={sourceFps}
       playbackRate={playbackRate}
       audioVolume={audioVolume}
       onError={handleError}

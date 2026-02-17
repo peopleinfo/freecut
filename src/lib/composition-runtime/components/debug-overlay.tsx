@@ -20,6 +20,8 @@ interface DebugOverlayProps {
   sourceFramesNeeded: number;
   /** Source end position needed (frames) */
   sourceEndPosition: number;
+  /** Source media fps used for source frame conversions */
+  sourceFps?: number;
   /** Whether seek position is invalid */
   isInvalidSeek: boolean;
   /** Whether playback would exceed source */
@@ -62,6 +64,7 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
   durationInFrames,
   sourceFramesNeeded,
   sourceEndPosition,
+  sourceFps = fps,
   isInvalidSeek,
   exceedsSource,
   fps = 30,
@@ -116,14 +119,15 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
       sourceDuration: sourceDuration || 'NOT SET',
       durationInFrames,
       sourceFramesNeeded,
-      seekTime: `${(trimBefore / fps).toFixed(2)}s`,
-      srcDuration: sourceDuration ? `${(sourceDuration / fps).toFixed(2)}s` : 'N/A',
-      srcEndNeeded: `${(sourceEndPosition / fps).toFixed(2)}s`,
+      sourceFps,
+      seekTime: `${(trimBefore / sourceFps).toFixed(2)}s`,
+      srcDuration: sourceDuration ? `${(sourceDuration / sourceFps).toFixed(2)}s` : 'N/A',
+      srcEndNeeded: `${(sourceEndPosition / sourceFps).toFixed(2)}s`,
       isInvalidSeek,
       exceedsSource,
     };
     navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-  }, [id, speed, trimBefore, safeTrimBefore, sourceStart, sourceDuration, durationInFrames, sourceFramesNeeded, sourceEndPosition, isInvalidSeek, exceedsSource, fps]);
+  }, [id, speed, trimBefore, safeTrimBefore, sourceStart, sourceDuration, durationInFrames, sourceFramesNeeded, sourceEndPosition, sourceFps, isInvalidSeek, exceedsSource]);
 
   // Calculate position for portal mode (anchored to player container bottom-right)
   const portalPositionStyles: React.CSSProperties = containerRect
@@ -184,6 +188,7 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
       </div>
       <div>sourceStart: {sourceStart ?? 'undefined'}</div>
       <div>sourceDuration: {sourceDuration || 'NOT SET'}</div>
+      <div>sourceFps: {sourceFps.toFixed(3)}</div>
       <div>durationInFrames: {durationInFrames}</div>
       <div>sourceFramesNeeded: {sourceFramesNeeded}</div>
       <div
@@ -193,11 +198,11 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
           paddingTop: 4,
         }}
       >
-        <div>seekTime: {(trimBefore / fps).toFixed(2)}s</div>
+        <div>seekTime: {(trimBefore / sourceFps).toFixed(2)}s</div>
         <div>
-          srcDuration: {sourceDuration ? (sourceDuration / fps).toFixed(2) + 's' : 'N/A'}
+          srcDuration: {sourceDuration ? (sourceDuration / sourceFps).toFixed(2) + 's' : 'N/A'}
         </div>
-        <div>srcEndNeeded: {(sourceEndPosition / fps).toFixed(2)}s</div>
+        <div>srcEndNeeded: {(sourceEndPosition / sourceFps).toFixed(2)}s</div>
       </div>
       {(isInvalidSeek || exceedsSource) && (
         <div style={{ marginTop: 4, color: '#f00', fontWeight: 'bold' }}>

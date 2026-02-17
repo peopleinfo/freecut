@@ -177,7 +177,7 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
   }, [mediaId, isVisible]);
 
   // Use filmstrip hook
-  const { frames, isComplete, error } = useFilmstrip({
+  const { frames, isLoading, isComplete, error } = useFilmstrip({
     mediaId,
     blobUrl,
     duration: sourceDuration,
@@ -211,8 +211,11 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
     return null;
   }
 
-  // Show skeleton while loading or height not yet measured
+  // Show skeleton while actively loading.
   if (!frames || frames.length === 0 || height === 0) {
+    if (!isLoading && height > 0) {
+      return <div ref={containerRef} className="absolute inset-0" />;
+    }
     return (
       <div ref={containerRef} className="absolute inset-0">
         <FilmstripSkeleton clipWidth={clipWidth} height={height || 40} />

@@ -11,6 +11,7 @@ import {
   calculateSpeed,
   clampSpeed,
   sourceToTimelineFrames,
+  timelineToSourceFrames,
 } from '../utils/source-calculations';
 
 type StretchHandle = 'start' | 'end';
@@ -25,6 +26,7 @@ interface StretchState {
   initialFrom: number;
   initialDuration: number;
   sourceDuration: number; // For GIFs: the natural animation duration (for speed reference)
+  sourceFps: number;
   initialSpeed: number;
   currentDelta: number; // Track current delta for visual feedback
   isLoopingMedia: boolean; // GIFs and images can loop infinitely
@@ -34,7 +36,12 @@ interface StretchState {
  * Calculate duration limits based on speed constraints
  * For looping media (GIFs), duration is independent of source - just has speed limits
  */
-function getDurationLimits(sourceDuration: number, isLoopingMedia: boolean): { min: number; max: number } {
+function getDurationLimits(
+  sourceDuration: number,
+  isLoopingMedia: boolean,
+  sourceFps: number,
+  timelineFps: number
+): { min: number; max: number } {
   if (isLoopingMedia) {
     // For GIFs: duration can be anything, speed is calculated from natural duration
     // min = natural duration at MAX_SPEED, max = very generous (user can extend freely)
@@ -46,16 +53,21 @@ function getDurationLimits(sourceDuration: number, isLoopingMedia: boolean): { m
   // For videos/audio: duration is constrained by source content
   // Use shared utility for source-to-timeline conversion
   return {
-    min: Math.max(1, sourceToTimelineFrames(sourceDuration, MAX_SPEED)),
-    max: sourceToTimelineFrames(sourceDuration, MIN_SPEED),
+    min: Math.max(1, sourceToTimelineFrames(sourceDuration, MAX_SPEED, sourceFps, timelineFps)),
+    max: sourceToTimelineFrames(sourceDuration, MIN_SPEED, sourceFps, timelineFps),
   };
 }
 
 /**
  * Calculate and clamp speed from source duration and timeline duration
  */
-function getClampedSpeed(sourceDuration: number, timelineDuration: number): number {
-  return clampSpeed(calculateSpeed(sourceDuration, timelineDuration));
+function getClampedSpeed(
+  sourceDuration: number,
+  timelineDuration: number,
+  sourceFps: number,
+  timelineFps: number
+): number {
+  return clampSpeed(calculateSpeed(sourceDuration, timelineDuration, sourceFps, timelineFps));
 }
 
 /**
@@ -96,6 +108,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
     initialFrom: 0,
     initialDuration: 0,
     sourceDuration: 0,
+    sourceFps: 30,
     initialSpeed: 1,
     currentDelta: 0,
     isLoopingMedia: false,
@@ -145,7 +158,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
     const deltaTime = pixelsToTime(deltaX);
     let deltaFrames = Math.round(deltaTime * fps);
 
-    const { handle, initialFrom, initialDuration, sourceDuration, isLoopingMedia } = stretchStateRef.current;
+    const { handle, initialFrom, initialDuration, sourceDuration, sourceFps, isLoopingMedia } = stretchStateRef.current;
 
     // For looping media (GIFs): don't change duration, only track delta for speed calculation
     // Dragging right = faster (positive delta), dragging left = slower (negative delta)
@@ -159,7 +172,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
     }
 
     // For videos/audio: original behavior - change duration
-    const limits = getDurationLimits(sourceDuration, isLoopingMedia);
+    const limits = getDurationLimits(sourceDuration, isLoopingMedia, sourceFps, fps);
 
     // Calculate the target edge position and apply snapping
     let targetEdgeFrame: number;
@@ -227,7 +240,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
   // Using useEffectEvent so changes to item.id, rateStretchItem don't re-register listeners
   const onMouseUp = useEffectEvent(() => {
     if (stretchStateRef.current.isStretching) {
-      const { handle, initialFrom, initialDuration, sourceDuration, initialSpeed, currentDelta, isLoopingMedia } = stretchStateRef.current;
+      const { handle, initialFrom, initialDuration, sourceDuration, sourceFps, initialSpeed, currentDelta, isLoopingMedia } = stretchStateRef.current;
 
       let newDuration: number;
       let newFrom: number;
@@ -252,7 +265,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
         }
       } else {
         // For videos/audio: original behavior - change duration and calculate speed
-        const limits = getDurationLimits(sourceDuration, isLoopingMedia);
+        const limits = getDurationLimits(sourceDuration, isLoopingMedia, sourceFps, fps);
 
         if (handle === 'start') {
           // Start handle: delta right = compress (shorter duration), delta left = extend
@@ -265,15 +278,15 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
           newFrom = Math.round(initialFrom);
         }
 
-        newSpeed = getClampedSpeed(sourceDuration, newDuration);
+        newSpeed = getClampedSpeed(sourceDuration, newDuration, sourceFps, fps);
 
         // IMPORTANT: After rounding speed, verify the combination doesn't exceed source
         // Due to rounding (e.g., 1.4484 -> 1.45), duration * speed might exceed sourceDuration
         // If so, adjust duration down to ensure we stay within bounds
-        const sourceFramesNeeded = Math.round(newDuration * newSpeed);
+        const sourceFramesNeeded = timelineToSourceFrames(newDuration, newSpeed, fps, sourceFps);
         if (sourceFramesNeeded > sourceDuration) {
           // Reduce duration to fit within source at this rounded speed
-          newDuration = Math.floor(sourceDuration / newSpeed);
+          newDuration = Math.max(1, sourceToTimelineFrames(sourceDuration, newSpeed, sourceFps, fps));
           // Adjust position if we were stretching from start
           if (handle === 'start') {
             const adjustedDurationChange = initialDuration - newDuration;
@@ -298,6 +311,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
         initialFrom: 0,
         initialDuration: 0,
         sourceDuration: 0,
+        sourceFps: 30,
         initialSpeed: 1,
         currentDelta: 0,
         isLoopingMedia: false,
@@ -345,6 +359,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
       // This makes rate stretching "per clip" - each split clip starts at speed 1 relative
       // to its own source boundaries.
       let sourceDuration: number;
+      const sourceFps = currentItem.sourceFps ?? fps;
       if (currentItem.sourceEnd !== undefined && currentItem.sourceStart !== undefined) {
         // For clips with defined source boundaries (including split clips),
         // use only the clip's actual portion
@@ -355,7 +370,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
         sourceDuration = currentItem.sourceDuration - sourceStart;
       } else {
         // Last resort: estimate from current state
-        sourceDuration = Math.round(currentItem.durationInFrames * currentSpeed);
+        sourceDuration = timelineToSourceFrames(currentItem.durationInFrames, currentSpeed, fps, sourceFps);
       }
 
       setStretchState({
@@ -365,6 +380,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
         initialFrom: currentItem.from,
         initialDuration: currentItem.durationInFrames,
         sourceDuration,
+        sourceFps,
         initialSpeed: currentSpeed,
         currentDelta: 0,
         isLoopingMedia,
@@ -377,7 +393,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
   const getVisualFeedback = useCallback(() => {
     if (!stretchState.isStretching) return null;
 
-    const { handle, initialFrom, initialDuration, sourceDuration, initialSpeed, currentDelta, isLoopingMedia } = stretchState;
+    const { handle, initialFrom, initialDuration, sourceDuration, sourceFps, initialSpeed, currentDelta, isLoopingMedia } = stretchState;
 
     // For looping media (GIFs): duration and position stay the same, only speed changes
     if (isLoopingMedia) {
@@ -393,7 +409,7 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
     }
 
     // For videos/audio: original behavior
-    const limits = getDurationLimits(sourceDuration, isLoopingMedia);
+    const limits = getDurationLimits(sourceDuration, isLoopingMedia, sourceFps, fps);
 
     let newDuration: number;
     let newFrom: number;
@@ -407,12 +423,12 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
       newFrom = Math.round(initialFrom);
     }
 
-    const previewSpeed = getClampedSpeed(sourceDuration, newDuration);
+    const previewSpeed = getClampedSpeed(sourceDuration, newDuration, sourceFps, fps);
 
     // Apply same rounding fix as onMouseUp - adjust duration if rounded speed exceeds source
-    const sourceFramesNeeded = Math.round(newDuration * previewSpeed);
+    const sourceFramesNeeded = timelineToSourceFrames(newDuration, previewSpeed, fps, sourceFps);
     if (sourceFramesNeeded > sourceDuration) {
-      newDuration = Math.floor(sourceDuration / previewSpeed);
+      newDuration = Math.max(1, sourceToTimelineFrames(sourceDuration, previewSpeed, sourceFps, fps));
       if (handle === 'start') {
         const adjustedDurationChange = initialDuration - newDuration;
         newFrom = Math.round(initialFrom + adjustedDurationChange);

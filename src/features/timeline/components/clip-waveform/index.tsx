@@ -3,6 +3,7 @@ import { TiledCanvas } from '../clip-filmstrip/tiled-canvas';
 import { WaveformSkeleton } from './waveform-skeleton';
 import { useWaveform } from '../../hooks/use-waveform';
 import { mediaLibraryService } from '@/features/media-library/services/media-library-service';
+import { needsCustomAudioDecoder } from '@/lib/composition-runtime/utils/audio-codec-detection';
 import { WAVEFORM_FILL_COLOR, WAVEFORM_STROKE_COLOR } from '../../constants';
 
 // Waveform dimensions
@@ -110,8 +111,11 @@ export const ClipWaveform = memo(function ClipWaveform({
         const media = await mediaLibraryService.getMedia(mediaId);
         if (!mounted) return;
 
-        // Check audioCodecSupported - default to true if not set (for existing media)
-        const codecSupported = media?.audioCodecSupported !== false;
+        // AC-3/E-AC-3 can still generate waveform via mediabunny even if old metadata
+        // marked codec unsupported before custom decode was added.
+        const codecSupported = media
+          ? (media.audioCodecSupported !== false || needsCustomAudioDecoder(media.audioCodec))
+          : true;
         setAudioCodecSupported(codecSupported);
 
         if (!codecSupported) {
@@ -136,7 +140,7 @@ export const ClipWaveform = memo(function ClipWaveform({
   }, [mediaId, isVisible]);
 
   // Use waveform hook - enabled once we have blobUrl (independent of visibility after that)
-  const { peaks, duration, sampleRate, isLoading } = useWaveform({
+  const { peaks, duration, sampleRate, isLoading, error } = useWaveform({
     mediaId,
     blobUrl,
     isVisible: true, // Always consider visible once we start - prevents re-triggers
@@ -208,8 +212,8 @@ export const ClipWaveform = memo(function ClipWaveform({
     [peaks, duration, sampleRate, pixelsPerSecond, sourceStart, trimStart, speed, sourceDuration, height]
   );
 
-  // Show empty state for unsupported codecs (no skeleton, just flat line)
-  if (!audioCodecSupported) {
+  // Show empty state for unsupported/failed waveforms (no infinite skeleton).
+  if (!audioCodecSupported || !!error) {
     return (
       <div ref={containerRef} className="absolute inset-0 flex items-center">
         {/* Flat line to indicate no waveform available */}
@@ -221,8 +225,15 @@ export const ClipWaveform = memo(function ClipWaveform({
     );
   }
 
-  // Show skeleton while loading or height not yet measured
+  // Show skeleton only while actively loading.
   if (!peaks || peaks.length === 0 || height === 0) {
+    if (!isLoading && height > 0) {
+      return (
+        <div ref={containerRef} className="absolute inset-0 flex items-center">
+          <div className="w-full h-[1px] bg-foreground/20" style={{ marginTop: 0 }} />
+        </div>
+      );
+    }
     return (
       <div ref={containerRef} className="absolute inset-0">
         <WaveformSkeleton clipWidth={clipWidth} height={height || 24} />

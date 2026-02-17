@@ -4,8 +4,9 @@ import type { TimelineItem, TimelineTrack } from '@/types/timeline';
 import type { TransformProperties } from '@/types/transform';
 import type { VisualEffect, ItemEffect } from '@/types/effects';
 import { clampTrimAmount, calculateTrimSourceUpdate } from '../utils/trim-utils';
-import { getSourceProperties, isMediaItem, calculateSplitSourceBoundaries } from '../utils/source-calculations';
+import { getSourceProperties, isMediaItem, calculateSplitSourceBoundaries, timelineToSourceFrames } from '../utils/source-calculations';
 import { useCompositionNavigationStore } from './composition-navigation-store';
+import { useTimelineSettingsStore } from './timeline-settings-store';
 
 const log = createLogger('ItemsStore');
 
@@ -24,6 +25,11 @@ function roundOptionalFrame(value: number | undefined): number | undefined {
   return roundFrame(value);
 }
 
+function normalizeOptionalFps(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) return undefined;
+  return Math.round(value * 1000) / 1000;
+}
+
 function normalizeFrameFields<T extends TimelineItem>(item: T): T {
   return {
     ...item,
@@ -34,6 +40,7 @@ function normalizeFrameFields<T extends TimelineItem>(item: T): T {
     sourceStart: roundOptionalFrame(item.sourceStart),
     sourceEnd: roundOptionalFrame(item.sourceEnd),
     sourceDuration: roundOptionalFrame(item.sourceDuration),
+    sourceFps: normalizeOptionalFps(item.sourceFps),
   };
 }
 
@@ -47,6 +54,7 @@ function normalizeItemUpdates(updates: Partial<TimelineItem>): Partial<TimelineI
   if (normalized.sourceStart !== undefined) normalized.sourceStart = roundFrame(normalized.sourceStart);
   if (normalized.sourceEnd !== undefined) normalized.sourceEnd = roundFrame(normalized.sourceEnd);
   if (normalized.sourceDuration !== undefined) normalized.sourceDuration = roundFrame(normalized.sourceDuration);
+  if (normalized.sourceFps !== undefined) normalized.sourceFps = normalizeOptionalFps(normalized.sourceFps);
 
   return normalized;
 }
@@ -253,7 +261,8 @@ export const useItemsStore = create<ItemsState & ItemsActions>()(
         if (item.id !== id) return item;
 
         // Clamp trim amount to source boundaries and minimum duration
-        const { clampedAmount } = clampTrimAmount(item, 'start', trimAmount);
+        const timelineFps = useTimelineSettingsStore.getState().fps;
+        const { clampedAmount } = clampTrimAmount(item, 'start', trimAmount, timelineFps);
 
         const newFrom = item.from + clampedAmount;
         const newDuration = item.durationInFrames - clampedAmount;
@@ -261,7 +270,7 @@ export const useItemsStore = create<ItemsState & ItemsActions>()(
         if (newDuration <= 0) return item;
 
         // Calculate source boundary updates for media items
-        const sourceUpdate = calculateTrimSourceUpdate(item, 'start', clampedAmount, newDuration);
+        const sourceUpdate = calculateTrimSourceUpdate(item, 'start', clampedAmount, newDuration, timelineFps);
 
         return {
           ...item,
@@ -278,13 +287,14 @@ export const useItemsStore = create<ItemsState & ItemsActions>()(
         if (item.id !== id) return item;
 
         // Clamp trim amount to source boundaries and minimum duration
-        const { clampedAmount } = clampTrimAmount(item, 'end', trimAmount);
+        const timelineFps = useTimelineSettingsStore.getState().fps;
+        const { clampedAmount } = clampTrimAmount(item, 'end', trimAmount, timelineFps);
 
         const newDuration = item.durationInFrames + clampedAmount;
         if (newDuration <= 0) return item;
 
         // Calculate source boundary updates for media items
-        const sourceUpdate = calculateTrimSourceUpdate(item, 'end', clampedAmount, newDuration);
+        const sourceUpdate = calculateTrimSourceUpdate(item, 'end', clampedAmount, newDuration, timelineFps);
 
         return {
           ...item,
@@ -333,8 +343,17 @@ export const useItemsStore = create<ItemsState & ItemsActions>()(
 
       // Handle sourceStart/sourceEnd for media items (accounting for speed)
       if (isMediaItem(item)) {
-        const { sourceStart, speed } = getSourceProperties(item);
-        const boundaries = calculateSplitSourceBoundaries(sourceStart, leftDuration, rightDuration, speed);
+        const timelineFps = useTimelineSettingsStore.getState().fps;
+        const { sourceStart, speed, sourceFps } = getSourceProperties(item);
+        const effectiveSourceFps = sourceFps ?? timelineFps;
+        const boundaries = calculateSplitSourceBoundaries(
+          sourceStart,
+          leftDuration,
+          rightDuration,
+          speed,
+          timelineFps,
+          effectiveSourceFps
+        );
 
         (leftItem as typeof item).sourceEnd = boundaries.left.sourceEnd;
         (rightItem as typeof item).sourceStart = boundaries.right.sourceStart;
@@ -405,7 +424,10 @@ export const useItemsStore = create<ItemsState & ItemsActions>()(
         // Recalculate sourceEnd based on new duration and speed
         // This keeps sourceEnd in sync with the current playback state
         const sourceStart = item.sourceStart ?? 0;
-        const newSourceEnd = sourceStart + Math.round(newDuration * newSpeed);
+        const timelineFps = useTimelineSettingsStore.getState().fps;
+        const sourceFps = item.sourceFps ?? timelineFps;
+        const sourceFramesNeeded = timelineToSourceFrames(newDuration, newSpeed, timelineFps, sourceFps);
+        const newSourceEnd = sourceStart + sourceFramesNeeded;
         const clampedSourceEnd = item.sourceDuration
           ? Math.min(newSourceEnd, item.sourceDuration)
           : newSourceEnd;

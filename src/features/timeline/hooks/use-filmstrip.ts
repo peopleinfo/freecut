@@ -84,9 +84,7 @@ export function useFilmstrip({
     const unsubscribe = filmstripCache.subscribe(mediaId, (updated) => {
       setFilmstrip(updated);
       setProgress(updated.progress);
-      if (updated.isComplete) {
-        setIsLoading(false);
-      }
+      setIsLoading(updated.isExtracting);
     });
 
     return unsubscribe;
@@ -115,9 +113,7 @@ export function useFilmstrip({
       .then((result) => {
         setFilmstrip(result);
         setProgress(result.progress);
-        if (result.isComplete) {
-          setIsLoading(false);
-        }
+        setIsLoading(result.isExtracting);
       })
       .catch((err) => {
         if (err.message !== 'Aborted') {

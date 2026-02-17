@@ -31,6 +31,7 @@ interface PitchCorrectedAudioProps {
   volume?: number;
   playbackRate?: number;
   trimBefore?: number;
+  sourceFps?: number;
   muted?: boolean;
   /** Duration of this audio clip in frames */
   durationInFrames: number;
@@ -59,6 +60,7 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
   volume = 0,
   playbackRate = 1,
   trimBefore = 0,
+  sourceFps,
   muted = false,
   durationInFrames,
   audioFadeIn = 0,
@@ -280,11 +282,12 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    const effectiveSourceFps = sourceFps ?? fps;
 
     // Calculate target time in the source audio
     const compositionTimeSeconds = frame / fps;
-    const sourceTimeSeconds = (trimBefore / fps) + (compositionTimeSeconds * playbackRate);
-    const clipStartTimeSeconds = Math.max(0, trimBefore / fps);
+    const sourceTimeSeconds = (trimBefore / effectiveSourceFps) + (compositionTimeSeconds * playbackRate);
+    const clipStartTimeSeconds = Math.max(0, trimBefore / effectiveSourceFps);
 
     // During Sequence premount, frame is negative. Keep audio paused and pre-seek to
     // clip start so playback starts immediately when frame reaches 0.
@@ -405,7 +408,7 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
         }, 50);
       }
     }
-  }, [frame, fps, playing, playbackRate, trimBefore]);
+  }, [frame, fps, sourceFps, playing, playbackRate, trimBefore]);
 
   // This component renders nothing visually
   return null;

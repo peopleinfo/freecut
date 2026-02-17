@@ -188,7 +188,9 @@ export function createRelinkingActions(
 
         // Update source duration if available
         if (newMedia.duration > 0) {
-          updates.sourceDuration = Math.round(newMedia.duration * fps);
+          const sourceFps = newMedia.fps > 0 ? newMedia.fps : fps;
+          updates.sourceFps = sourceFps;
+          updates.sourceDuration = Math.round(newMedia.duration * sourceFps);
         }
 
         // Update the timeline item

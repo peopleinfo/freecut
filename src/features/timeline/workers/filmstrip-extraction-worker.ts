@@ -146,7 +146,7 @@ async function extractAndSave(
   await saveMetadata(dir, { width, height, isComplete: false, frameCount: skipSet.size });
 
   // Load mediabunny
-  const { Input, UrlSource, CanvasSink, MP4, WEBM, MATROSKA } = await loadMediabunny();
+  const { Input, UrlSource, CanvasSink, ALL_FORMATS } = await loadMediabunny();
 
   let input: InstanceType<typeof Input> | null = null;
   let sink: InstanceType<typeof CanvasSink> | null = null;
@@ -155,7 +155,7 @@ async function extractAndSave(
     // Create input from blob URL
     input = new Input({
       source: new UrlSource(blobUrl),
-      formats: [MP4, WEBM, MATROSKA],
+      formats: ALL_FORMATS,
     });
 
     // Get primary video track

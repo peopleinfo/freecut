@@ -5,7 +5,10 @@ import type { CompositionInputProps } from '@/types/export';
 import type { TextItem, ShapeItem, AdjustmentItem, VideoItem, ImageItem } from '@/types/timeline';
 import { Item } from '../components/item';
 import { PitchCorrectedAudio } from '../components/pitch-corrected-audio';
+import { CustomDecoderAudio } from '../components/custom-decoder-audio';
 import { OptimizedEffectsBasedTransitionsLayer } from '../components/transition-renderer';
+import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store';
+import { needsCustomAudioDecoder } from '../utils/audio-codec-detection';
 import { StableVideoSequence, type StableVideoSequenceItem } from '../components/stable-video-sequence';
 import { loadFonts } from '../utils/fonts';
 import { resolveTransform } from '../utils/transform-resolver';
@@ -40,6 +43,7 @@ interface ClipAudioExtension {
 interface VideoAudioSegment {
   key: string;
   itemId: string;
+  mediaId?: string;
   src: string;
   from: number;
   durationInFrames: number;
@@ -556,6 +560,7 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
       expandedSegments.push({
         key: `video-audio-${item.id}`,
         itemId: item.id,
+        mediaId: item.mediaId,
         clip: item,
         src: item.src,
         from: item.from - before,
@@ -600,6 +605,7 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
     const toPublicSegment = (segment: ExpandedVideoAudioSegment): VideoAudioSegment => ({
       key: segment.key,
       itemId: segment.itemId,
+      mediaId: segment.mediaId,
       src: segment.src,
       from: segment.from,
       durationInFrames: segment.durationInFrames,
@@ -639,6 +645,31 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
 
     return mergedSegments;
   }, [videoAudioItems, transitions]);
+
+  // Look up which video audio segments need custom decoding (AC-3/E-AC-3)
+  const mediaItems = useMediaLibraryStore((s) => s.mediaItems);
+  const mediaById = useMemo(() => {
+    const map = new Map<string, (typeof mediaItems)[number]>();
+    for (const media of mediaItems) {
+      map.set(media.id, media);
+    }
+    return map;
+  }, [mediaItems]);
+
+  const shouldUseCustomDecoder = useCallback((segment: VideoAudioSegment): boolean => {
+    if (!segment.mediaId) {
+      // Legacy clips without media linkage: safest fallback is custom decode.
+      return true;
+    }
+
+    const media = mediaById.get(segment.mediaId);
+    if (!media) {
+      // Orphaned media metadata; native audio path can be silent for AC-3/E-AC-3.
+      return true;
+    }
+
+    return needsCustomAudioDecoder(media.audioCodec);
+  }, [mediaById]);
 
   // Active masks: shapes with isMask: true
   const activeMasks: MaskWithTrackOrder[] = useMemo(() => {
@@ -754,7 +785,10 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
 
         {/* AUDIO LAYER - rendered outside visual layers to prevent re-renders from mask/visual changes */}
         {/* Video audio is decoupled from visual video elements for transition stability */}
+        {/* AC-3/E-AC-3 segments use CustomDecoderAudio (mediabunny WASM decode) instead of native <audio> */}
         {videoAudioSegments.map((segment) => {
+          const useCustomDecoder = shouldUseCustomDecoder(segment);
+          const decodeMediaId = segment.mediaId ?? `legacy-src:${segment.src}`;
           return (
             <Sequence
               key={segment.key}
@@ -762,19 +796,36 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
               durationInFrames={segment.durationInFrames}
               premountFor={Math.round(fps * 2)}
             >
-              <PitchCorrectedAudio
-                src={segment.src}
-                itemId={segment.itemId}
-                trimBefore={segment.trimBefore}
-                volume={segment.volumeDb}
-                playbackRate={segment.playbackRate}
-                muted={segment.muted}
-                durationInFrames={segment.durationInFrames}
-                audioFadeIn={segment.audioFadeIn}
-                audioFadeOut={segment.audioFadeOut}
-                crossfadeFadeIn={segment.crossfadeFadeIn}
-                crossfadeFadeOut={segment.crossfadeFadeOut}
-              />
+              {useCustomDecoder ? (
+                <CustomDecoderAudio
+                  src={segment.src}
+                  mediaId={decodeMediaId}
+                  itemId={segment.itemId}
+                  trimBefore={segment.trimBefore}
+                  volume={segment.volumeDb}
+                  playbackRate={segment.playbackRate}
+                  muted={segment.muted}
+                  durationInFrames={segment.durationInFrames}
+                  audioFadeIn={segment.audioFadeIn}
+                  audioFadeOut={segment.audioFadeOut}
+                  crossfadeFadeIn={segment.crossfadeFadeIn}
+                  crossfadeFadeOut={segment.crossfadeFadeOut}
+                />
+              ) : (
+                <PitchCorrectedAudio
+                  src={segment.src}
+                  itemId={segment.itemId}
+                  trimBefore={segment.trimBefore}
+                  volume={segment.volumeDb}
+                  playbackRate={segment.playbackRate}
+                  muted={segment.muted}
+                  durationInFrames={segment.durationInFrames}
+                  audioFadeIn={segment.audioFadeIn}
+                  audioFadeOut={segment.audioFadeOut}
+                  crossfadeFadeIn={segment.crossfadeFadeIn}
+                  crossfadeFadeOut={segment.crossfadeFadeOut}
+                />
+              )}
             </Sequence>
           );
         })}
