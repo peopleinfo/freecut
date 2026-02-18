@@ -4,7 +4,7 @@ import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import { useSelectionStore } from '@/features/editor/stores/selection-store';
 import { MainComposition } from '@/lib/composition-runtime/compositions/main-composition';
-import { resolveMediaUrl } from '../utils/media-resolver';
+import { resolveMediaUrl, resolveProxyUrl } from '../utils/media-resolver';
 import { useCompositionsStore } from '@/features/timeline/stores/compositions-store';
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store';
 import { getGlobalVideoSourcePool } from '@/features/player/video/VideoSourcePool';
@@ -228,6 +228,8 @@ export const VideoPreview = memo(function VideoPreview({
   const items = useTimelineStore((s) => s.items);
   const transitions = useTimelineStore((s) => s.transitions);
   const zoom = usePlaybackStore((s) => s.zoom);
+  const useProxy = usePlaybackStore((s) => s.useProxy);
+  const proxyStatus = useMediaLibraryStore((s) => s.proxyStatus);
 
   // Custom Player integration (hook handles bidirectional sync)
   const { ignorePlayerUpdatesRef } = useCustomPlayer(playerRef);
@@ -267,18 +269,24 @@ export const VideoPreview = memo(function VideoPreview({
   }, [tracks, items]);
 
   // Create resolved tracks by merging cached URLs with current items
+  // When useProxy is enabled, substitute proxy URLs for video items
   const resolvedTracks = useMemo(() => {
     return combinedTracks.map((track) => ({
       ...track,
       items: track.items.map((item) => {
         if (item.mediaId && (item.type === 'video' || item.type === 'audio' || item.type === 'image')) {
           const resolvedSrc = resolvedUrls.get(item.mediaId);
+          // Substitute proxy URL for video items when proxy playback is enabled
+          if (useProxy && item.type === 'video') {
+            const proxyUrl = resolveProxyUrl(item.mediaId);
+            return { ...item, src: proxyUrl || resolvedSrc || '' };
+          }
           return { ...item, src: resolvedSrc ?? '' };
         }
         return item;
       }),
     }));
-  }, [combinedTracks, resolvedUrls]);
+  }, [combinedTracks, resolvedUrls, useProxy, proxyStatus]);
 
   // Create a stable fingerprint for media resolution using derived selector
   // Includes media from both main timeline items AND sub-composition items

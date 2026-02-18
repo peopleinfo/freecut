@@ -48,12 +48,17 @@ export function ProjectCard({ project, onEdit }: ProjectCardProps) {
   const handleConfirmDelete = async () => {
     setIsDeleting(true);
     setShowDeleteDialog(false);
+    const wantedLocalDelete = clearLocalFiles;
     const result = await deleteProject(project.id, clearLocalFiles);
     setIsDeleting(false);
     setClearLocalFiles(false);
 
     if (!result.success) {
       toast.error('Failed to delete project', { description: result.error });
+    } else if (wantedLocalDelete && !result.localFilesDeleted) {
+      toast.warning('Project deleted but local files were not removed', {
+        description: 'Filesystem cleanup failed — you may need to delete the folder manually.',
+      });
     }
   };
 

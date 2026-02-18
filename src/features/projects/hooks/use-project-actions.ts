@@ -80,12 +80,13 @@ export const useDeleteProject = () => {
   return useCallback(
     async (id: string, clearLocalFiles?: boolean) => {
       try {
-        await deleteProject(id, clearLocalFiles);
-        return { success: true, error: null };
+        const result = await deleteProject(id, clearLocalFiles);
+        return { success: true, error: null, localFilesDeleted: result.localFilesDeleted };
       } catch (error) {
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to delete project',
+          localFilesDeleted: false,
         };
       }
     },

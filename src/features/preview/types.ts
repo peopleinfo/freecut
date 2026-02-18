@@ -19,6 +19,8 @@ export interface PlaybackState {
   previewFrame: number | null;
   /** Function to capture the current Player frame as a data URL (set by VideoPreview) */
   captureFrame: ((options?: CaptureOptions) => Promise<string | null>) | null;
+  /** Whether to use proxy videos for preview playback (true = use 720p proxies when available) */
+  useProxy: boolean;
 }
 
 export interface PlaybackActions {
@@ -34,4 +36,6 @@ export interface PlaybackActions {
   setPreviewFrame: (frame: number | null) => void;
   /** Register a frame capture function (called by VideoPreview on mount) */
   setCaptureFrame: (fn: ((options?: CaptureOptions) => Promise<string | null>) | null) => void;
+  /** Toggle proxy playback mode */
+  toggleUseProxy: () => void;
 }
