@@ -181,6 +181,16 @@ export const useMediaLibraryStore = create<
         });
       },
 
+      clearProxyStatus: (mediaId: string) => {
+        set((state) => {
+          const newStatus = new Map(state.proxyStatus);
+          newStatus.delete(mediaId);
+          const newProgress = new Map(state.proxyProgress);
+          newProgress.delete(mediaId);
+          return { proxyStatus: newStatus, proxyProgress: newProgress };
+        });
+      },
+
       setProxyProgress: (mediaId: string, progress: number) => {
         set((state) => {
           const newProgress = new Map(state.proxyProgress);

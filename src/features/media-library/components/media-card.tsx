@@ -66,17 +66,25 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
   const handleGenerateProxy = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const blobUrl = await mediaLibraryService.getMediaBlobUrl(media.id);
-    if (blobUrl) {
-      proxyService.generateProxy(media.id, blobUrl, media.width, media.height);
+    try {
+      const blobUrl = await mediaLibraryService.getMediaBlobUrl(media.id);
+      if (blobUrl) {
+        proxyService.generateProxy(media.id, blobUrl, media.width, media.height);
+      }
+    } catch {
+      useMediaLibraryStore.getState().setProxyStatus(media.id, 'error');
     }
   };
 
   const handleDeleteProxy = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    await proxyService.deleteProxy(media.id);
-    useMediaLibraryStore.getState().setProxyStatus(media.id, 'error');
+    try {
+      await proxyService.deleteProxy(media.id);
+      useMediaLibraryStore.getState().clearProxyStatus(media.id);
+    } catch {
+      useMediaLibraryStore.getState().setProxyStatus(media.id, 'error');
+    }
   };
 
   const handleDragStart = (e: React.DragEvent) => {

@@ -229,7 +229,15 @@ export const VideoPreview = memo(function VideoPreview({
   const transitions = useTimelineStore((s) => s.transitions);
   const zoom = usePlaybackStore((s) => s.zoom);
   const useProxy = usePlaybackStore((s) => s.useProxy);
-  const proxyStatus = useMediaLibraryStore((s) => s.proxyStatus);
+  // Derive a stable count of ready proxies to avoid recomputing resolvedTracks
+  // on every proxyStatus Map recreation (e.g. during progress updates)
+  const proxyReadyCount = useMediaLibraryStore((s) => {
+    let count = 0;
+    for (const status of s.proxyStatus.values()) {
+      if (status === 'ready') count++;
+    }
+    return count;
+  });
 
   // Custom Player integration (hook handles bidirectional sync)
   const { ignorePlayerUpdatesRef } = useCustomPlayer(playerRef);
@@ -286,7 +294,7 @@ export const VideoPreview = memo(function VideoPreview({
         return item;
       }),
     }));
-  }, [combinedTracks, resolvedUrls, useProxy, proxyStatus]);
+  }, [combinedTracks, resolvedUrls, useProxy, proxyReadyCount]);
 
   // Create a stable fingerprint for media resolution using derived selector
   // Includes media from both main timeline items AND sub-composition items

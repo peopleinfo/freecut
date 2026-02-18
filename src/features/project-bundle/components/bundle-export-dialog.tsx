@@ -160,9 +160,9 @@ export function BundleExportDialog({
     }
   };
 
-  // Prevent closing during export (ref check catches the stale-closure case)
+  // Prevent closing during export
   const handleOpenChange = (newOpen: boolean) => {
-    if (!newOpen && !isExporting && !busyRef.current) {
+    if (!newOpen && !isExporting) {
       onClose();
     }
   };

@@ -144,5 +144,6 @@ export interface MediaLibraryActions {
 
   // Proxy video generation
   setProxyStatus: (mediaId: string, status: 'generating' | 'ready' | 'error') => void;
+  clearProxyStatus: (mediaId: string) => void;
   setProxyProgress: (mediaId: string, progress: number) => void;
 }

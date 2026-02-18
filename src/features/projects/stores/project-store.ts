@@ -259,17 +259,20 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
                 };
                 if (typeof handleWithRemove.remove === 'function') {
                   await handleWithRemove.remove({ recursive: true });
+                  localFilesDeleted = true;
                 } else {
                   // Fallback: clear entries individually so one failure doesn't stop the rest
+                  let allRemoved = true;
                   for await (const entry of handle.values()) {
                     try {
                       await handle.removeEntry(entry.name, { recursive: true });
                     } catch (entryError) {
+                      allRemoved = false;
                       logger.error(`Failed to remove entry "${entry.name}" in project ${id}:`, entryError);
                     }
                   }
+                  localFilesDeleted = allRemoved;
                 }
-                localFilesDeleted = true;
               } catch (fsError) {
                 logger.error(`Failed to clear local files for project ${id}:`, fsError);
               }
@@ -286,7 +289,14 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
             set({ isLoading: false });
             return { localFilesDeleted };
           } catch (error) {
-            // Rollback on error
+            if (localFilesDeleted) {
+              // Local files already deleted — rolling back the UI would be misleading
+              const errorMessage = 'Local files deleted but database cleanup failed — project may be inconsistent';
+              logger.error(errorMessage, error);
+              set({ error: errorMessage, isLoading: false });
+              throw new Error(errorMessage);
+            }
+            // Rollback on error (safe — no local files were touched)
             set({ projects: previousProjects });
 
             const errorMessage =

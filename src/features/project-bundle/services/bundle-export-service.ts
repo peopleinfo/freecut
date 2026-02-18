@@ -238,13 +238,6 @@ export async function exportProjectBundle(
 }
 
 /**
- * Check if streaming export (direct-to-disk) is supported
- */
-export function supportsStreamingExport(): boolean {
-  return typeof window.showSaveFilePicker === 'function';
-}
-
-/**
  * Export a project bundle using streaming write to disk.
  * Requires File System Access API (Chrome/Edge).
  * The file handle must be obtained before calling this function.
@@ -283,11 +276,14 @@ export async function exportProjectBundleStreaming(
     onProgress?.({ percent: 15, stage: 'hashing' });
 
     // Step 4: Build manifest and prepare ZIP — stream chunks to disk
-    const zip = new Zip(async (err, chunk) => {
-      if (err) throw err;
+    // Collect write promises since fflate's Zip callback is synchronous and won't await
+    const writePromises: Promise<void>[] = [];
+    let zipError: Error | null = null;
+    const zip = new Zip((err, chunk) => {
+      if (err) { zipError = err; return; }
       if (chunk) {
-        await writable.write(chunk);
         totalSize += chunk.length;
+        writePromises.push(writable.write(chunk));
       }
     });
 
@@ -436,7 +432,10 @@ export async function exportProjectBundleStreaming(
     // Step 9: Finalize ZIP
     zip.end();
 
-    // Flush and close the writable stream
+    if (zipError) throw zipError;
+
+    // Wait for all writes to flush, then close the stream
+    await Promise.all(writePromises);
     await writable.close();
 
     onProgress?.({ percent: 100, stage: 'complete' });

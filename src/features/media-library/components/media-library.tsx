@@ -255,12 +255,15 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
   }, [proxyStatus]);
 
   const handleGenerateAllProxies = async () => {
-    for (const item of proxyEligibleItems) {
-      const blobUrl = await mediaLibraryService.getMediaBlobUrl(item.id);
+    const urls = await Promise.all(
+      proxyEligibleItems.map((item) => mediaLibraryService.getMediaBlobUrl(item.id))
+    );
+    proxyEligibleItems.forEach((item, i) => {
+      const blobUrl = urls[i];
       if (blobUrl) {
         proxyService.generateProxy(item.id, blobUrl, item.width, item.height);
       }
-    }
+    });
   };
 
   const handleGenerateSelectedProxies = async () => {
@@ -272,12 +275,15 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
         && proxyStatus.get(m.id) !== 'ready'
         && proxyStatus.get(m.id) !== 'generating'
       );
-    for (const item of selectedItems) {
-      const blobUrl = await mediaLibraryService.getMediaBlobUrl(item.id);
+    const urls = await Promise.all(
+      selectedItems.map((item) => mediaLibraryService.getMediaBlobUrl(item.id))
+    );
+    selectedItems.forEach((item, i) => {
+      const blobUrl = urls[i];
       if (blobUrl) {
         proxyService.generateProxy(item.id, blobUrl, item.width, item.height);
       }
-    }
+    });
   };
 
   const handleDeleteAllProxies = async () => {
@@ -286,7 +292,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
       .map(([id]) => id);
     for (const id of readyIds) {
       await proxyService.deleteProxy(id);
-      useMediaLibraryStore.getState().setProxyStatus(id, 'error'); // Clear from status map
+      useMediaLibraryStore.getState().clearProxyStatus(id);
     }
   };
 

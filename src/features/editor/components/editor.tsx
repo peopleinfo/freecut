@@ -166,9 +166,10 @@ export const Editor = memo(function Editor({ projectId, project }: EditorProps) 
     // Show native save picker BEFORE opening the modal dialog to avoid
     // focus-loss conflicts between the native picker and Radix Dialog.
     if (typeof window.showSaveFilePicker === 'function') {
+      const safeName = project.name.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, '_').substring(0, 100);
       try {
         const handle = await window.showSaveFilePicker({
-          suggestedName: 'project.freecut.zip',
+          suggestedName: `${safeName}.freecut.zip`,
           types: [
             {
               description: 'FreeCut Project Bundle',
@@ -186,7 +187,7 @@ export const Editor = memo(function Editor({ projectId, project }: EditorProps) 
     }
 
     setBundleExportDialogOpen(true);
-  }, []);
+  }, [project.name]);
 
   // Enable keyboard shortcuts
   useEditorHotkeys({
