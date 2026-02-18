@@ -113,8 +113,22 @@ class FilmstripOPFSStorage {
     const mediaDir = await this.getOrCreateMediaDir(mediaId);
     const fileHandle = await mediaDir.getFileHandle('meta.json', { create: true });
     const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(metadata));
-    await writable.close();
+    let error: unknown;
+    try {
+      await writable.write(JSON.stringify(metadata));
+      await writable.close();
+    } catch (writeError) {
+      error = writeError;
+      throw writeError;
+    } finally {
+      if (error) {
+        try {
+          await writable.abort(error);
+        } catch {
+          // Ignore abort failures from already-closed handles.
+        }
+      }
+    }
   }
 
   /**
@@ -124,8 +138,22 @@ class FilmstripOPFSStorage {
     const mediaDir = await this.getOrCreateMediaDir(mediaId);
     const fileHandle = await mediaDir.getFileHandle(`${index}.webp`, { create: true });
     const writable = await fileHandle.createWritable();
-    await writable.write(blob);
-    await writable.close();
+    let error: unknown;
+    try {
+      await writable.write(blob);
+      await writable.close();
+    } catch (writeError) {
+      error = writeError;
+      throw writeError;
+    } finally {
+      if (error) {
+        try {
+          await writable.abort(error);
+        } catch {
+          // Ignore abort failures from already-closed handles.
+        }
+      }
+    }
   }
 
   /**
@@ -153,7 +181,7 @@ class FilmstripOPFSStorage {
           const index = parseInt(entry.name.replace('.webp', ''), 10);
           if (!isNaN(index)) {
             try {
-              const fileHandle = await mediaDir.getFileHandle(entry.name);
+              const fileHandle = entry as FileSystemFileHandle;
               const file = await fileHandle.getFile();
               if (file.size > 0) {
                 frameFiles.push({ index, file });
@@ -183,8 +211,9 @@ class FilmstripOPFSStorage {
         };
       });
 
-      // Store URLs for cleanup
-      this.objectUrls.set(mediaId, urls);
+      // Keep a single authoritative list that includes both incremental and full loads.
+      const existingUrls = this.objectUrls.get(mediaId) || [];
+      this.objectUrls.set(mediaId, [...existingUrls, ...urls]);
 
       const existingIndices = frameFiles.map(f => f.index);
 
@@ -218,7 +247,7 @@ class FilmstripOPFSStorage {
           const index = parseInt(entry.name.replace('.webp', ''), 10);
           if (!isNaN(index)) {
             try {
-              const fileHandle = await mediaDir.getFileHandle(entry.name);
+              const fileHandle = entry as FileSystemFileHandle;
               const file = await fileHandle.getFile();
               if (file.size > 0) {
                 indices.push(index);

@@ -85,8 +85,22 @@ async function saveFrame(
 ): Promise<void> {
   const fileHandle = await dir.getFileHandle(`${index}.webp`, { create: true });
   const writable = await fileHandle.createWritable();
-  await writable.write(blob);
-  await writable.close();
+  let error: unknown;
+  try {
+    await writable.write(blob);
+    await writable.close();
+  } catch (writeError) {
+    error = writeError;
+    throw writeError;
+  } finally {
+    if (error) {
+      try {
+        await writable.abort(error);
+      } catch {
+        // Ignore abort failures from already-closed handles.
+      }
+    }
+  }
 }
 
 /**
@@ -98,8 +112,22 @@ async function saveMetadata(
 ): Promise<void> {
   const fileHandle = await dir.getFileHandle('meta.json', { create: true });
   const writable = await fileHandle.createWritable();
-  await writable.write(JSON.stringify(metadata));
-  await writable.close();
+  let error: unknown;
+  try {
+    await writable.write(JSON.stringify(metadata));
+    await writable.close();
+  } catch (writeError) {
+    error = writeError;
+    throw writeError;
+  } finally {
+    if (error) {
+      try {
+        await writable.abort(error);
+      } catch {
+        // Ignore abort failures from already-closed handles.
+      }
+    }
+  }
 }
 
 /**
@@ -247,7 +275,11 @@ async function extractAndSave(
 
     // Save final metadata - only mark complete if we actually have frames
     if (!state.aborted) {
-      const actuallyComplete = extractedCount > 0;
+      const newExtracted = extractedCount - skipSet.size;
+      const expectedTotalFrames = rangeEnd - rangeStart;
+      const actuallyComplete = newExtracted > 0
+        || extractedCount === expectedTotalFrames
+        || extractedCount === framesToExtract.length;
 
       await saveMetadata(dir, {
         width,
