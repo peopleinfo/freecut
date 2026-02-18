@@ -10,9 +10,7 @@ import {
   type ProjectFormData,
   type ProjectTemplate,
   DEFAULT_PROJECT_VALUES,
-  RESOLUTION_PRESETS,
   FPS_PRESETS,
-  getAspectRatio,
 } from '../utils/validation';
 import { ProjectTemplatePicker } from './project-template-picker';
 
@@ -45,41 +43,20 @@ export function ProjectForm({
     mode: 'onChange',
   });
 
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>();
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>('youtube-1080p');
 
-  const width = watch('width');
-  const height = watch('height');
   const fps = watch('fps');
-
-  const handleResolutionChange = (value: string) => {
-    const preset = RESOLUTION_PRESETS.find((p) => p.value === value);
-    if (preset) {
-      setValue('width', preset.width, { shouldValidate: true });
-      setValue('height', preset.height, { shouldValidate: true });
-    }
-  };
 
   const handleSelectTemplate = (template: ProjectTemplate) => {
     setSelectedTemplateId(template.id);
-    
-    // Try to find matching preset in RESOLUTION_PRESETS
-    const matchingPreset = RESOLUTION_PRESETS.find(
-      (p) => p.width === template.width && p.height === template.height
-    );
-    
-    if (matchingPreset) {
-      handleResolutionChange(matchingPreset.value);
-    } else {
-      // Fallback for templates not in RESOLUTION_PRESETS (Twitter/X and LinkedIn)
-      setValue('width', template.width, { shouldValidate: true });
-      setValue('height', template.height, { shouldValidate: true });
-    }
-    
+    setValue('width', template.width, { shouldValidate: true });
+    setValue('height', template.height, { shouldValidate: true });
     setValue('fps', template.fps, { shouldValidate: true });
   };
 
-  const currentResolution = `${width}x${height}`;
-  const aspectRatio = getAspectRatio(width, height);
+  const handleCustomSelect = () => {
+    setSelectedTemplateId('custom');
+  };
 
   return (
     <div className="bg-background">
@@ -151,102 +128,82 @@ export function ProjectForm({
 
           <Separator />
 
-          {/* Video Settings */}
-          <div className="panel-bg border border-border rounded-lg p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="h-8 w-1 bg-primary rounded-full" />
-              <h2 className="text-lg font-medium text-foreground">Video Settings</h2>
-            </div>
+           {/* Video Settings */}
+           <div className="panel-bg border border-border rounded-lg p-6">
+             <div className="flex items-center gap-3 mb-6">
+               <div className="h-8 w-1 bg-primary rounded-full" />
+               <h2 className="text-lg font-medium text-foreground">Video Settings</h2>
+             </div>
 
-            <div className="grid grid-cols-2 gap-5">
-              {/* Resolution */}
-              <div>
-                <label htmlFor="resolution" className="block text-sm font-medium text-foreground mb-2">
-                  Resolution
-                </label>
-                <Select value={currentResolution} onValueChange={handleResolutionChange}>
-                  <SelectTrigger id="resolution">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {RESOLUTION_PRESETS.map((preset) => (
-                      <SelectItem key={preset.value} value={preset.value}>
-                        {preset.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {(errors.width || errors.height) && (
-                  <p className="mt-1.5 text-sm text-destructive">
-                    {errors.width?.message || errors.height?.message}
-                  </p>
-                )}
-              </div>
+             <div className="space-y-6">
+               {/* Resolution — visual template picker */}
+               <div>
+                 <p className="text-sm font-medium text-foreground mb-3">Resolution</p>
+                 <ProjectTemplatePicker
+                   selectedTemplateId={selectedTemplateId === 'custom' ? undefined : selectedTemplateId}
+                   onSelectTemplate={handleSelectTemplate}
+                   onSelectCustom={handleCustomSelect}
+                   isCustomSelected={selectedTemplateId === 'custom'}
+                 />
+                 {selectedTemplateId === 'custom' && (
+                   <div className="mt-4 flex items-center gap-3">
+                     <div className="flex-1">
+                       <label htmlFor="width" className="block text-xs font-medium text-muted-foreground mb-1">Width (px)</label>
+                       <input
+                         id="width"
+                         type="number"
+                         {...register('width', { valueAsNumber: true })}
+                         className="w-full px-3 py-2 bg-secondary border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all"
+                         placeholder="1920"
+                         min={1}
+                       />
+                       {errors.width && <p className="mt-1 text-xs text-destructive">{errors.width.message}</p>}
+                     </div>
+                     <span className="text-muted-foreground mt-4">×</span>
+                     <div className="flex-1">
+                       <label htmlFor="height" className="block text-xs font-medium text-muted-foreground mb-1">Height (px)</label>
+                       <input
+                         id="height"
+                         type="number"
+                         {...register('height', { valueAsNumber: true })}
+                         className="w-full px-3 py-2 bg-secondary border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all"
+                         placeholder="1080"
+                         min={1}
+                       />
+                       {errors.height && <p className="mt-1 text-xs text-destructive">{errors.height.message}</p>}
+                     </div>
+                   </div>
+                 )}
+               </div>
 
-              {/* Frame Rate */}
-              <div>
-                <label htmlFor="fps" className="block text-sm font-medium text-foreground mb-2">
-                  Frame Rate
-                </label>
-                <Select
-                  value={fps.toString()}
-                  onValueChange={(value) => setValue('fps', Number(value), { shouldValidate: true })}
-                >
-                  <SelectTrigger id="fps">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FPS_PRESETS.map((preset) => (
-                      <SelectItem key={preset.value} value={preset.value.toString()}>
-                        {preset.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.fps && (
-                  <p className="mt-1.5 text-sm text-destructive">{errors.fps.message}</p>
-                )}
-              </div>
-            </div>
+               {/* Frame Rate */}
+               <div>
+                 <label htmlFor="fps" className="block text-sm font-medium text-foreground mb-2">
+                   Frame Rate
+                 </label>
+                 <Select
+                   value={fps.toString()}
+                   onValueChange={(value) => setValue('fps', Number(value), { shouldValidate: true })}
+                 >
+                   <SelectTrigger id="fps">
+                     <SelectValue />
+                   </SelectTrigger>
+                   <SelectContent>
+                     {FPS_PRESETS.map((preset) => (
+                       <SelectItem key={preset.value} value={preset.value.toString()}>
+                         {preset.label}
+                       </SelectItem>
+                     ))}
+                   </SelectContent>
+                 </Select>
+                 {errors.fps && (
+                   <p className="mt-1.5 text-sm text-destructive">{errors.fps.message}</p>
+                 )}
+               </div>
+             </div>
+           </div>
 
-            {/* Preview */}
-            <div className="mt-6 p-4 bg-secondary/50 border border-border rounded-md">
-              <span className="text-xs text-muted-foreground font-mono uppercase tracking-wide mb-3 block">
-                Canvas Preview
-              </span>
-              <div className="flex items-center justify-center h-28 mb-3">
-                <div
-                  className="border-2 border-dashed border-muted-foreground/40 rounded-sm bg-muted/10"
-                  style={{ aspectRatio: `${width} / ${height}`, maxWidth: '100%', maxHeight: '7rem' }}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground font-mono">{width}×{height} · {fps}fps</span>
-                <span className="text-xs text-muted-foreground">{aspectRatio}</span>
-              </div>
-            </div>
-          </div>
-
-          {!isEditing && (
-            <>
-              <Separator />
-
-              {/* Start from a template */}
-              <div className="panel-bg border border-border rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="h-8 w-1 bg-primary rounded-full" />
-                  <h2 className="text-lg font-medium text-foreground">Start from a template</h2>
-                </div>
-
-                <ProjectTemplatePicker
-                  selectedTemplateId={selectedTemplateId}
-                  onSelectTemplate={handleSelectTemplate}
-                />
-              </div>
-            </>
-          )}
-
-          {/* Actions */}
+           {/* Actions */}
           <div className="flex gap-3 justify-end">
             {onCancel ? (
               <Button type="button" variant="outline" size="lg" disabled={isSubmitting} onClick={onCancel}>
