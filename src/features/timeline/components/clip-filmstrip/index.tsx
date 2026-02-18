@@ -72,45 +72,31 @@ const FilmstripTile = memo(function FilmstripTile({
   width: number;
 }) {
   const [displayedSrc, setDisplayedSrc] = useState(src);
-  const [pendingSrc, setPendingSrc] = useState<{ src: string; epoch: number } | null>(null);
+  const [pendingSrc, setPendingSrc] = useState<string | null>(null);
   const [displayError, setDisplayError] = useState(false);
-  const epochRef = useRef(0);
 
   // Queue incoming src for atomic swap once it has loaded.
   useEffect(() => {
-    if (src === displayedSrc) {
-      if (pendingSrc) {
-        setPendingSrc(null);
-      }
-      return;
-    }
-    if (pendingSrc && pendingSrc.src === src) return;
-    const nextEpoch = epochRef.current + 1;
-    epochRef.current = nextEpoch;
-    setPendingSrc({ src, epoch: nextEpoch });
-  }, [src, displayedSrc, pendingSrc]);
+    if (src === displayedSrc) return;
+    setPendingSrc(src);
+  }, [src, displayedSrc]);
 
   const handleDisplayedError = useCallback(() => {
     setDisplayError(true);
   }, []);
 
   const handlePendingLoad = useCallback((e: SyntheticEvent<HTMLImageElement>) => {
-    if (!pendingSrc) return;
-    const loadedEpoch = Number(e.currentTarget.dataset.epoch || '0');
-    // Ignore stale async loads from older pending requests.
-    if (loadedEpoch !== pendingSrc.epoch || loadedEpoch !== epochRef.current) return;
-    setDisplayedSrc(pendingSrc.src);
+    const loadedSrc = e.currentTarget.currentSrc || pendingSrc;
+    if (!loadedSrc) return;
+    setDisplayedSrc(loadedSrc);
     setDisplayError(false);
     setPendingSrc(null);
   }, [pendingSrc]);
 
-  const handlePendingError = useCallback((e: SyntheticEvent<HTMLImageElement>) => {
-    if (!pendingSrc) return;
-    const failedEpoch = Number(e.currentTarget.dataset.epoch || '0');
-    if (failedEpoch !== pendingSrc.epoch || failedEpoch !== epochRef.current) return;
+  const handlePendingError = useCallback(() => {
     // Keep showing current frame if next src fails.
     setPendingSrc(null);
-  }, [pendingSrc]);
+  }, []);
 
   return (
     <div
@@ -136,13 +122,12 @@ const FilmstripTile = memo(function FilmstripTile({
           }}
         />
       )}
-      {pendingSrc && pendingSrc.src !== displayedSrc && (
+      {pendingSrc && pendingSrc !== displayedSrc && (
         <img
-          src={pendingSrc.src}
+          src={pendingSrc}
           alt=""
           decoding="async"
           className="absolute inset-0 opacity-0 pointer-events-none"
-          data-epoch={pendingSrc.epoch}
           onLoad={handlePendingLoad}
           onError={handlePendingError}
           style={{
