@@ -16,6 +16,9 @@ import {
 import { createProjectObject, duplicateProject } from '../utils/project-helpers';
 // v3: Import media service for cascade operations
 import { mediaLibraryService } from '@/features/media-library/services/media-library-service';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('ProjectStore');
 
 interface ProjectState {
   // Data
@@ -40,7 +43,7 @@ interface ProjectActions {
   loadProject: (id: string) => Promise<Project | null>;
   createProject: (data: ProjectFormData) => Promise<Project>;
   updateProject: (id: string, data: Partial<ProjectFormData>) => Promise<Project>;
-  deleteProject: (id: string) => Promise<void>;
+  deleteProject: (id: string, clearLocalFiles?: boolean) => Promise<void>;
   duplicateProject: (id: string) => Promise<Project>;
 
   // Project folder management
@@ -211,10 +214,11 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
 
         // Delete a project with optimistic update
         // v3: Also deletes media associations (with reference counting)
-        deleteProject: async (id: string) => {
+        deleteProject: async (id: string, clearLocalFiles?: boolean) => {
           set({ isLoading: true, error: null });
 
           const previousProjects = get().projects;
+          const projectToDelete = previousProjects.find((p) => p.id === id);
 
           // Optimistic update - remove from state immediately
           const optimisticProjects = previousProjects.filter((p) => p.id !== id);
@@ -233,6 +237,39 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
 
             // Then delete the project itself
             await deleteProjectDB(id);
+
+            // Optionally delete the linked local folder and its contents
+            if (clearLocalFiles && projectToDelete?.rootFolderHandle) {
+              try {
+                const handle = projectToDelete.rootFolderHandle;
+                // Verify we still have permission
+                let permission = await handle.queryPermission({ mode: 'readwrite' });
+                if (permission !== 'granted') {
+                  permission = await handle.requestPermission({ mode: 'readwrite' });
+                }
+                if (permission === 'granted') {
+                  // Use non-standard .remove() (Chromium) to delete the folder itself
+                  // Falls back to clearing contents if not available
+                  const handleWithRemove = handle as FileSystemDirectoryHandle & {
+                    remove?: (options?: { recursive?: boolean }) => Promise<void>;
+                  };
+                  if (typeof handleWithRemove.remove === 'function') {
+                    await handleWithRemove.remove({ recursive: true });
+                  } else {
+                    // Fallback: clear all contents (can't delete the folder itself without parent handle)
+                    for await (const entry of handle.values()) {
+                      await handle.removeEntry(entry.name, { recursive: true });
+                    }
+                  }
+                } else {
+                  logger.warn('Permission denied to clear local files for project', id);
+                }
+              } catch (fsError) {
+                // Log but don't fail the whole delete — the project data is already removed
+                logger.error('Failed to clear local files:', fsError);
+              }
+            }
+
             set({ isLoading: false });
           } catch (error) {
             // Rollback on error

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { MoreVertical, PlayCircle, Edit2, Copy, Trash2, AlertTriangle } from 'lucide-react';
+import { MoreVertical, PlayCircle, Edit2, Copy, Trash2, AlertTriangle, HardDrive } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +34,7 @@ export function ProjectCard({ project, onEdit }: ProjectCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [clearLocalFiles, setClearLocalFiles] = useState(false);
   const deleteProject = useDeleteProject();
   const duplicateProject = useDuplicateProject();
   const thumbnailUrl = useProjectThumbnail(project);
@@ -47,8 +48,9 @@ export function ProjectCard({ project, onEdit }: ProjectCardProps) {
   const handleConfirmDelete = async () => {
     setIsDeleting(true);
     setShowDeleteDialog(false);
-    const result = await deleteProject(project.id);
+    const result = await deleteProject(project.id, clearLocalFiles);
     setIsDeleting(false);
+    setClearLocalFiles(false);
 
     if (!result.success) {
       toast.error('Failed to delete project', { description: result.error });
@@ -190,7 +192,10 @@ export function ProjectCard({ project, onEdit }: ProjectCardProps) {
         </div>
 
         {/* Delete Confirmation Dialog */}
-        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialog open={showDeleteDialog} onOpenChange={(open) => {
+          setShowDeleteDialog(open);
+          if (!open) setClearLocalFiles(false);
+        }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
@@ -202,6 +207,25 @@ export function ProjectCard({ project, onEdit }: ProjectCardProps) {
                 undone and will permanently remove the project and all its contents.
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {project.rootFolderHandle && (
+              <label className="flex items-start gap-3 p-3 rounded-md bg-muted/50 border border-border cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={clearLocalFiles}
+                  onChange={(e) => setClearLocalFiles(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-border accent-destructive"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                    <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
+                    Also delete local files on disk
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Remove files from the linked folder{project.rootFolderName ? ` "${project.rootFolderName}"` : ''}. This cannot be undone.
+                  </p>
+                </div>
+              </label>
+            )}
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction

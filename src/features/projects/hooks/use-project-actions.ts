@@ -78,9 +78,9 @@ export const useDeleteProject = () => {
   const deleteProject = useProjectStore((s) => s.deleteProject);
 
   return useCallback(
-    async (id: string) => {
+    async (id: string, clearLocalFiles?: boolean) => {
       try {
-        await deleteProject(id);
+        await deleteProject(id, clearLocalFiles);
         return { success: true, error: null };
       } catch (error) {
         return {
