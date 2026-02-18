@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { useVideoConfig, useIsPlaying } from '../hooks/use-player-compat';
 import { interpolate, useSequenceContext } from '@/features/player/composition';
+import { getAudioTargetTimeSeconds } from '../utils/video-timing';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
@@ -285,8 +286,8 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
     const effectiveSourceFps = sourceFps ?? fps;
 
     // Calculate target time in the source audio
-    const compositionTimeSeconds = frame / fps;
-    const sourceTimeSeconds = (trimBefore / effectiveSourceFps) + (compositionTimeSeconds * playbackRate);
+    // IMPORTANT: trimBefore is in source FPS frames — must use effectiveSourceFps, not fps
+    const sourceTimeSeconds = getAudioTargetTimeSeconds(trimBefore, effectiveSourceFps, frame, playbackRate, fps);
     const clipStartTimeSeconds = Math.max(0, trimBefore / effectiveSourceFps);
 
     // During Sequence premount, frame is negative. Keep audio paused and pre-seek to

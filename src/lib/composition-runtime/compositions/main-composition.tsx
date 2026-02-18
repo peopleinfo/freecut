@@ -9,6 +9,7 @@ import { CustomDecoderAudio } from '../components/custom-decoder-audio';
 import { OptimizedEffectsBasedTransitionsLayer } from '../components/transition-renderer';
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store';
 import { needsCustomAudioDecoder } from '../utils/audio-codec-detection';
+import { timelineToSourceFrames, sourceToTimelineFrames } from '@/features/timeline/utils/source-calculations';
 import { StableVideoSequence, type StableVideoSequenceItem } from '../components/stable-video-sequence';
 import { loadFonts } from '../utils/fonts';
 import { resolveTransform } from '../utils/transform-resolver';
@@ -49,6 +50,7 @@ interface VideoAudioSegment {
   durationInFrames: number;
   trimBefore: number;
   playbackRate: number;
+  sourceFps?: number;
   volumeDb: number;
   muted: boolean;
   audioFadeIn: number;
@@ -65,7 +67,7 @@ function hasExplicitTrimStart(item: EnrichedVideoItem): boolean {
   return item.sourceStart !== undefined || item.trimStart !== undefined || item.offset !== undefined;
 }
 
-function isContinuousAudioTransition(left: EnrichedVideoItem, right: EnrichedVideoItem): boolean {
+function isContinuousAudioTransition(left: EnrichedVideoItem, right: EnrichedVideoItem, timelineFps: number = 30): boolean {
   const leftSpeed = left.speed ?? 1;
   const rightSpeed = right.speed ?? 1;
   if (Math.abs(leftSpeed - rightSpeed) > 0.0001) return false;
@@ -82,7 +84,10 @@ function isContinuousAudioTransition(left: EnrichedVideoItem, right: EnrichedVid
 
   const leftTrim = getVideoTrimBefore(left);
   const rightTrim = getVideoTrimBefore(right);
-  const computedLeftSourceEnd = leftTrim + Math.round(left.durationInFrames * leftSpeed);
+  // Use FPS-aware conversion: sourceStart is in source FPS frames, so the delta
+  // from timeline duration must also be converted to source FPS frames.
+  const leftSourceFps = left.sourceFps ?? timelineFps;
+  const computedLeftSourceEnd = leftTrim + timelineToSourceFrames(left.durationInFrames, leftSpeed, timelineFps, leftSourceFps);
   const storedLeftSourceEnd = left.sourceEnd;
   const computedContinuous = Math.abs(rightTrim - computedLeftSourceEnd) <= 2;
   const storedContinuous = storedLeftSourceEnd !== undefined
@@ -500,7 +505,10 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
 
           if (sameSpeed && sameMedia && adjacent && sameOrigin) {
             const previousTrimBefore = resolvedTrimBeforeById.get(previous.id) ?? getVideoTrimBefore(previous);
-            resolvedTrimBefore = previousTrimBefore + Math.round(previous.durationInFrames * previousSpeed);
+            // Use FPS-aware conversion: previousTrimBefore is in source FPS frames,
+            // so the delta must also be in source FPS frames.
+            const previousSourceFps = previous.sourceFps ?? fps;
+            resolvedTrimBefore = previousTrimBefore + timelineToSourceFrames(previous.durationInFrames, previousSpeed, fps, previousSourceFps);
           }
         }
       }
@@ -521,7 +529,7 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
       const left = clipsById.get(window.transition.leftClipId);
       const right = clipsById.get(window.transition.rightClipId);
       if (!left || !right || !left.src || !right.src) continue;
-      if (isContinuousAudioTransition(left, right)) continue;
+      if (isContinuousAudioTransition(left, right, fps)) continue;
 
       const rightPreRoll = Math.max(0, right.from - window.startFrame);
       const leftPostRoll = Math.max(
@@ -551,9 +559,13 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
       if (!item.src) continue;
 
       const playbackRate = item.speed ?? 1;
+      const itemSourceFps = item.sourceFps ?? fps;
       const baseTrimBefore = resolvedTrimBeforeById.get(item.id) ?? getVideoTrimBefore(item);
       const extension = extensionByClipId.get(item.id) ?? { before: 0, after: 0 };
-      const maxBeforeBySource = playbackRate > 0 ? Math.floor(baseTrimBefore / playbackRate) : 0;
+      // baseTrimBefore is in source FPS frames; convert to timeline frames for comparison
+      const maxBeforeBySource = playbackRate > 0
+        ? sourceToTimelineFrames(baseTrimBefore, playbackRate, itemSourceFps, fps)
+        : 0;
       const before = Math.max(0, Math.min(extension.before, maxBeforeBySource));
       const after = Math.max(0, extension.after);
 
@@ -565,8 +577,10 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
         src: item.src,
         from: item.from - before,
         durationInFrames: item.durationInFrames + before + after,
-        trimBefore: baseTrimBefore - (before * playbackRate),
+        // Convert `before` (timeline frames) to source frames for subtraction
+        trimBefore: baseTrimBefore - timelineToSourceFrames(before, playbackRate, fps, itemSourceFps),
         playbackRate,
+        sourceFps: item.sourceFps,
         volumeDb: item.volume ?? 0,
         muted: item.muted || !item.trackVisible,
         audioFadeIn: before === 0 ? (item.audioFadeIn ?? 0) : 0,
@@ -589,7 +603,7 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
       left: ExpandedVideoAudioSegment,
       right: ExpandedVideoAudioSegment
     ): boolean => {
-      if (!isContinuousAudioTransition(left.clip, right.clip)) return false;
+      if (!isContinuousAudioTransition(left.clip, right.clip, fps)) return false;
       if (left.src !== right.src) return false;
       if (Math.abs(left.playbackRate - right.playbackRate) > 0.0001) return false;
       if (Math.abs(left.volumeDb - right.volumeDb) > 0.0001) return false;
@@ -611,6 +625,7 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
       durationInFrames: segment.durationInFrames,
       trimBefore: segment.trimBefore,
       playbackRate: segment.playbackRate,
+      sourceFps: segment.sourceFps,
       volumeDb: segment.volumeDb,
       muted: segment.muted,
       audioFadeIn: segment.audioFadeIn,
@@ -644,7 +659,7 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
     }
 
     return mergedSegments;
-  }, [videoAudioItems, transitions]);
+  }, [videoAudioItems, transitions, fps]);
 
   // Look up which video audio segments need custom decoding (AC-3/E-AC-3)
   const mediaItems = useMediaLibraryStore((s) => s.mediaItems);
@@ -802,6 +817,7 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
                   mediaId={decodeMediaId}
                   itemId={segment.itemId}
                   trimBefore={segment.trimBefore}
+                  sourceFps={segment.sourceFps}
                   volume={segment.volumeDb}
                   playbackRate={segment.playbackRate}
                   muted={segment.muted}
@@ -816,6 +832,7 @@ export const MainComposition: React.FC<CompositionInputProps> = ({ tracks, trans
                   src={segment.src}
                   itemId={segment.itemId}
                   trimBefore={segment.trimBefore}
+                  sourceFps={segment.sourceFps}
                   volume={segment.volumeDb}
                   playbackRate={segment.playbackRate}
                   muted={segment.muted}

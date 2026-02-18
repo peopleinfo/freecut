@@ -124,12 +124,22 @@ export function calculateTrimSourceUpdate(
       sourceStart: sourceStart + sourceFramesDelta,
     };
   } else {
-    // Trimming end: update sourceEnd
-    const newSourceEnd = sourceStart + timelineToSourceFrames(newDuration, speed, timelineFps, effectiveSourceFps);
-    // Ensure we don't exceed source bounds (can happen with floating-point speed)
+    // Trimming end: update sourceEnd.
+    // For clips with explicit sourceEnd, update by delta to avoid
+    // cumulative one-frame loss from duration-based recomputation.
+    const sourceFramesDelta = timelineToSourceFrames(clampedAmount, speed, timelineFps, effectiveSourceFps);
+    const explicitSourceEnd = item.sourceEnd;
+    const recomputedSourceEnd = sourceStart + timelineToSourceFrames(newDuration, speed, timelineFps, effectiveSourceFps);
+    const newSourceEnd = explicitSourceEnd !== undefined
+      ? explicitSourceEnd + sourceFramesDelta
+      : recomputedSourceEnd;
+
+    // Keep at least 1 source frame and clamp to media bounds.
+    const minSourceEnd = sourceStart + 1;
+    const boundedByMin = Math.max(minSourceEnd, newSourceEnd);
     const clampedSourceEnd = sourceDuration !== undefined
-      ? Math.min(newSourceEnd, sourceDuration)
-      : newSourceEnd;
+      ? Math.min(boundedByMin, sourceDuration)
+      : boundedByMin;
     return {
       sourceEnd: clampedSourceEnd,
     };

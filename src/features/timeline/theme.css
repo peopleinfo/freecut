@@ -25,6 +25,10 @@
   /* In/Out marker colors */
   --color-timeline-in: oklch(0.65 0.18 142);         /* Green - in point */
   --color-timeline-out: oklch(0.61 0.22 29);         /* Red - out point */
+  --color-timeline-io-handle: oklch(0.69 0.16 250);  /* Blue handle for draggable I/O markers */
+  --color-timeline-io-range-fill: oklch(0.51 0.10 42 / 0.55); /* Warm in/out span fill */
+  --color-timeline-io-range-border: oklch(0.69 0.16 250); /* Blue outline for in/out span */
+  --color-timeline-io-range-glow: oklch(0.69 0.16 250 / 0.28); /* Subtle glow around selected span */
 
   /* Marker color */
   --color-timeline-marker: oklch(0.65 0.20 250);     /* Blue - timeline markers */

@@ -4,7 +4,7 @@ import type { TimelineItem, TimelineTrack } from '@/types/timeline';
 import type { TransformProperties } from '@/types/transform';
 import type { VisualEffect, ItemEffect } from '@/types/effects';
 import { clampTrimAmount, calculateTrimSourceUpdate } from '../utils/trim-utils';
-import { getSourceProperties, isMediaItem, calculateSplitSourceBoundaries, timelineToSourceFrames } from '../utils/source-calculations';
+import { getSourceProperties, isMediaItem, calculateSplitSourceBoundaries, timelineToSourceFrames, calculateSpeed, clampSpeed } from '../utils/source-calculations';
 import { useCompositionNavigationStore } from './composition-navigation-store';
 import { useTimelineSettingsStore } from './timeline-settings-store';
 
@@ -31,7 +31,7 @@ function normalizeOptionalFps(value: number | undefined): number | undefined {
 }
 
 function normalizeFrameFields<T extends TimelineItem>(item: T): T {
-  return {
+  const normalized = {
     ...item,
     from: roundFrame(item.from),
     durationInFrames: roundDuration(item.durationInFrames),
@@ -42,6 +42,17 @@ function normalizeFrameFields<T extends TimelineItem>(item: T): T {
     sourceDuration: roundOptionalFrame(item.sourceDuration),
     sourceFps: normalizeOptionalFps(item.sourceFps),
   };
+
+  // Legacy split clips can have sourceEnd without sourceStart.
+  // Treat them as explicitly bounded from 0 to sourceEnd so rate stretch
+  // operates on the split segment rather than the full media duration.
+  if ((normalized.type === 'video' || normalized.type === 'audio') &&
+      normalized.sourceEnd !== undefined &&
+      normalized.sourceStart === undefined) {
+    normalized.sourceStart = 0;
+  }
+
+  return normalized as T;
 }
 
 function normalizeItemUpdates(updates: Partial<TimelineItem>): Partial<TimelineItem> {
@@ -55,6 +66,12 @@ function normalizeItemUpdates(updates: Partial<TimelineItem>): Partial<TimelineI
   if (normalized.sourceEnd !== undefined) normalized.sourceEnd = roundFrame(normalized.sourceEnd);
   if (normalized.sourceDuration !== undefined) normalized.sourceDuration = roundFrame(normalized.sourceDuration);
   if (normalized.sourceFps !== undefined) normalized.sourceFps = normalizeOptionalFps(normalized.sourceFps);
+
+  // Keep legacy end-only bounds explicit and stable.
+  if (normalized.sourceEnd !== undefined &&
+      normalized.sourceStart === undefined) {
+    normalized.sourceStart = 0;
+  }
 
   return normalized;
 }
@@ -355,6 +372,11 @@ export const useItemsStore = create<ItemsState & ItemsActions>()(
           effectiveSourceFps
         );
 
+        // Explicitly set sourceStart on left item so it has full explicit bounds.
+        // Without this, the left item inherits undefined sourceStart from the original,
+        // breaking hasExplicitSourceBounds detection in _rateStretchItem and causing
+        // rate stretch to use the wrong source duration (full media instead of clip portion).
+        (leftItem as typeof item).sourceStart = sourceStart;
         (leftItem as typeof item).sourceEnd = boundaries.left.sourceEnd;
         (rightItem as typeof item).sourceStart = boundaries.right.sourceStart;
         (rightItem as typeof item).sourceEnd = boundaries.right.sourceEnd;
@@ -421,24 +443,45 @@ export const useItemsStore = create<ItemsState & ItemsActions>()(
         const isGif = item.type === 'image' && item.label?.toLowerCase().endsWith('.gif');
         if (item.type !== 'video' && item.type !== 'audio' && !isGif) return item;
 
-        // Recalculate sourceEnd based on new duration and speed
-        // This keeps sourceEnd in sync with the current playback state
+        // For clips with explicit source bounds (split clips and trimmed segments),
+        // preserve sourceStart/sourceEnd exactly and only retime via speed+duration.
+        // Recomputing sourceEnd here causes destructive source-span drift over repeated
+        // rate-stretch operations.
+        const hasExplicitSourceBounds =
+          (item.type === 'video' || item.type === 'audio') &&
+          item.sourceEnd !== undefined;
+
         const sourceStart = item.sourceStart ?? 0;
         const timelineFps = useTimelineSettingsStore.getState().fps;
         const sourceFps = item.sourceFps ?? timelineFps;
-        const sourceFramesNeeded = timelineToSourceFrames(newDuration, newSpeed, timelineFps, sourceFps);
+        const finalDuration = roundDuration(newDuration);
+        let finalSpeed = newSpeed;
+
+        if (hasExplicitSourceBounds) {
+          // Explicit bounds mean the source span is fixed; derive speed from that span.
+          const fixedSourceSpan = Math.max(1, (item.sourceEnd ?? sourceStart) - sourceStart);
+          finalSpeed = clampSpeed(calculateSpeed(fixedSourceSpan, finalDuration, sourceFps, timelineFps));
+        }
+
+        // Recalculate sourceEnd only when bounds are not explicitly defined.
+        const sourceFramesNeeded = timelineToSourceFrames(finalDuration, finalSpeed, timelineFps, sourceFps);
         const newSourceEnd = sourceStart + sourceFramesNeeded;
         const clampedSourceEnd = item.sourceDuration
           ? Math.min(newSourceEnd, item.sourceDuration)
           : newSourceEnd;
 
-        return {
+        const updatedItem = {
           ...item,
           from: roundFrame(newFrom),
-          durationInFrames: roundDuration(newDuration),
-          speed: newSpeed,
-          sourceEnd: roundFrame(clampedSourceEnd),
+          durationInFrames: finalDuration,
+          speed: finalSpeed,
         } as typeof item;
+
+        if (!hasExplicitSourceBounds) {
+          updatedItem.sourceEnd = roundFrame(clampedSourceEnd);
+        }
+
+        return updatedItem;
       }),
     })),
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { interpolate, useSequenceContext } from '@/features/player/composition';
 import { useVideoConfig, useIsPlaying } from '../hooks/use-player-compat';
+import { getAudioTargetTimeSeconds } from '../utils/video-timing';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useGizmoStore } from '@/features/preview/stores/gizmo-store';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
@@ -35,6 +36,7 @@ interface CustomDecoderBufferedAudioProps {
   mediaId: string;
   itemId: string;
   trimBefore?: number;
+  sourceFps?: number;
   volume?: number;
   playbackRate?: number;
   muted?: boolean;
@@ -50,6 +52,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
   mediaId,
   itemId,
   trimBefore = 0,
+  sourceFps,
   volume = 0,
   playbackRate = 1,
   muted = false,
@@ -270,7 +273,9 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
     if (!ctx || !gain) return;
 
     const isPremounted = frame < 0;
-    const targetTime = (trimBefore / fps) + (frame * playbackRate / fps);
+    const effectiveSourceFps = sourceFps ?? fps;
+    // IMPORTANT: trimBefore is in source FPS frames — must use effectiveSourceFps, not fps
+    const targetTime = getAudioTargetTimeSeconds(trimBefore, effectiveSourceFps, frame, playbackRate, fps);
 
     if (isPremounted) {
       stopSource();

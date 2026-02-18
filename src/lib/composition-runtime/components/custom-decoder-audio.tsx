@@ -13,6 +13,7 @@ interface CustomDecoderAudioProps {
   mediaId: string;
   itemId: string;
   trimBefore?: number;
+  sourceFps?: number;
   volume?: number;
   playbackRate?: number;
   muted?: boolean;
@@ -247,6 +248,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
   mediaId,
   itemId,
   trimBefore = 0,
+  sourceFps,
   volume = 0,
   playbackRate = 1,
   muted = false,
@@ -288,6 +290,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
       src={decodedSrc}
       itemId={itemId}
       trimBefore={trimBefore}
+      sourceFps={sourceFps}
       volume={volume}
       playbackRate={playbackRate}
       muted={muted}

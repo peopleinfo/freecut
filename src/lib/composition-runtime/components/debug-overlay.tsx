@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom';
 interface DebugOverlayProps {
   /** Unique identifier for the item */
   id?: string;
+  /** Timeline start frame of the item */
+  from?: number;
   /** Playback speed multiplier */
   speed: number;
   /** Original trimBefore value (frames) */
@@ -12,6 +14,10 @@ interface DebugOverlayProps {
   safeTrimBefore: number;
   /** Source start position (frames) */
   sourceStart?: number;
+  /** Source end position bound (frames) */
+  sourceEnd?: number;
+  /** Effective source end bound used for clamping (frames) */
+  sourceEndBound?: number;
   /** Total source duration (frames) */
   sourceDuration: number;
   /** Timeline duration (frames) */
@@ -56,18 +62,21 @@ interface DebugOverlayProps {
  */
 export const DebugOverlay: React.FC<DebugOverlayProps> = ({
   id,
+  from,
   speed,
   trimBefore,
   safeTrimBefore,
   sourceStart,
+  sourceEnd,
+  sourceEndBound,
   sourceDuration,
   durationInFrames,
   sourceFramesNeeded,
   sourceEndPosition,
+  fps = 30,
   sourceFps = fps,
   isInvalidSeek,
   exceedsSource,
-  fps = 30,
   position = 'top-left',
 }) => {
   // Debug overlay is only rendered during preview (not during export)
@@ -112,10 +121,17 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
   const copyToClipboard = useCallback(() => {
     const data = {
       id: id?.slice(0, 8) ?? 'unknown',
+      from: from ?? 'unknown',
+      endFrame: from !== undefined ? from + durationInFrames : 'unknown',
       speed: speed.toFixed(3),
       trimBefore,
       safeTrimBefore,
       sourceStart: sourceStart ?? 'undefined',
+      sourceEnd: sourceEnd ?? 'undefined',
+      sourceEndBound: sourceEndBound ?? 'undefined',
+      sourceSpan: sourceStart !== undefined && sourceEnd !== undefined
+        ? sourceEnd - sourceStart
+        : 'unknown',
       sourceDuration: sourceDuration || 'NOT SET',
       durationInFrames,
       sourceFramesNeeded,
@@ -127,7 +143,7 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
       exceedsSource,
     };
     navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-  }, [id, speed, trimBefore, safeTrimBefore, sourceStart, sourceDuration, durationInFrames, sourceFramesNeeded, sourceEndPosition, sourceFps, isInvalidSeek, exceedsSource]);
+  }, [id, from, speed, trimBefore, safeTrimBefore, sourceStart, sourceEnd, sourceEndBound, sourceDuration, durationInFrames, sourceFramesNeeded, sourceEndPosition, sourceFps, isInvalidSeek, exceedsSource]);
 
   // Calculate position for portal mode (anchored to player container bottom-right)
   const portalPositionStyles: React.CSSProperties = containerRect
@@ -182,11 +198,16 @@ export const DebugOverlay: React.FC<DebugOverlayProps> = ({
         </button>
       </div>
       <div>speed: {speed.toFixed(3)}</div>
+      <div>from: {from ?? 'unknown'}</div>
+      <div>endFrame: {from !== undefined ? from + durationInFrames : 'unknown'}</div>
       <div>
         trimBefore: {trimBefore}
         {trimBefore !== safeTrimBefore && ` → safe: ${safeTrimBefore}`}
       </div>
       <div>sourceStart: {sourceStart ?? 'undefined'}</div>
+      <div>sourceEnd: {sourceEnd ?? 'undefined'}</div>
+      <div>sourceEndBound: {sourceEndBound ?? 'undefined'}</div>
+      <div>sourceSpan: {sourceStart !== undefined && sourceEnd !== undefined ? sourceEnd - sourceStart : 'unknown'}</div>
       <div>sourceDuration: {sourceDuration || 'NOT SET'}</div>
       <div>sourceFps: {sourceFps.toFixed(3)}</div>
       <div>durationInFrames: {durationInFrames}</div>

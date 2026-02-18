@@ -32,11 +32,22 @@ interface StretchState {
   isLoopingMedia: boolean; // GIFs and images can loop infinitely
 }
 
+function getExactTimelineDurationForSource(
+  sourceDuration: number,
+  speed: number,
+  sourceFps: number,
+  timelineFps: number
+): number {
+  if (speed <= 0 || sourceFps <= 0 || timelineFps <= 0) return 1;
+  const sourceSeconds = sourceDuration / sourceFps;
+  return (sourceSeconds * timelineFps) / speed;
+}
+
 /**
  * Calculate duration limits based on speed constraints
  * For looping media (GIFs), duration is independent of source - just has speed limits
  */
-function getDurationLimits(
+export function getDurationLimits(
   sourceDuration: number,
   isLoopingMedia: boolean,
   sourceFps: number,
@@ -51,23 +62,75 @@ function getDurationLimits(
     };
   }
   // For videos/audio: duration is constrained by source content
-  // Use shared utility for source-to-timeline conversion
+  // Min duration uses ceil to guarantee full source coverage at MAX_SPEED.
+  // Floor would allow durations that necessarily drop source frames.
+  const minDuration = Math.max(
+    1,
+    Math.ceil(getExactTimelineDurationForSource(sourceDuration, MAX_SPEED, sourceFps, timelineFps))
+  );
+  // Max duration can use floor to stay within source bounds at MIN_SPEED.
+  const maxDuration = Math.max(
+    minDuration,
+    sourceToTimelineFrames(sourceDuration, MIN_SPEED, sourceFps, timelineFps)
+  );
   return {
-    min: Math.max(1, sourceToTimelineFrames(sourceDuration, MAX_SPEED, sourceFps, timelineFps)),
-    max: sourceToTimelineFrames(sourceDuration, MIN_SPEED, sourceFps, timelineFps),
+    min: minDuration,
+    max: maxDuration,
   };
 }
 
 /**
  * Calculate and clamp speed from source duration and timeline duration
  */
-function getClampedSpeed(
+export function getClampedSpeed(
   sourceDuration: number,
   timelineDuration: number,
   sourceFps: number,
   timelineFps: number
 ): number {
   return clampSpeed(calculateSpeed(sourceDuration, timelineDuration, sourceFps, timelineFps));
+}
+
+/**
+ * Normalize duration/speed pair so playback stays within source bounds after frame rounding.
+ * Keeps the stretched clip using its full source span (no accidental extra trim).
+ */
+export function resolveDurationAndSpeed(
+  sourceDuration: number,
+  proposedDuration: number,
+  sourceFps: number,
+  timelineFps: number
+): { duration: number; speed: number } {
+  let duration = Math.max(1, Math.round(proposedDuration));
+  let speed = getClampedSpeed(sourceDuration, duration, sourceFps, timelineFps);
+
+  // A few iterations is enough to converge for rounding edge cases.
+  for (let i = 0; i < 5; i++) {
+    const sourceFramesNeeded = timelineToSourceFrames(duration, speed, timelineFps, sourceFps);
+    if (sourceFramesNeeded > sourceDuration) {
+      const boundedDuration = Math.max(1, sourceToTimelineFrames(sourceDuration, speed, sourceFps, timelineFps));
+      if (boundedDuration === duration) break;
+      duration = boundedDuration;
+      speed = getClampedSpeed(sourceDuration, duration, sourceFps, timelineFps);
+      continue;
+    }
+
+    if (sourceFramesNeeded < sourceDuration && Math.abs(speed - MAX_SPEED) < 1e-6) {
+      // At max speed, increase duration until full source span can be represented.
+      const minDurationAtCurrentSpeed = Math.max(
+        1,
+        Math.ceil(getExactTimelineDurationForSource(sourceDuration, speed, sourceFps, timelineFps))
+      );
+      if (minDurationAtCurrentSpeed === duration) break;
+      duration = minDurationAtCurrentSpeed;
+      speed = getClampedSpeed(sourceDuration, duration, sourceFps, timelineFps);
+      continue;
+    }
+
+    break;
+  }
+
+  return { duration, speed };
 }
 
 /**
@@ -278,20 +341,12 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
           newFrom = Math.round(initialFrom);
         }
 
-        newSpeed = getClampedSpeed(sourceDuration, newDuration, sourceFps, fps);
-
-        // IMPORTANT: After rounding speed, verify the combination doesn't exceed source
-        // Due to rounding (e.g., 1.4484 -> 1.45), duration * speed might exceed sourceDuration
-        // If so, adjust duration down to ensure we stay within bounds
-        const sourceFramesNeeded = timelineToSourceFrames(newDuration, newSpeed, fps, sourceFps);
-        if (sourceFramesNeeded > sourceDuration) {
-          // Reduce duration to fit within source at this rounded speed
-          newDuration = Math.max(1, sourceToTimelineFrames(sourceDuration, newSpeed, sourceFps, fps));
-          // Adjust position if we were stretching from start
-          if (handle === 'start') {
-            const adjustedDurationChange = initialDuration - newDuration;
-            newFrom = Math.round(initialFrom + adjustedDurationChange);
-          }
+        const resolved = resolveDurationAndSpeed(sourceDuration, newDuration, sourceFps, fps);
+        newDuration = resolved.duration;
+        newSpeed = resolved.speed;
+        if (handle === 'start') {
+          const adjustedDurationChange = initialDuration - newDuration;
+          newFrom = Math.round(initialFrom + adjustedDurationChange);
         }
 
         // Only update store if there was actual change (compare rounded values)
@@ -360,13 +415,13 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
       // to its own source boundaries.
       let sourceDuration: number;
       const sourceFps = currentItem.sourceFps ?? fps;
-      if (currentItem.sourceEnd !== undefined && currentItem.sourceStart !== undefined) {
-        // For clips with defined source boundaries (including split clips),
-        // use only the clip's actual portion
-        sourceDuration = currentItem.sourceEnd - currentItem.sourceStart;
+      const sourceStart = currentItem.sourceStart ?? 0;
+      if (currentItem.sourceEnd !== undefined) {
+        // For clips with explicit source end (including legacy split clips
+        // that may be missing sourceStart), use only the clip's source span.
+        sourceDuration = Math.max(1, currentItem.sourceEnd - sourceStart);
       } else if (currentItem.sourceDuration) {
         // For clips without explicit end, use remaining source from current position
-        const sourceStart = currentItem.sourceStart ?? 0;
         sourceDuration = currentItem.sourceDuration - sourceStart;
       } else {
         // Last resort: estimate from current state
@@ -423,16 +478,12 @@ export function useRateStretch(item: TimelineItem, timelineDuration: number, tra
       newFrom = Math.round(initialFrom);
     }
 
-    const previewSpeed = getClampedSpeed(sourceDuration, newDuration, sourceFps, fps);
-
-    // Apply same rounding fix as onMouseUp - adjust duration if rounded speed exceeds source
-    const sourceFramesNeeded = timelineToSourceFrames(newDuration, previewSpeed, fps, sourceFps);
-    if (sourceFramesNeeded > sourceDuration) {
-      newDuration = Math.max(1, sourceToTimelineFrames(sourceDuration, previewSpeed, sourceFps, fps));
-      if (handle === 'start') {
-        const adjustedDurationChange = initialDuration - newDuration;
-        newFrom = Math.round(initialFrom + adjustedDurationChange);
-      }
+    const resolved = resolveDurationAndSpeed(sourceDuration, newDuration, sourceFps, fps);
+    newDuration = resolved.duration;
+    const previewSpeed = resolved.speed;
+    if (handle === 'start') {
+      const adjustedDurationChange = initialDuration - newDuration;
+      newFrom = Math.round(initialFrom + adjustedDurationChange);
     }
 
     return {
