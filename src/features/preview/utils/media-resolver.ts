@@ -79,7 +79,7 @@ export async function resolveMediaUrl(mediaId: string): Promise<string> {
  * Resolves a proxy URL for a media item if available.
  * Returns null if no proxy exists (caller should fall back to full-res).
  */
-function resolveProxyUrl(mediaId: string): string | null {
+export function resolveProxyUrl(mediaId: string): string | null {
   return proxyService.getProxyBlobUrl(mediaId);
 }
 

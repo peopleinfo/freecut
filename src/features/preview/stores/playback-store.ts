@@ -20,6 +20,7 @@ export const usePlaybackStore = create<PlaybackState & PlaybackActions>()(
       zoom: -1, // -1 = auto-fit, positive values = specific zoom percentage
       previewFrame: null,
       captureFrame: null, // Set by VideoPreview when Player is mounted
+      useProxy: true,
 
       // Actions
       setCurrentFrame: (frame) =>
@@ -41,6 +42,7 @@ export const usePlaybackStore = create<PlaybackState & PlaybackActions>()(
           return state.previewFrame === nextFrame ? state : { previewFrame: nextFrame };
         }),
       setCaptureFrame: (fn) => set({ captureFrame: fn }),
+      toggleUseProxy: () => set((state) => ({ useProxy: !state.useProxy })),
     }),
     {
       name: 'playback-storage',
@@ -50,6 +52,7 @@ export const usePlaybackStore = create<PlaybackState & PlaybackActions>()(
         muted: state.muted,
         playbackRate: state.playbackRate,
         loop: state.loop,
+        useProxy: state.useProxy,
       }),
     }
   )

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Video, FileAudio, Image as ImageIcon, MoreVertical, Trash2, Loader2, Link2Off, RefreshCw } from 'lucide-react';
+import { Video, FileAudio, Image as ImageIcon, MoreVertical, Trash2, Loader2, Link2Off, RefreshCw, Zap } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +12,7 @@ import { mediaLibraryService } from '../services/media-library-service';
 import { getMediaType, formatDuration } from '../utils/validation';
 import { useMediaLibraryStore } from '../stores/media-library-store';
 import { setMediaDragData, clearMediaDragData } from '../utils/drag-data-cache';
+import { proxyService } from '../services/proxy-service';
 
 interface MediaCardProps {
   media: MediaMetadata;
@@ -30,8 +31,13 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
   const mediaItems = useMediaLibraryStore((s) => s.mediaItems);
   const importingIds = useMediaLibraryStore((s) => s.importingIds);
 
+  const proxyStatus = useMediaLibraryStore((s) => s.proxyStatus.get(media.id));
+  const proxyProgress = useMediaLibraryStore((s) => s.proxyProgress.get(media.id));
+
   const mediaType = getMediaType(media.mimeType);
   const isImporting = importingIds.includes(media.id);
+  const canGenerateProxy = proxyService.needsProxy(media.width, media.height, media.mimeType);
+  const hasProxy = proxyStatus === 'ready';
 
   // Load thumbnail on mount (URLs are cached by the service, no need to revoke)
   useEffect(() => {
@@ -55,6 +61,22 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
     e.preventDefault();
     e.stopPropagation();
     onDelete?.();
+  };
+
+  const handleGenerateProxy = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const blobUrl = await mediaLibraryService.getMediaBlobUrl(media.id);
+    if (blobUrl) {
+      proxyService.generateProxy(media.id, blobUrl, media.width, media.height);
+    }
+  };
+
+  const handleDeleteProxy = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await proxyService.deleteProxy(media.id);
+    useMediaLibraryStore.getState().setProxyStatus(media.id, 'error');
   };
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -167,6 +189,17 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
               <Link2Off className="w-2.5 h-2.5" />
             </div>
           )}
+          {/* Proxy badge for list view */}
+          {!isBroken && !isImporting && proxyStatus === 'generating' && (
+            <div className="absolute bottom-0.5 right-0.5 p-0.5 rounded bg-amber-500/90 text-black">
+              <Loader2 className="w-2.5 h-2.5 animate-spin" />
+            </div>
+          )}
+          {!isBroken && !isImporting && hasProxy && (
+            <div className="absolute bottom-0.5 right-0.5 p-0.5 rounded bg-green-500/90 text-black">
+              <Zap className="w-2.5 h-2.5" />
+            </div>
+          )}
         </div>
 
         {/* Info */}
@@ -215,6 +248,24 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onRelink(); }} className="text-primary focus:text-primary">
                   <RefreshCw className="w-3 h-3 mr-2" />
                   Relink File...
+                </DropdownMenuItem>
+              )}
+              {canGenerateProxy && !hasProxy && proxyStatus !== 'generating' && (
+                <DropdownMenuItem onClick={handleGenerateProxy}>
+                  <Zap className="w-3 h-3 mr-2" />
+                  Generate Proxy
+                </DropdownMenuItem>
+              )}
+              {proxyStatus === 'generating' && (
+                <DropdownMenuItem disabled>
+                  <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                  Generating Proxy{proxyProgress != null ? ` (${Math.round(proxyProgress * 100)}%)` : '...'}
+                </DropdownMenuItem>
+              )}
+              {hasProxy && (
+                <DropdownMenuItem onClick={handleDeleteProxy} className="text-destructive focus:text-destructive">
+                  <Trash2 className="w-3 h-3 mr-2" />
+                  Delete Proxy
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive">
@@ -287,6 +338,18 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
           </div>
         )}
 
+        {/* Proxy badge */}
+        {!isBroken && !isImporting && proxyStatus === 'generating' && (
+          <div className="absolute top-1 right-1 p-0.5 rounded bg-amber-500/90 text-black pointer-events-none">
+            <Loader2 className="w-2.5 h-2.5 animate-spin" />
+          </div>
+        )}
+        {!isBroken && !isImporting && hasProxy && (
+          <div className="absolute top-1 right-1 p-0.5 rounded bg-green-500/90 text-black pointer-events-none">
+            <Zap className="w-2.5 h-2.5" />
+          </div>
+        )}
+
         {/* Overlaid badges - hidden during upload */}
         {!isImporting && (
           <div className="absolute inset-x-0 bottom-0 px-1.5 py-1 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-between gap-1 pointer-events-none">
@@ -333,6 +396,24 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onRelink(); }} className="text-primary focus:text-primary">
                     <RefreshCw className="w-3 h-3 mr-2" />
                     Relink File...
+                  </DropdownMenuItem>
+                )}
+                {canGenerateProxy && !hasProxy && proxyStatus !== 'generating' && (
+                  <DropdownMenuItem onClick={handleGenerateProxy}>
+                    <Zap className="w-3 h-3 mr-2" />
+                    Generate Proxy
+                  </DropdownMenuItem>
+                )}
+                {proxyStatus === 'generating' && (
+                  <DropdownMenuItem disabled>
+                    <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                    Generating Proxy{proxyProgress != null ? ` (${Math.round(proxyProgress * 100)}%)` : '...'}
+                  </DropdownMenuItem>
+                )}
+                {hasProxy && (
+                  <DropdownMenuItem onClick={handleDeleteProxy} className="text-destructive focus:text-destructive">
+                    <Trash2 className="w-3 h-3 mr-2" />
+                    Delete Proxy
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive">

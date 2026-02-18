@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Volume2,
+  Zap,
 } from 'lucide-react';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 
@@ -31,9 +32,11 @@ export function PlaybackControls({ totalFrames }: PlaybackControlsProps) {
   // Read from store directly when needed to avoid re-renders every frame
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const volume = usePlaybackStore((s) => s.volume);
+  const useProxy = usePlaybackStore((s) => s.useProxy);
   const togglePlayPause = usePlaybackStore((s) => s.togglePlayPause);
   const setCurrentFrame = usePlaybackStore((s) => s.setCurrentFrame);
   const setVolume = usePlaybackStore((s) => s.setVolume);
+  const toggleUseProxy = usePlaybackStore((s) => s.toggleUseProxy);
 
   // Note: Automatic playback loop is now handled by Composition Player
   // The Player controls frame advancement via frameupdate events
@@ -145,6 +148,24 @@ export function PlaybackControls({ totalFrames }: PlaybackControlsProps) {
           {Math.round(volume * 100)}%
         </span>
       </div>
+
+      <Separator orientation="vertical" className="h-8 flex-shrink-0" />
+
+      {/* Proxy toggle */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className={`h-8 w-8 flex-shrink-0 ${
+          useProxy
+            ? 'text-green-500 hover:text-green-400 hover:bg-green-500/10'
+            : 'text-muted-foreground hover:text-foreground'
+        }`}
+        onClick={toggleUseProxy}
+        data-tooltip={useProxy ? 'Proxy Playback: On' : 'Proxy Playback: Off'}
+        aria-label={useProxy ? 'Disable proxy playback' : 'Enable proxy playback'}
+      >
+        <Zap className="w-4 h-4" />
+      </Button>
     </>
   );
 }

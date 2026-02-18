@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo, memo, useCallback } from 'react';
-import { Search, Filter, SortAsc, Video, FileAudio, Image as ImageIcon, Trash2, Grid3x3, List, AlertTriangle, Info, X, FolderOpen, Link2Off, ChevronRight, Film, ArrowLeft } from 'lucide-react';
+import { Search, Filter, SortAsc, Video, FileAudio, Image as ImageIcon, Trash2, Grid3x3, List, AlertTriangle, Info, X, FolderOpen, Link2Off, ChevronRight, Film, ArrowLeft, Zap, Loader2, Trash } from 'lucide-react';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('MediaLibrary');
@@ -38,6 +38,8 @@ import { useMediaLibraryStore } from '../stores/media-library-store';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
 import { useCompositionNavigationStore } from '@/features/timeline/stores/composition-navigation-store';
 import { useProjectStore } from '@/features/projects/stores/project-store';
+import { proxyService } from '../services/proxy-service';
+import { mediaLibraryService } from '../services/media-library-service';
 
 interface MediaLibraryProps {
   onMediaSelect?: (mediaId: string) => void;
@@ -81,6 +83,8 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
   const brokenMediaIds = useMediaLibraryStore((s) => s.brokenMediaIds);
   const openMissingMediaDialog = useMediaLibraryStore((s) => s.openMissingMediaDialog);
   const projectStoreProjectId = useProjectStore((s) => s.currentProject?.id ?? null);
+  const proxyStatus = useMediaLibraryStore((s) => s.proxyStatus);
+  const proxyProgress = useMediaLibraryStore((s) => s.proxyProgress);
 
   // Composition navigation — show banner when inside a sub-comp
   const activeCompositionId = useCompositionNavigationStore((s) => s.activeCompositionId);
@@ -209,6 +213,94 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
     }
   }, [importHandles]);
 
+  // Proxy-eligible items: videos above 1080p that don't have a proxy yet
+  const proxyEligibleItems = useMemo(() => {
+    return mediaItems.filter(
+      (m) => proxyService.needsProxy(m.width, m.height, m.mimeType)
+        && proxyStatus.get(m.id) !== 'ready'
+        && proxyStatus.get(m.id) !== 'generating'
+    );
+  }, [mediaItems, proxyStatus]);
+
+  // Count of items currently generating proxies
+  const generatingCount = useMemo(() => {
+    let count = 0;
+    for (const status of proxyStatus.values()) {
+      if (status === 'generating') count++;
+    }
+    return count;
+  }, [proxyStatus]);
+
+  // Average progress of all generating proxies
+  const generatingAvgProgress = useMemo(() => {
+    if (generatingCount === 0) return 0;
+    let total = 0;
+    let count = 0;
+    for (const [id, status] of proxyStatus.entries()) {
+      if (status === 'generating') {
+        total += proxyProgress.get(id) ?? 0;
+        count++;
+      }
+    }
+    return count > 0 ? total / count : 0;
+  }, [proxyStatus, proxyProgress, generatingCount]);
+
+  // Count proxies that are ready
+  const readyProxyCount = useMemo(() => {
+    let count = 0;
+    for (const status of proxyStatus.values()) {
+      if (status === 'ready') count++;
+    }
+    return count;
+  }, [proxyStatus]);
+
+  const handleGenerateAllProxies = async () => {
+    for (const item of proxyEligibleItems) {
+      const blobUrl = await mediaLibraryService.getMediaBlobUrl(item.id);
+      if (blobUrl) {
+        proxyService.generateProxy(item.id, blobUrl, item.width, item.height);
+      }
+    }
+  };
+
+  const handleGenerateSelectedProxies = async () => {
+    const selectedItems = selectedMediaIds
+      .map((id) => mediaItems.find((m) => m.id === id))
+      .filter((m): m is typeof mediaItems[number] =>
+        m !== undefined
+        && proxyService.needsProxy(m.width, m.height, m.mimeType)
+        && proxyStatus.get(m.id) !== 'ready'
+        && proxyStatus.get(m.id) !== 'generating'
+      );
+    for (const item of selectedItems) {
+      const blobUrl = await mediaLibraryService.getMediaBlobUrl(item.id);
+      if (blobUrl) {
+        proxyService.generateProxy(item.id, blobUrl, item.width, item.height);
+      }
+    }
+  };
+
+  const handleDeleteAllProxies = async () => {
+    const readyIds = Array.from(proxyStatus.entries())
+      .filter(([, status]) => status === 'ready')
+      .map(([id]) => id);
+    for (const id of readyIds) {
+      await proxyService.deleteProxy(id);
+      useMediaLibraryStore.getState().setProxyStatus(id, 'error'); // Clear from status map
+    }
+  };
+
+  // Count selected items that are eligible for proxy generation
+  const selectedProxyEligibleCount = useMemo(() => {
+    return selectedMediaIds.filter((id) => {
+      const m = mediaItems.find((item) => item.id === id);
+      return m
+        && proxyService.needsProxy(m.width, m.height, m.mimeType)
+        && proxyStatus.get(id) !== 'ready'
+        && proxyStatus.get(id) !== 'generating';
+    }).length;
+  }, [selectedMediaIds, mediaItems, proxyStatus]);
+
   // Find timeline items that reference the media being deleted (for batch delete from selection)
   // Read from store directly to avoid subscribing to items array
   const affectedTimelineItems = useMemo(() => {
@@ -277,6 +369,44 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
             </button>
           )}
 
+          {/* Proxy actions dropdown */}
+          {(proxyEligibleItems.length > 0 || readyProxyCount > 0) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="flex items-center gap-1.5 h-7 px-2.5 rounded-md
+                    bg-secondary border border-border text-muted-foreground
+                    hover:border-primary/50 hover:text-primary
+                    transition-colors duration-150"
+                  title="Proxy management"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Proxies</span>
+                  {readyProxyCount > 0 && (
+                    <span className="text-[10px] tabular-nums text-green-500">{readyProxyCount}</span>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {proxyEligibleItems.length > 0 && (
+                  <DropdownMenuItem onClick={handleGenerateAllProxies}>
+                    <Zap className="w-3 h-3 mr-2" />
+                    Generate All Proxies ({proxyEligibleItems.length})
+                  </DropdownMenuItem>
+                )}
+                {readyProxyCount > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleDeleteAllProxies} className="text-destructive focus:text-destructive">
+                      <Trash className="w-3 h-3 mr-2" />
+                      Delete All Proxies ({readyProxyCount})
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
           {/* Selection indicator & actions */}
           {selectedMediaIds.length > 0 && (
             <>
@@ -294,6 +424,20 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
                   <X className="w-3 h-3" />
                 </button>
               </div>
+
+              {/* Generate proxies for selection */}
+              {selectedProxyEligibleCount > 0 && (
+                <button
+                  onClick={handleGenerateSelectedProxies}
+                  className="flex items-center gap-1 h-7 px-2 rounded-md
+                    text-muted-foreground hover:text-primary hover:bg-primary/10
+                    transition-colors duration-150"
+                  title="Generate proxies for selected"
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>Proxy ({selectedProxyEligibleCount})</span>
+                </button>
+              )}
 
               {/* Delete action */}
               <button
@@ -552,6 +696,31 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
           </CollapsibleContent>
         </Collapsible>
       </div>
+
+      {/* Proxy generation progress bar */}
+      {generatingCount > 0 && (
+        <div className="px-3 py-2 border-t border-border flex-shrink-0 bg-panel-bg/50">
+          <div className="flex items-center gap-2 text-xs">
+            <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-muted-foreground">
+                  Generating {generatingCount} {generatingCount === 1 ? 'proxy' : 'proxies'}
+                </span>
+                <span className="text-muted-foreground tabular-nums">
+                  {Math.round(generatingAvgProgress * 100)}%
+                </span>
+              </div>
+              <div className="h-1 bg-secondary rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-amber-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.round(generatingAvgProgress * 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Media info panel - slides up from bottom when single item selected */}
       {selectedMediaForInfo && (
