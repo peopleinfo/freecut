@@ -1,5 +1,7 @@
 # FreeCut
 
+**[freecut-sandy.vercel.app](https://freecut-sandy.vercel.app/)**
+
 **Edit videos. In your browser.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
