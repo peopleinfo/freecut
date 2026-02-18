@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
@@ -7,11 +8,13 @@ import { Link } from '@tanstack/react-router';
 import {
   projectFormSchema,
   type ProjectFormData,
+  type ProjectTemplate,
   DEFAULT_PROJECT_VALUES,
   RESOLUTION_PRESETS,
   FPS_PRESETS,
   getAspectRatio,
 } from '../utils/validation';
+import { ProjectTemplatePicker } from './project-template-picker';
 
 interface ProjectFormProps {
   onSubmit: (data: ProjectFormData) => Promise<void> | void;
@@ -19,6 +22,7 @@ interface ProjectFormProps {
   defaultValues?: Partial<ProjectFormData>;
   isEditing?: boolean;
   isSubmitting?: boolean;
+  hideHeader?: boolean;
 }
 
 export function ProjectForm({
@@ -27,6 +31,7 @@ export function ProjectForm({
   defaultValues,
   isEditing = false,
   isSubmitting = false,
+  hideHeader = false,
 }: ProjectFormProps) {
   const {
     register,
@@ -40,6 +45,8 @@ export function ProjectForm({
     mode: 'onChange',
   });
 
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>();
+
   const width = watch('width');
   const height = watch('height');
   const fps = watch('fps');
@@ -52,24 +59,45 @@ export function ProjectForm({
     }
   };
 
+  const handleSelectTemplate = (template: ProjectTemplate) => {
+    setSelectedTemplateId(template.id);
+    
+    // Try to find matching preset in RESOLUTION_PRESETS
+    const matchingPreset = RESOLUTION_PRESETS.find(
+      (p) => p.width === template.width && p.height === template.height
+    );
+    
+    if (matchingPreset) {
+      handleResolutionChange(matchingPreset.value);
+    } else {
+      // Fallback for templates not in RESOLUTION_PRESETS (Twitter/X and LinkedIn)
+      setValue('width', template.width, { shouldValidate: true });
+      setValue('height', template.height, { shouldValidate: true });
+    }
+    
+    setValue('fps', template.fps, { shouldValidate: true });
+  };
+
   const currentResolution = `${width}x${height}`;
   const aspectRatio = getAspectRatio(width, height);
 
   return (
     <div className="bg-background">
       {/* Header */}
-      <div className="panel-header border-b border-border">
-        <div className="max-w-3xl mx-auto px-6 py-5">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground mb-1">
-            {isEditing ? 'Edit Project' : 'Create New Project'}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {isEditing
-              ? 'Update your project settings'
-              : 'Set up your video editing workspace'}
-          </p>
+      {!hideHeader && (
+        <div className="panel-header border-b border-border">
+          <div className="max-w-3xl mx-auto px-6 py-5">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground mb-1">
+              {isEditing ? 'Edit Project' : 'Create New Project'}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {isEditing
+                ? 'Update your project settings'
+                : 'Set up your video editing workspace'}
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Form */}
       <div className="max-w-3xl mx-auto px-6 py-8">
@@ -182,18 +210,41 @@ export function ProjectForm({
             </div>
 
             {/* Preview */}
-            <div className="mt-6 px-4 py-3 bg-secondary/50 border border-border rounded-md">
+            <div className="mt-6 p-4 bg-secondary/50 border border-border rounded-md">
+              <span className="text-xs text-muted-foreground font-mono uppercase tracking-wide mb-3 block">
+                Canvas Preview
+              </span>
+              <div className="flex items-center justify-center h-28 mb-3">
+                <div
+                  className="border-2 border-dashed border-muted-foreground/40 rounded-sm bg-muted/10"
+                  style={{ aspectRatio: `${width} / ${height}`, maxWidth: '100%', maxHeight: '7rem' }}
+                />
+              </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground font-mono">Preview:</span>
-                <div className="text-right">
-                  <span className="text-sm font-mono text-primary font-medium">
-                    {width}×{height} @ {fps}fps
-                  </span>
-                  <span className="text-xs text-muted-foreground ml-2">({aspectRatio})</span>
-                </div>
+                <span className="text-xs text-muted-foreground font-mono">{width}×{height} · {fps}fps</span>
+                <span className="text-xs text-muted-foreground">{aspectRatio}</span>
               </div>
             </div>
           </div>
+
+          {!isEditing && (
+            <>
+              <Separator />
+
+              {/* Start from a template */}
+              <div className="panel-bg border border-border rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="h-8 w-1 bg-primary rounded-full" />
+                  <h2 className="text-lg font-medium text-foreground">Start from a template</h2>
+                </div>
+
+                <ProjectTemplatePicker
+                  selectedTemplateId={selectedTemplateId}
+                  onSelectTemplate={handleSelectTemplate}
+                />
+              </div>
+            </>
+          )}
 
           {/* Actions */}
           <div className="flex gap-3 justify-end">
