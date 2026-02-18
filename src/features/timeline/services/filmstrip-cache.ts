@@ -49,6 +49,8 @@ interface WorkerState {
   completed: boolean;
   frameCount: number;
   lastLoadedCount: number;
+  isLoading: boolean;
+  hasPendingLoad: boolean;
 }
 
 interface PendingExtraction {
@@ -341,6 +343,8 @@ class FilmstripCacheService {
         completed: false,
         frameCount: rangeSkipIndices.length,
         lastLoadedCount: this.countKnownFramesInRange(pending, startIndex, endIndex),
+        isLoading: false,
+        hasPendingLoad: false,
       };
       pending.workers.push(workerState);
 
@@ -359,12 +363,7 @@ class FilmstripCacheService {
           // Load only newly reported frames from this worker's range
           const newFrameCount = Math.max(0, response.frameCount - workerState.lastLoadedCount);
           if (newFrameCount > 0) {
-            const discoveredCount = await this.loadNewFramesInRange(
-              mediaId,
-              workerState.startIndex,
-              workerState.endIndex
-            );
-            workerState.lastLoadedCount = discoveredCount;
+            await this.flushWorkerRangeLoads(mediaId, workerState);
           }
 
           if (this.shouldNotifyProgress(pending, totalExtracted, overallProgress)) {
@@ -484,8 +483,11 @@ class FilmstripCacheService {
     if (!pending) return 0;
 
     // Discover what is actually saved on disk for this worker's range.
-    const existingIndices = await filmstripOPFSStorage.getExistingIndices(mediaId);
-    const inRangeExistingIndices = existingIndices.filter(index => index >= startIndex && index < endIndex);
+    const inRangeExistingIndices = await filmstripOPFSStorage.getExistingIndices(
+      mediaId,
+      startIndex,
+      endIndex
+    );
     const newIndices = inRangeExistingIndices.filter(index => !pending.extractedFrames.has(index));
 
     if (newIndices.length > 0) {
@@ -503,7 +505,7 @@ class FilmstripCacheService {
     const pending = this.pendingExtractions.get(mediaId);
     if (!pending) return;
 
-    const framesToLoad = indices.filter(index => !pending.extractedFrames.has(index));
+    const framesToLoad = indices;
 
     if (framesToLoad.length > 0) {
       // Load a small batch in parallel to avoid UI thread I/O spikes.
@@ -516,6 +518,31 @@ class FilmstripCacheService {
         }
       });
       await Promise.all(loadPromises);
+    }
+  }
+
+  private async flushWorkerRangeLoads(
+    mediaId: string,
+    workerState: WorkerState
+  ): Promise<void> {
+    if (workerState.isLoading) {
+      workerState.hasPendingLoad = true;
+      return;
+    }
+
+    workerState.isLoading = true;
+    try {
+      do {
+        workerState.hasPendingLoad = false;
+        const discoveredCount = await this.loadNewFramesInRange(
+          mediaId,
+          workerState.startIndex,
+          workerState.endIndex
+        );
+        workerState.lastLoadedCount = discoveredCount;
+      } while (workerState.hasPendingLoad);
+    } finally {
+      workerState.isLoading = false;
     }
   }
 
