@@ -240,7 +240,11 @@ class GifFrameCacheService {
       // replaces pixels including alpha and causes flickering on
       // transparent GIFs.
       const tempCanvas = document.createElement('canvas');
-      const tempCtx = tempCanvas.getContext('2d')!;
+      const tempCtx = tempCanvas.getContext('2d');
+
+      if (!tempCtx) {
+        throw new Error('Failed to get 2D context for temp canvas');
+      }
 
       const imageBitmaps: ImageBitmap[] = [];
       const blobs: Blob[] = [];
@@ -558,17 +562,19 @@ class GifFrameCacheService {
         const result = await decoder.decode({ frameIndex: i });
         const videoFrame = result.image;
 
-        const bitmap = await createImageBitmap(videoFrame);
-        frames.push(bitmap);
+        try {
+          const bitmap = await createImageBitmap(videoFrame);
+          frames.push(bitmap);
 
-        // VideoFrame.duration is in microseconds; convert to ms
-        const durationMs = videoFrame.duration ? videoFrame.duration / 1000 : 100;
-        durations.push(durationMs);
+          // VideoFrame.duration is in microseconds; convert to ms
+          const durationMs = videoFrame.duration ? videoFrame.duration / 1000 : 100;
+          durations.push(durationMs);
 
-        sizeBytes += bitmap.width * bitmap.height * 4;
-        blobs.push(new Blob()); // No IndexedDB persistence for WebP frames
-
-        videoFrame.close();
+          sizeBytes += bitmap.width * bitmap.height * 4;
+          blobs.push(new Blob()); // No IndexedDB persistence for WebP frames
+        } finally {
+          videoFrame.close();
+        }
 
         const progress = 15 + Math.round((i / frameCount) * 80);
         onProgress?.(Math.min(progress, 95));

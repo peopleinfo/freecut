@@ -54,8 +54,9 @@ export async function exportProjectBundle(
 
   // Step 4: Build manifest and prepare ZIP
   const chunks: Uint8Array[] = [];
+  let zipError: Error | null = null;
   const zip = new Zip((err, chunk) => {
-    if (err) throw err;
+    if (err) { zipError = err; return; }
     if (chunk) chunks.push(chunk);
   });
 
@@ -71,7 +72,6 @@ export async function exportProjectBundle(
 
   // Track unique filenames in bundle
   const usedFilenames = new Set<string>();
-  const mediaIdToPath = new Map<string, string>();
 
   // Step 5: Add media files to ZIP
   onProgress?.({ percent: 20, stage: 'packaging' });
@@ -115,7 +115,6 @@ export async function exportProjectBundle(
     usedFilenames.add(`${hash}/${bundleFileName}`);
 
     const relativePath = `media/${hash}/${bundleFileName}`;
-    mediaIdToPath.set(media.id, relativePath);
 
     // Add to manifest
     manifest.media.push({
@@ -140,6 +139,8 @@ export async function exportProjectBundle(
     zip.add(mediaFile);
     mediaFile.push(new Uint8Array(buffer), true);
   }
+
+  if (zipError) throw zipError;
 
   onProgress?.({ percent: 85, stage: 'packaging' });
 
@@ -214,6 +215,8 @@ export async function exportProjectBundle(
 
   // Step 9: Finalize ZIP
   zip.end();
+
+  if (zipError) throw zipError;
 
   onProgress?.({ percent: 100, stage: 'complete' });
 
@@ -298,7 +301,6 @@ export async function exportProjectBundleStreaming(
     };
 
     const usedFilenames = new Set<string>();
-    const mediaIdToPath = new Map<string, string>();
 
     // Step 5: Add media files to ZIP
     onProgress?.({ percent: 20, stage: 'packaging' });
@@ -337,7 +339,6 @@ export async function exportProjectBundleStreaming(
       usedFilenames.add(`${hash}/${bundleFileName}`);
 
       const relativePath = `media/${hash}/${bundleFileName}`;
-      mediaIdToPath.set(media.id, relativePath);
 
       manifest.media.push({
         originalId: media.id,
@@ -359,7 +360,12 @@ export async function exportProjectBundleStreaming(
       const mediaFile = new ZipPassThrough(relativePath);
       zip.add(mediaFile);
       mediaFile.push(new Uint8Array(buffer), true);
+
+      // Stop processing remaining media if zip encountered an error
+      if (zipError) break;
     }
+
+    if (zipError) throw zipError;
 
     onProgress?.({ percent: 85, stage: 'packaging' });
 

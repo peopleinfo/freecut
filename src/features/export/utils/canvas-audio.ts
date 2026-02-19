@@ -402,6 +402,15 @@ function extractAudioSegments(composition: CompositionInputProps, fps: number): 
         const speed = subItem.speed ?? 1;
         const effectiveSourceStart = baseSourceStart + Math.round(subItemClipStart * speed);
 
+        // Adjust fade durations for clipped portions — if the sub-item was
+        // trimmed by composition bounds the fade should be shortened accordingly.
+        const rawFadeInFrames = (subItem.audioFadeIn ?? 0) * fps;
+        const rawFadeOutFrames = (subItem.audioFadeOut ?? 0) * fps;
+        const clippedStartFrames = effectiveStart - startFrame; // frames clipped from start
+        const clippedEndFrames = (startFrame + subItem.durationInFrames) - effectiveEnd; // frames clipped from end
+        const adjustedFadeInFrames = Math.max(0, rawFadeInFrames - clippedStartFrames);
+        const adjustedFadeOutFrames = Math.max(0, rawFadeOutFrames - clippedEndFrames);
+
         segments.push({
           itemId: subItem.id,
           trackId: track.id,
@@ -410,8 +419,8 @@ function extractAudioSegments(composition: CompositionInputProps, fps: number): 
           durationFrames: effectiveDuration,
           sourceStartFrame: effectiveSourceStart,
           volume: subItem.volume ?? 0,
-          fadeInFrames: (subItem.audioFadeIn ?? 0) * fps,
-          fadeOutFrames: (subItem.audioFadeOut ?? 0) * fps,
+          fadeInFrames: adjustedFadeInFrames,
+          fadeOutFrames: adjustedFadeOutFrames,
           useEqualPowerFades: false,
           speed,
           muted: trackMuted || subTrackMuted,

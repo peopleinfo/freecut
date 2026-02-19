@@ -565,6 +565,43 @@ export async function createCompositionRenderer(
         }
         await Promise.all(subExtractorPromises);
 
+        // Load fallback video elements for sub-comp items that failed mediabunny init
+        if (hasDom) {
+          const subFallbackVideoIds = subCompMediaItems
+            .filter(({ subItem }) => subItem.type === 'video' && !useMediabunny.has(subItem.id))
+            .map(({ subItem }) => subItem.id);
+
+          if (subFallbackVideoIds.length > 0) {
+            const subVideoLoadPromises = subFallbackVideoIds.map((itemId) => {
+              const video = videoElements.get(itemId);
+              if (!video) return Promise.resolve();
+              return new Promise<void>((resolve) => {
+                const timeout = setTimeout(() => {
+                  log.warn('Sub-comp video load timeout', { itemId });
+                  resolve();
+                }, 10000);
+
+                if (video.readyState >= 2) {
+                  clearTimeout(timeout);
+                  resolve();
+                } else {
+                  video.addEventListener('loadeddata', () => {
+                    clearTimeout(timeout);
+                    resolve();
+                  }, { once: true });
+                  video.addEventListener('error', () => {
+                    clearTimeout(timeout);
+                    log.error('Sub-comp video load error', { itemId });
+                    resolve();
+                  }, { once: true });
+                  video.load();
+                }
+              });
+            });
+            await Promise.all(subVideoLoadPromises);
+          }
+        }
+
         // Preload sub-comp images
         const subImagePromises: Promise<void>[] = [];
         const subGifItems: ImageItem[] = [];

@@ -738,7 +738,7 @@ async function renderCompositionItem(
           continue;
         }
 
-        if (frame < 3) {
+        if (frame === 0) {
           log.info('Rendering sub-comp item', {
             itemId: subItem.id.substring(0, 8),
             type: subItem.type,
@@ -755,12 +755,16 @@ async function renderCompositionItem(
         const subItemKeyframes = subData.keyframesMap.get(subItem.id);
         const subItemTransform = getAnimatedTransform(subItem, subItemKeyframes, localFrame, subCanvasSettings);
 
-        await renderItem(subCtx, subItem, subItemTransform, localFrame, rctx);
+        // Use a scoped render context with sub-canvas settings so that
+        // rotation centers, clipping, and draw dimensions are relative to the
+        // sub-composition canvas, not the main canvas.
+        const subRctx: ItemRenderContext = { ...rctx, canvasSettings: subCanvasSettings };
+        await renderItem(subCtx, subItem, subItemTransform, localFrame, subRctx);
         renderedSubItems++;
       }
     }
 
-    if (frame < 3) {
+    if (frame === 0) {
       log.info('Sub-comp render complete', {
         compositionId: item.compositionId.substring(0, 8),
         localFrame,
