@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { TimelineItem } from '@/types/timeline';
 import type { DragState, UseTimelineDragReturn, SnapTarget } from '../types/drag';
@@ -47,7 +48,8 @@ function clearGlobalDragCursor(): void {
 export function useTimelineDrag(
   item: TimelineItem,
   timelineDuration: number,
-  trackLocked: boolean = false
+  trackLocked: boolean = false,
+  elementRef?: React.RefObject<HTMLDivElement | null>
 ): UseTimelineDragReturn {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -374,7 +376,7 @@ export function useTimelineDrag(
       window.addEventListener('mousemove', checkDragThreshold);
       window.addEventListener('mouseup', cancelDrag);
     },
-    [item.id, item.from, item.trackId, selectItems, trackLocked, setDragState]
+    [item.id, item.from, item.trackId, selectItems, trackLocked, setDragState, getItems]
   );
 
   /**
@@ -421,11 +423,16 @@ export function useTimelineDrag(
         ? deltaX * (clampedDeltaFrames / deltaFrames)
         : deltaX;
 
-      // Update drag offset for visual preview (local state for anchor item)
-      setDragOffset({ x: clampedDeltaX, y: deltaY });
+      // Immediate visual feedback — apply transform directly to bypass React render lag
+      if (elementRef?.current && !isAltDragRef.current) {
+        elementRef.current.style.transform = `translate(${clampedDeltaX}px, ${deltaY}px)`;
+      }
 
       // Update shared ref for other items to read (no re-renders)
       dragOffsetRef.current = { x: clampedDeltaX, y: deltaY };
+
+      // Update React state (batched) for ghost positioning and render fallback
+      setDragOffset({ x: clampedDeltaX, y: deltaY });
 
       dragStateRef.current.currentMouseX = e.clientX;
       dragStateRef.current.currentMouseY = e.clientY;
@@ -610,6 +617,9 @@ export function useTimelineDrag(
           if (finalPosition === null) {
             console.warn(isAltDrag ? 'Cannot duplicate items: no available space' : 'Cannot move items: no available space');
             // Clean up and cancel - defer drag state to avoid render cascade
+            if (elementRef?.current) {
+              elementRef.current.style.transform = '';
+            }
             dragOffsetRef.current = { x: 0, y: 0 };
             prevSnapTargetRef.current = null;
             dragStateRef.current = null;
@@ -694,6 +704,9 @@ export function useTimelineDrag(
       // Clean up - defer drag state clearing to avoid multiple render cycles
       // The move operation already triggered a re-render; clearing drag state
       // should happen after that render completes
+      if (elementRef?.current) {
+        elementRef.current.style.transform = '';
+      }
       dragOffsetRef.current = { x: 0, y: 0 }; // Reset shared ref immediately
       prevSnapTargetRef.current = null; // Reset snap target tracking
       dragStateRef.current = null;
@@ -723,7 +736,7 @@ export function useTimelineDrag(
         document.body.style.userSelect = '';
       };
     }
-  }, [isDragging, item.id, item.durationInFrames, getTrackIdFromMouseY, isMouseOverGroupTrack, calculateMagneticSnap]);
+  }, [isDragging, item.id, item.durationInFrames, getTrackIdFromMouseY, isMouseOverGroupTrack, calculateMagneticSnap, elementRef, getItems, setDragState]);
 
   return {
     isDragging,
