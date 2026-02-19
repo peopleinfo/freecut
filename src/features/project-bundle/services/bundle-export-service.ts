@@ -18,8 +18,27 @@ import { getProject, getProjectMediaIds, getThumbnail } from '@/lib/storage/inde
 import { mediaLibraryService } from '@/features/media-library/services/media-library-service';
 import { computeContentHashFromBuffer } from '@/features/media-library/utils/content-hash';
 
+import type { ProjectTimeline } from '@/types/project';
+
 // App version - should be imported from a config
 const APP_VERSION = '1.0.0';
+
+/**
+ * Convert timeline items for bundle: strip preview URLs (src, thumbnailUrl)
+ * and rename mediaId → mediaRef for portable references.
+ */
+function convertItemsForBundle(items: ProjectTimeline['items']) {
+  return items.map((item) => {
+    const { mediaId, ...rest } = item;
+    const itemWithoutPreviewUrls = { ...rest };
+    delete itemWithoutPreviewUrls.src;
+    delete itemWithoutPreviewUrls.thumbnailUrl;
+    return {
+      ...itemWithoutPreviewUrls,
+      mediaRef: mediaId,
+    };
+  });
+}
 
 /**
  * Export a project as a bundle
@@ -54,8 +73,9 @@ export async function exportProjectBundle(
 
   // Step 4: Build manifest and prepare ZIP
   const chunks: Uint8Array[] = [];
+  let zipError: Error | null = null;
   const zip = new Zip((err, chunk) => {
-    if (err) throw err;
+    if (err) { zipError = err; return; }
     if (chunk) chunks.push(chunk);
   });
 
@@ -71,12 +91,13 @@ export async function exportProjectBundle(
 
   // Track unique filenames in bundle
   const usedFilenames = new Set<string>();
-  const mediaIdToPath = new Map<string, string>();
 
   // Step 5: Add media files to ZIP
   onProgress?.({ percent: 20, stage: 'packaging' });
 
   for (let i = 0; i < mediaItems.length; i++) {
+    if (zipError) break;
+
     const media = mediaItems[i];
     if (!media) continue;
 
@@ -115,7 +136,6 @@ export async function exportProjectBundle(
     usedFilenames.add(`${hash}/${bundleFileName}`);
 
     const relativePath = `media/${hash}/${bundleFileName}`;
-    mediaIdToPath.set(media.id, relativePath);
 
     // Add to manifest
     manifest.media.push({
@@ -141,22 +161,11 @@ export async function exportProjectBundle(
     mediaFile.push(new Uint8Array(buffer), true);
   }
 
+  if (zipError) throw zipError;
+
   onProgress?.({ percent: 85, stage: 'packaging' });
 
   // Step 6: Create project.json with mediaRef instead of mediaId
-  // Helper to convert timeline items for bundle (mediaId → mediaRef, strip preview URLs)
-  const convertItemsForBundle = (items: NonNullable<typeof project.timeline>['items']) =>
-    items.map((item) => {
-      const { mediaId, ...rest } = item;
-      const itemWithoutPreviewUrls = { ...rest };
-      delete itemWithoutPreviewUrls.src;
-      delete itemWithoutPreviewUrls.thumbnailUrl;
-      return {
-        ...itemWithoutPreviewUrls,
-        mediaRef: mediaId, // Rename mediaId to mediaRef
-      };
-    });
-
   const bundleProject: BundleProject = {
     ...project,
     timeline: project.timeline
@@ -166,7 +175,7 @@ export async function exportProjectBundle(
           // Also process sub-composition items
           compositions: project.timeline.compositions?.map((comp) => ({
             ...comp,
-            items: convertItemsForBundle(comp.items as NonNullable<typeof project.timeline>['items']),
+            items: convertItemsForBundle(comp.items as ProjectTimeline['items']),
           })),
         }
       : undefined,
@@ -215,6 +224,8 @@ export async function exportProjectBundle(
   // Step 9: Finalize ZIP
   zip.end();
 
+  if (zipError) throw zipError;
+
   onProgress?.({ percent: 100, stage: 'complete' });
 
   // Combine chunks into final blob
@@ -238,13 +249,6 @@ export async function exportProjectBundle(
 }
 
 /**
- * Check if streaming export (direct-to-disk) is supported
- */
-export function supportsStreamingExport(): boolean {
-  return typeof window.showSaveFilePicker === 'function';
-}
-
-/**
  * Export a project bundle using streaming write to disk.
  * Requires File System Access API (Chrome/Edge).
  * The file handle must be obtained before calling this function.
@@ -256,6 +260,8 @@ export async function exportProjectBundleStreaming(
 ): Promise<ExportResult> {
   const writable = await fileHandle.createWritable();
   let totalSize = 0;
+  const writePromises: Promise<void>[] = [];
+  let zipError: Error | null = null;
 
   try {
     onProgress?.({ percent: 0, stage: 'collecting' });
@@ -283,11 +289,12 @@ export async function exportProjectBundleStreaming(
     onProgress?.({ percent: 15, stage: 'hashing' });
 
     // Step 4: Build manifest and prepare ZIP — stream chunks to disk
-    const zip = new Zip(async (err, chunk) => {
-      if (err) throw err;
+    // Collect write promises since fflate's Zip callback is synchronous and won't await
+    const zip = new Zip((err, chunk) => {
+      if (err) { zipError = err; return; }
       if (chunk) {
-        await writable.write(chunk);
         totalSize += chunk.length;
+        writePromises.push(writable.write(chunk));
       }
     });
 
@@ -302,7 +309,6 @@ export async function exportProjectBundleStreaming(
     };
 
     const usedFilenames = new Set<string>();
-    const mediaIdToPath = new Map<string, string>();
 
     // Step 5: Add media files to ZIP
     onProgress?.({ percent: 20, stage: 'packaging' });
@@ -341,7 +347,6 @@ export async function exportProjectBundleStreaming(
       usedFilenames.add(`${hash}/${bundleFileName}`);
 
       const relativePath = `media/${hash}/${bundleFileName}`;
-      mediaIdToPath.set(media.id, relativePath);
 
       manifest.media.push({
         originalId: media.id,
@@ -363,23 +368,16 @@ export async function exportProjectBundleStreaming(
       const mediaFile = new ZipPassThrough(relativePath);
       zip.add(mediaFile);
       mediaFile.push(new Uint8Array(buffer), true);
+
+      // Stop processing remaining media if zip encountered an error
+      if (zipError) break;
     }
+
+    if (zipError) throw zipError;
 
     onProgress?.({ percent: 85, stage: 'packaging' });
 
     // Step 6: Create project.json
-    const convertItemsForBundle = (items: NonNullable<typeof project.timeline>['items']) =>
-      items.map((item) => {
-        const { mediaId, ...rest } = item;
-        const itemWithoutPreviewUrls = { ...rest };
-        delete itemWithoutPreviewUrls.src;
-        delete itemWithoutPreviewUrls.thumbnailUrl;
-        return {
-          ...itemWithoutPreviewUrls,
-          mediaRef: mediaId,
-        };
-      });
-
     const bundleProject: BundleProject = {
       ...project,
       timeline: project.timeline
@@ -388,7 +386,7 @@ export async function exportProjectBundleStreaming(
             items: convertItemsForBundle(project.timeline.items),
             compositions: project.timeline.compositions?.map((comp) => ({
               ...comp,
-              items: convertItemsForBundle(comp.items as NonNullable<typeof project.timeline>['items']),
+              items: convertItemsForBundle(comp.items as ProjectTimeline['items']),
             })),
           }
         : undefined,
@@ -436,7 +434,10 @@ export async function exportProjectBundleStreaming(
     // Step 9: Finalize ZIP
     zip.end();
 
-    // Flush and close the writable stream
+    if (zipError) throw zipError;
+
+    // Wait for all writes to flush, then close the stream
+    await Promise.all(writePromises);
     await writable.close();
 
     onProgress?.({ percent: 100, stage: 'complete' });
@@ -449,6 +450,10 @@ export async function exportProjectBundleStreaming(
       mediaCount: manifest.media.length,
     };
   } catch (err) {
+    // Settle any pending writes to avoid unhandled rejections
+    if (writePromises.length > 0) {
+      await Promise.allSettled(writePromises);
+    }
     // Clean up partial file on error
     try {
       await writable.abort();
@@ -479,8 +484,9 @@ export function downloadBundle(result: ExportResult): void {
  * Sanitize filename for safe download
  */
 function sanitizeFilename(name: string): string {
-  return name
+  const sanitized = name
     .replace(/[<>:"/\\|?*]/g, '_')
     .replace(/\s+/g, '_')
     .substring(0, 100);
+  return sanitized || 'untitled';
 }

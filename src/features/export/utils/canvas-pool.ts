@@ -45,6 +45,11 @@ export class CanvasPool {
     }
 
     this.inUse.add(canvas);
+    // Reset dimensions in case a previous user resized the canvas (e.g. sub-comp rendering)
+    if (canvas.width !== this.width || canvas.height !== this.height) {
+      canvas.width = this.width;
+      canvas.height = this.height;
+    }
     const ctx = canvas.getContext('2d')!;
     // Clear the canvas for reuse
     ctx.clearRect(0, 0, this.width, this.height);

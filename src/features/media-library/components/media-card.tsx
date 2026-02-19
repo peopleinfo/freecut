@@ -39,7 +39,7 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
   const canGenerateProxy = proxyService.needsProxy(media.width, media.height, media.mimeType);
   const hasProxy = proxyStatus === 'ready';
 
-  // Load thumbnail on mount (URLs are cached by the service, no need to revoke)
+  // Load thumbnail on mount and when thumbnailId changes (e.g. after regeneration)
   useEffect(() => {
     let mounted = true;
 
@@ -55,7 +55,7 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
     return () => {
       mounted = false;
     };
-  }, [media.id]);
+  }, [media.id, media.thumbnailId]);
 
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -66,17 +66,25 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
   const handleGenerateProxy = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const blobUrl = await mediaLibraryService.getMediaBlobUrl(media.id);
-    if (blobUrl) {
-      proxyService.generateProxy(media.id, blobUrl, media.width, media.height);
+    try {
+      const blobUrl = await mediaLibraryService.getMediaBlobUrl(media.id);
+      if (blobUrl) {
+        proxyService.generateProxy(media.id, blobUrl, media.width, media.height);
+      }
+    } catch {
+      useMediaLibraryStore.getState().setProxyStatus(media.id, 'error');
     }
   };
 
   const handleDeleteProxy = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    await proxyService.deleteProxy(media.id);
-    useMediaLibraryStore.getState().setProxyStatus(media.id, 'error');
+    try {
+      await proxyService.deleteProxy(media.id);
+      useMediaLibraryStore.getState().clearProxyStatus(media.id);
+    } catch {
+      useMediaLibraryStore.getState().setProxyStatus(media.id, 'error');
+    }
   };
 
   const handleDragStart = (e: React.DragEvent) => {

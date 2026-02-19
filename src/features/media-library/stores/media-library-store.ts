@@ -49,6 +49,7 @@ export const useMediaLibraryStore = create<
       proxyStatus: new Map(),
       proxyProgress: new Map(),
 
+
       // v3: Set current project context
       setCurrentProject: (projectId: string | null) => {
         // Clear items and set loading state immediately to prevent flash
@@ -178,6 +179,16 @@ export const useMediaLibraryStore = create<
           const newStatus = new Map(state.proxyStatus);
           newStatus.set(mediaId, status);
           return { proxyStatus: newStatus };
+        });
+      },
+
+      clearProxyStatus: (mediaId: string) => {
+        set((state) => {
+          const newStatus = new Map(state.proxyStatus);
+          newStatus.delete(mediaId);
+          const newProgress = new Map(state.proxyProgress);
+          newProgress.delete(mediaId);
+          return { proxyStatus: newStatus, proxyProgress: newProgress };
         });
       },
 

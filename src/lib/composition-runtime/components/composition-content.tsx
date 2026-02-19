@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { AbsoluteFill, Sequence } from '@/features/player/composition';
 import type { CompositionItem as CompositionItemType, TimelineItem } from '@/types/timeline';
 import { useCompositionsStore } from '@/features/timeline/stores/compositions-store';
-import { blobUrlManager } from '@/lib/blob-url-manager';
+import { blobUrlManager, useBlobUrlVersion } from '@/lib/blob-url-manager';
 import { Item } from './item';
 
 interface CompositionContentProps {
@@ -42,11 +42,14 @@ function resolveSubCompItem(subItem: TimelineItem): TimelineItem {
 export const CompositionContent = React.memo<CompositionContentProps>(({ item, parentMuted = false, renderDepth = 0 }) => {
   const subComp = useCompositionsStore((s) => s.compositions.find((c) => c.id === item.compositionId));
 
+  // Re-render when blob URLs are acquired (fixes media not loading on project load)
+  const blobUrlVersion = useBlobUrlVersion();
+
   // Resolve media URLs for sub-comp items so they can render in preview
   const resolvedItems = useMemo(() => {
     if (!subComp) return [];
     return subComp.items.map(resolveSubCompItem);
-  }, [subComp]);
+  }, [subComp, blobUrlVersion]);
 
   if (!subComp) {
     return (

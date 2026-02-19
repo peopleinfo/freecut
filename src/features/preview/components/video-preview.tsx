@@ -2,6 +2,7 @@ import { useRef, useEffect, useLayoutEffect, useState, useMemo, useCallback, mem
 import { Player, type PlayerRef } from '@/features/player';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
+import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store';
 import { useSelectionStore } from '@/features/editor/stores/selection-store';
 import { MainComposition } from '@/lib/composition-runtime/compositions/main-composition';
 import { resolveMediaUrl, resolveProxyUrl } from '../utils/media-resolver';
@@ -111,9 +112,14 @@ function useCustomPlayer(
     }
   }, [isPlaying, playerRef, getPlayerFrame]);
 
+  // Wait for timeline to finish loading before syncing frame position.
+  // Without this, the Player would seek to frame 0 (the default) before
+  // loadTimeline() restores the saved currentFrame from IndexedDB.
+  const isTimelineLoading = useTimelineSettingsStore((s) => s.isTimelineLoading);
+
   // Timeline → Player: Sync frame position
   useEffect(() => {
-    if (!playerReady || !playerRef.current) return;
+    if (!playerReady || !playerRef.current || isTimelineLoading) return;
 
     const initialFrame = usePlaybackStore.getState().currentFrame;
     lastSyncedFrameRef.current = initialFrame;
@@ -159,7 +165,7 @@ function useCustomPlayer(
     });
 
     return unsubscribe;
-  }, [playerReady, playerRef, getPlayerFrame]);
+  }, [playerReady, isTimelineLoading, playerRef, getPlayerFrame]);
 
   // Preview frame seeking: seek to hovered position on timeline
   useEffect(() => {
@@ -229,7 +235,15 @@ export const VideoPreview = memo(function VideoPreview({
   const transitions = useTimelineStore((s) => s.transitions);
   const zoom = usePlaybackStore((s) => s.zoom);
   const useProxy = usePlaybackStore((s) => s.useProxy);
-  const proxyStatus = useMediaLibraryStore((s) => s.proxyStatus);
+  // Derive a stable count of ready proxies to avoid recomputing resolvedTracks
+  // on every proxyStatus Map recreation (e.g. during progress updates)
+  const proxyReadyCount = useMediaLibraryStore((s) => {
+    let count = 0;
+    for (const status of s.proxyStatus.values()) {
+      if (status === 'ready') count++;
+    }
+    return count;
+  });
 
   // Custom Player integration (hook handles bidirectional sync)
   const { ignorePlayerUpdatesRef } = useCustomPlayer(playerRef);
@@ -286,7 +300,7 @@ export const VideoPreview = memo(function VideoPreview({
         return item;
       }),
     }));
-  }, [combinedTracks, resolvedUrls, useProxy, proxyStatus]);
+  }, [combinedTracks, resolvedUrls, useProxy, proxyReadyCount]);
 
   // Create a stable fingerprint for media resolution using derived selector
   // Includes media from both main timeline items AND sub-composition items
@@ -406,6 +420,8 @@ export const VideoPreview = memo(function VideoPreview({
   // so the decoder is ready before the user presses play or seeks.
   // Also prunes elements for sources no longer on the timeline to free memory.
   // Memory cost: ~one <video> element per unique source file on the timeline.
+  // Includes sub-composition video sources for precomp playback.
+  const compositions = useCompositionsStore((s) => s.compositions);
   useEffect(() => {
     if (resolvedUrls.size === 0) return;
 
@@ -421,6 +437,16 @@ export const VideoPreview = memo(function VideoPreview({
       }
     }
 
+    // Include video sources from sub-compositions
+    for (const comp of compositions) {
+      for (const subItem of comp.items) {
+        if (subItem.type === 'video' && subItem.mediaId) {
+          const src = resolvedUrls.get(subItem.mediaId);
+          if (src) activeVideoSrcs.add(src);
+        }
+      }
+    }
+
     // Preload all active sources (no-op if already loaded)
     for (const src of activeVideoSrcs) {
       pool.preloadSource(src).catch(() => {});
@@ -428,7 +454,7 @@ export const VideoPreview = memo(function VideoPreview({
 
     // Release elements for sources removed from the timeline
     pool.pruneUnused(activeVideoSrcs);
-  }, [resolvedUrls, combinedTracks]);
+  }, [resolvedUrls, combinedTracks, compositions]);
 
   // Create a stable fingerprint for tracks to detect meaningful changes
   const tracksFingerprint = useMemo(() => {

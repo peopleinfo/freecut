@@ -6,11 +6,14 @@
  */
 
 import type { CompositionInputProps } from '@/types/export';
-import type { VideoItem, AudioItem } from '@/types/timeline';
+import type { VideoItem, AudioItem, CompositionItem } from '@/types/timeline';
 import type { Keyframe as VolumeKeyframe } from '@/types/keyframe';
 import { createLogger } from '@/lib/logger';
 import { resolveTransitionWindows } from '@/lib/transitions/transition-planner';
 import { getPropertyKeyframes, interpolatePropertyValue } from '@/features/keyframes/utils/interpolation';
+import { useCompositionsStore } from '../../timeline/stores/compositions-store';
+import { blobUrlManager } from '@/lib/blob-url-manager';
+import { resolveMediaUrl } from '@/features/preview/utils/media-resolver';
 
 const log = createLogger('CanvasAudio');
 
@@ -350,6 +353,84 @@ function extractAudioSegments(composition: CompositionInputProps, fps: number): 
   }
 
   segments.push(...mergedVideoSegments, ...audioOnlySegments);
+
+  // === Extract audio from sub-compositions (pre-comps) ===
+  // Composition items reference sub-comps that may contain video/audio items with audio.
+  // We offset each sub-comp audio segment by the composition item's timeline position.
+  for (const track of tracks) {
+    if (track.visible === false) continue;
+    for (const item of track.items) {
+      if (item.type !== 'composition') continue;
+      const compItem = item as CompositionItem;
+      const subComp = useCompositionsStore.getState().getComposition(compItem.compositionId);
+      if (!subComp) continue;
+
+      const compFrom = compItem.from;
+      const sourceOffset = compItem.sourceStart ?? compItem.trimStart ?? 0;
+      const trackMuted = track.muted ?? false;
+
+      for (const subItem of subComp.items) {
+        if (subItem.type !== 'video' && subItem.type !== 'audio') continue;
+
+        // Check sub-track muted state
+        const subTrack = subComp.tracks.find((t) => t.id === subItem.trackId);
+        const subTrackMuted = subTrack?.muted ?? false;
+
+        // Prefer fresh blob URL from manager (stored src may be stale/revoked)
+        const src = (subItem.mediaId ? blobUrlManager.get(subItem.mediaId) : null)
+          ?? (subItem as VideoItem | AudioItem).src ?? '';
+        if (!src) continue;
+
+        const subItemKeyframes = subComp.keyframes?.find((k) => k.itemId === subItem.id);
+        const subVolumeKfs = getPropertyKeyframes(subItemKeyframes, 'volume');
+
+        // Map sub-comp timing to main timeline:
+        // Sub-item from is relative to sub-comp start (0-based).
+        // startFrame on main timeline = compFrom + subItem.from - sourceOffset
+        const startFrame = compFrom + subItem.from - sourceOffset;
+
+        // Clamp to composition item bounds on the main timeline
+        const compEnd = compFrom + compItem.durationInFrames;
+        const effectiveStart = Math.max(startFrame, compFrom);
+        const effectiveEnd = Math.min(startFrame + subItem.durationInFrames, compEnd);
+        const effectiveDuration = effectiveEnd - effectiveStart;
+        if (effectiveDuration <= 0) continue;
+
+        // Compute source offset if the sub-item was clipped by the composition bounds
+        const subItemClipStart = effectiveStart - startFrame;
+        const baseSourceStart = subItem.sourceStart ?? subItem.trimStart ?? 0;
+        const speed = subItem.speed ?? 1;
+        const effectiveSourceStart = baseSourceStart + Math.round(subItemClipStart * speed);
+
+        // Adjust fade durations for clipped portions — if the sub-item was
+        // trimmed by composition bounds the fade should be shortened accordingly.
+        const rawFadeInFrames = (subItem.audioFadeIn ?? 0) * fps;
+        const rawFadeOutFrames = (subItem.audioFadeOut ?? 0) * fps;
+        const clippedStartFrames = effectiveStart - startFrame; // frames clipped from start
+        const clippedEndFrames = (startFrame + subItem.durationInFrames) - effectiveEnd; // frames clipped from end
+        const adjustedFadeInFrames = Math.max(0, rawFadeInFrames - clippedStartFrames);
+        const adjustedFadeOutFrames = Math.max(0, rawFadeOutFrames - clippedEndFrames);
+
+        segments.push({
+          itemId: subItem.id,
+          trackId: track.id,
+          src,
+          startFrame: effectiveStart,
+          durationFrames: effectiveDuration,
+          sourceStartFrame: effectiveSourceStart,
+          volume: subItem.volume ?? 0,
+          fadeInFrames: adjustedFadeInFrames,
+          fadeOutFrames: adjustedFadeOutFrames,
+          useEqualPowerFades: false,
+          speed,
+          muted: trackMuted || subTrackMuted,
+          type: subItem.type as 'video' | 'audio',
+          volumeKeyframes: subVolumeKfs.length > 0 ? subVolumeKfs : undefined,
+          itemFrom: startFrame,
+        });
+      }
+    }
+  }
 
   log.info('Extracted audio segments', {
     count: segments.length,
@@ -868,6 +949,34 @@ function mixAudioTracks(
 }
 
 /**
+ * Pre-resolve sub-composition media URLs so extractAudioSegments can access them.
+ * blobUrlManager.get() is synchronous but may not have URLs for sub-comp items
+ * until they're acquired via resolveMediaUrl (async OPFS read).
+ */
+async function resolveSubCompMediaUrls(composition: CompositionInputProps): Promise<void> {
+  const tracks = composition.tracks ?? [];
+  const urlResolutions: Promise<void>[] = [];
+  for (const track of tracks) {
+    for (const item of track.items) {
+      if (item.type !== 'composition') continue;
+      const compItem = item as CompositionItem;
+      const subComp = useCompositionsStore.getState().getComposition(compItem.compositionId);
+      if (!subComp) continue;
+      for (const subItem of subComp.items) {
+        if (subItem.type !== 'video' && subItem.type !== 'audio') continue;
+        if (subItem.mediaId && !blobUrlManager.get(subItem.mediaId)) {
+          urlResolutions.push(resolveMediaUrl(subItem.mediaId).then(() => {}));
+        }
+      }
+    }
+  }
+  if (urlResolutions.length > 0) {
+    log.debug('Pre-resolving sub-comp audio URLs', { count: urlResolutions.length });
+    await Promise.all(urlResolutions);
+  }
+}
+
+/**
  * Process all audio for the composition.
  *
  * @param composition - The composition with tracks
@@ -883,6 +992,8 @@ export async function processAudio(
   channels: number;
 } | null> {
   const { fps, durationInFrames = 0 } = composition;
+
+  await resolveSubCompMediaUrls(composition);
 
   // Extract audio segments
   const segments = extractAudioSegments(composition, fps);
@@ -1073,8 +1184,11 @@ export function createAudioBuffer(
 
 /**
  * Check if composition has any audio content.
+ * Async because sub-composition media URLs may need to be resolved from OPFS
+ * before extractAudioSegments can see valid src values.
  */
-export function hasAudioContent(composition: CompositionInputProps): boolean {
+export async function hasAudioContent(composition: CompositionInputProps): Promise<boolean> {
+  await resolveSubCompMediaUrls(composition);
   const segments = extractAudioSegments(composition, composition.fps);
   return segments.some((s) => !s.muted);
 }

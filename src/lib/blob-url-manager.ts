@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('BlobUrlManager');
@@ -17,6 +18,25 @@ interface BlobUrlEntry {
  */
 class BlobUrlManager {
   private entries = new Map<string, BlobUrlEntry>();
+  private version = 0;
+  private listeners = new Set<() => void>();
+
+  /** Notify React subscribers that blob URLs have changed */
+  private notify(): void {
+    this.version++;
+    for (const listener of this.listeners) {
+      listener();
+    }
+  }
+
+  /** Subscribe to changes (for useSyncExternalStore) */
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  /** Get current version snapshot (for useSyncExternalStore) */
+  getSnapshot = (): number => this.version;
 
   /**
    * Acquire a blob URL for a media item.
@@ -32,6 +52,7 @@ class BlobUrlManager {
 
     const url = URL.createObjectURL(blob);
     this.entries.set(mediaId, { url, refCount: 1 });
+    this.notify();
     return url;
   }
 
@@ -59,6 +80,7 @@ class BlobUrlManager {
     if (!entry) return;
     URL.revokeObjectURL(entry.url);
     this.entries.delete(mediaId);
+    this.notify();
   }
 
   /**
@@ -73,6 +95,7 @@ class BlobUrlManager {
     if (entry.refCount <= 0) {
       URL.revokeObjectURL(entry.url);
       this.entries.delete(mediaId);
+      this.notify();
       logger.debug(`Revoked blob URL for media ${mediaId}`);
     }
   }
@@ -86,6 +109,7 @@ class BlobUrlManager {
       logger.debug(`Revoked blob URL for media ${mediaId}`);
     }
     this.entries.clear();
+    this.notify();
   }
 
   /**
@@ -98,3 +122,11 @@ class BlobUrlManager {
 
 /** Singleton instance for media blob URLs */
 export const blobUrlManager = new BlobUrlManager();
+
+/**
+ * React hook that re-renders when blob URLs are acquired or released.
+ * Use as a dependency in useMemo to react to URL availability changes.
+ */
+export function useBlobUrlVersion(): number {
+  return useSyncExternalStore(blobUrlManager.subscribe, blobUrlManager.getSnapshot);
+}

@@ -220,6 +220,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
           const previousProjects = get().projects;
           const projectToDelete = previousProjects.find((p) => p.id === id);
           let localFilesDeleted = false;
+          let partialLocalDeletion = false;
 
           // If user wants to clear local files, check/request permission FIRST
           // (before any async ops) to preserve user activation for the permission prompt
@@ -243,7 +244,8 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
           set({ projects: optimisticProjects });
 
           // Clear current project if it's the one being deleted
-          if (get().currentProject?.id === id) {
+          const previousCurrentProject = get().currentProject;
+          if (previousCurrentProject?.id === id) {
             set({ currentProject: null });
           }
 
@@ -259,17 +261,26 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
                 };
                 if (typeof handleWithRemove.remove === 'function') {
                   await handleWithRemove.remove({ recursive: true });
+                  localFilesDeleted = true;
                 } else {
                   // Fallback: clear entries individually so one failure doesn't stop the rest
+                  let allRemoved = true;
+                  let anyRemoved = false;
                   for await (const entry of handle.values()) {
                     try {
                       await handle.removeEntry(entry.name, { recursive: true });
+                      anyRemoved = true;
                     } catch (entryError) {
+                      allRemoved = false;
                       logger.error(`Failed to remove entry "${entry.name}" in project ${id}:`, entryError);
                     }
                   }
+                  localFilesDeleted = allRemoved;
+                  // Track partial deletion so rollback logic knows files were touched
+                  if (anyRemoved && !allRemoved) {
+                    partialLocalDeletion = true;
+                  }
                 }
-                localFilesDeleted = true;
               } catch (fsError) {
                 logger.error(`Failed to clear local files for project ${id}:`, fsError);
               }
@@ -286,8 +297,16 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
             set({ isLoading: false });
             return { localFilesDeleted };
           } catch (error) {
-            // Rollback on error
-            set({ projects: previousProjects });
+            if (localFilesDeleted || partialLocalDeletion) {
+              // Local files already deleted (fully or partially) — rolling back the UI would be misleading
+              const scope = localFilesDeleted ? 'All local files deleted' : 'Some local files deleted';
+              const errorMessage = `${scope} but database cleanup failed — project may be inconsistent`;
+              logger.error(errorMessage, error);
+              set({ error: errorMessage, isLoading: false });
+              throw new Error(errorMessage, { cause: error });
+            }
+            // Rollback on error (safe — no local files were touched)
+            set({ projects: previousProjects, currentProject: previousCurrentProject });
 
             const errorMessage =
               error instanceof Error ? error.message : 'Failed to delete project';
