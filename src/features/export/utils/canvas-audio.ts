@@ -44,7 +44,8 @@ interface AudioSegment {
   src: string;
   startFrame: number;        // Timeline position
   durationFrames: number;
-  sourceStartFrame: number;  // In source media (for trim)
+  sourceStartFrame: number;  // In source media (for trim) — in source-native FPS frames
+  sourceFps: number;         // Source media FPS (sourceStartFrame is in these frames)
   volume: number;            // -60 to +12 dB
   fadeInFrames: number;
   fadeOutFrames: number;
@@ -162,6 +163,7 @@ function extractAudioSegments(composition: CompositionInputProps, fps: number): 
           startFrame: item.from,
           durationFrames: item.durationInFrames,
           sourceStartFrame: audioItem.sourceStart ?? item.trimStart ?? 0,
+          sourceFps: audioItem.sourceFps ?? fps,
           volume: item.volume ?? 0, // dB
           fadeInFrames: (item.audioFadeIn ?? 0) * fps,
           fadeOutFrames: (item.audioFadeOut ?? 0) * fps,
@@ -274,6 +276,7 @@ function extractAudioSegments(composition: CompositionInputProps, fps: number): 
       startFrame: videoItem.from - before,
       durationFrames: videoItem.durationInFrames + before + after,
       sourceStartFrame: baseTrimBefore - (before * speed),
+      sourceFps: videoItem.sourceFps ?? fps,
       volume: videoItem.volume ?? 0,
       fadeInFrames: before > 0 ? before : ((videoItem.audioFadeIn ?? 0) * fps),
       fadeOutFrames: after > 0 ? after : ((videoItem.audioFadeOut ?? 0) * fps),
@@ -317,6 +320,7 @@ function extractAudioSegments(composition: CompositionInputProps, fps: number): 
     startFrame: segment.startFrame,
     durationFrames: segment.durationFrames,
     sourceStartFrame: segment.sourceStartFrame,
+    sourceFps: segment.sourceFps,
     volume: segment.volume,
     fadeInFrames: segment.fadeInFrames,
     fadeOutFrames: segment.fadeOutFrames,
@@ -418,6 +422,7 @@ function extractAudioSegments(composition: CompositionInputProps, fps: number): 
           startFrame: effectiveStart,
           durationFrames: effectiveDuration,
           sourceStartFrame: effectiveSourceStart,
+          sourceFps: subItem.sourceFps ?? fps,
           volume: subItem.volume ?? 0,
           fadeInFrames: adjustedFadeInFrames,
           fadeOutFrames: adjustedFadeOutFrames,
@@ -1035,7 +1040,8 @@ export async function processAudio(
 
     try {
       // Calculate the time range we actually need from the source
-      const sourceStartTime = segment.sourceStartFrame / fps;
+      // sourceStartFrame is in source-native FPS frames, so divide by sourceFps (not project fps)
+      const sourceStartTime = segment.sourceStartFrame / segment.sourceFps;
       // Account for speed: at 2x speed, we need twice as much source audio
       const sourceDurationNeeded = (segment.durationFrames / fps) * segment.speed;
       const sourceEndTime = sourceStartTime + sourceDurationNeeded;
