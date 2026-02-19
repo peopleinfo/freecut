@@ -149,6 +149,7 @@ export function useEditingShortcuts(callbacks: TimelineShortcutCallbacks) {
       const currentFrame = usePlaybackStore.getState().currentFrame;
 
       const itemsToSplit = items.filter((item) => {
+        if (item.type === 'composition') return false;
         const itemStart = item.from;
         const itemEnd = item.from + item.durationInFrames;
         return currentFrame > itemStart && currentFrame < itemEnd;

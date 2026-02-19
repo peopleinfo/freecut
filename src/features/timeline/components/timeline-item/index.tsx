@@ -28,6 +28,7 @@ import type { AnimatableProperty } from '@/types/keyframe';
 import { useBentoLayoutDialogStore } from '../bento-layout-dialog-store';
 import { getRazorSplitPosition } from '../../utils/razor-snap';
 import { useCompositionNavigationStore } from '../../stores/composition-navigation-store';
+import { useCompositionsStore } from '../../stores/compositions-store';
 
 // Width in pixels for edge hover detection (trim/rate-stretch handles)
 const EDGE_HOVER_ZONE = 8;
@@ -93,6 +94,18 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   );
   const hasKeyframes = itemKeyframeData.hasKeyframes;
   const keyframedProperties = itemKeyframeData.properties;
+
+  // Granular selector: sub-composition duration for trim clamping on composition items
+  const compositionId = item.type === 'composition' ? item.compositionId : undefined;
+  const subCompDuration = useCompositionsStore(
+    useCallback(
+      (s) => {
+        if (!compositionId) return null;
+        return s.compositions.find((c) => c.id === compositionId)?.durationInFrames ?? null;
+      },
+      [compositionId]
+    )
+  );
 
   // Use refs for actions to avoid selector re-renders - read from store in callbacks
   const activeTool = useSelectionStore((s) => s.activeTool);
@@ -337,7 +350,11 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
 
     if (isTrimming) {
       if (trimHandle === 'start') {
-        const maxExtendBySource = canExtendInfinitely ? Infinity : (currentSourceStart / currentSpeed);
+        const maxExtendBySource = canExtendInfinitely
+          ? Infinity
+          : subCompDuration !== null
+            ? Math.max(0, subCompDuration - item.durationInFrames)
+            : (currentSourceStart / currentSpeed);
         const maxExtendByTimeline = item.from;
         const maxExtendTimelineFrames = Math.min(maxExtendBySource, maxExtendByTimeline);
         const maxExtendPixels = timeToPixels(maxExtendTimelineFrames / fps);
@@ -351,8 +368,14 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         trimVisualLeft = Math.round(left + clampedDelta);
         trimVisualWidth = Math.round(width - clampedDelta);
       } else {
-        const maxExtendSourceFrames = canExtendInfinitely ? Infinity : (sourceDuration - currentSourceEnd);
-        const maxExtendTimelineFrames = maxExtendSourceFrames / currentSpeed;
+        const maxExtendSourceFrames = canExtendInfinitely
+          ? Infinity
+          : subCompDuration !== null
+            ? Math.max(0, subCompDuration - item.durationInFrames)
+            : (sourceDuration - currentSourceEnd);
+        const maxExtendTimelineFrames = subCompDuration !== null
+          ? maxExtendSourceFrames
+          : maxExtendSourceFrames / currentSpeed;
         const maxExtendPixels = canExtendInfinitely ? Infinity : timeToPixels(maxExtendTimelineFrames / fps);
         const maxTrimPixels = width - minWidthPixels;
 
@@ -380,8 +403,9 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     };
   }, [
     left, width, isTrimming, trimHandle, isStretching, stretchFeedback,
-    canExtendInfinitely, currentSourceStart, currentSpeed, item.from,
-    timeToPixels, fps, minWidthPixels, trimDeltaPixels, sourceDuration, currentSourceEnd
+    canExtendInfinitely, currentSourceStart, currentSpeed, item.from, item.durationInFrames,
+    timeToPixels, fps, minWidthPixels, trimDeltaPixels, sourceDuration, currentSourceEnd,
+    subCompDuration
   ]);
 
   // Get color based on item type - memoized
@@ -414,6 +438,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
 
     // Razor tool: split item at click position
     if (activeToolRef.current === 'razor') {
+      if (item.type === 'composition') return;
       const tracksContainer = e.currentTarget.closest('.timeline-tracks') as HTMLElement | null;
       const tracksRect = tracksContainer?.getBoundingClientRect();
       const cursorX = tracksRect

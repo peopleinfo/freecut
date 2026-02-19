@@ -8,6 +8,7 @@ import {
 } from '@/features/timeline/constants';
 import { useSettingsStore } from '@/features/settings/stores/settings-store';
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store';
+import { useCompositionsStore } from '../../stores/compositions-store';
 
 interface ClipContentProps {
   item: TimelineItem;
@@ -35,21 +36,46 @@ export const ClipContent = memo(function ClipContent({
   const showWaveforms = useSettingsStore((s) => s.showWaveforms);
   const showFilmstrips = useSettingsStore((s) => s.showFilmstrips);
 
+  // For composition items: find the topmost video in the sub-comp for filmstrip
+  const compositionId = item.type === 'composition' ? item.compositionId : undefined;
+  const compTopVideoMediaId = useCompositionsStore(
+    useCallback((s) => {
+      if (!compositionId) return null;
+      const comp = s.compositions.find((c) => c.id === compositionId);
+      if (!comp) return null;
+      const trackOrderMap = new Map(comp.tracks.map((t) => [t.id, t.order ?? 0]));
+      let topMediaId: string | null = null;
+      let topOrder = Infinity;
+      for (const ci of comp.items) {
+        if (ci.type !== 'video' || !ci.mediaId) continue;
+        const order = trackOrderMap.get(ci.trackId) ?? 0;
+        if (order < topOrder) {
+          topOrder = order;
+          topMediaId = ci.mediaId;
+        }
+      }
+      return topMediaId;
+    }, [compositionId])
+  );
+
+  // Use topmost video's mediaId for composition items so filmstrip/source lookups work
+  const effectiveMediaId = item.mediaId ?? compTopVideoMediaId;
+
   // sourceStart/sourceDuration are stored in source-frame units. Prefer duration-ratio
   // mapping so rendering remains stable even if media FPS metadata changes after drop.
   const sourceFps = useMediaLibraryStore(
     useCallback((s) => {
-      if (!item.mediaId) return fps;
-      const media = s.mediaItems.find((m) => m.id === item.mediaId);
+      if (!effectiveMediaId) return fps;
+      const media = s.mediaItems.find((m) => m.id === effectiveMediaId);
       return media?.fps || fps;
-    }, [item.mediaId, fps])
+    }, [effectiveMediaId, fps])
   );
   const mediaDuration = useMediaLibraryStore(
     useCallback((s) => {
-      if (!item.mediaId) return 0;
-      const media = s.mediaItems.find((m) => m.id === item.mediaId);
+      if (!effectiveMediaId) return 0;
+      const media = s.mediaItems.find((m) => m.id === effectiveMediaId);
       return media?.duration || 0;
-    }, [item.mediaId])
+    }, [effectiveMediaId])
   );
 
   const sourceDurationFrames = Math.max(1, item.sourceDuration ?? item.durationInFrames);
@@ -152,8 +178,50 @@ export const ClipContent = memo(function ClipContent({
     );
   }
 
-  // Composition item - show pre-comp label with icon
+  // Composition item - filmstrip from topmost video in sub-comp, or label fallback
   if (item.type === 'composition') {
+    if (compTopVideoMediaId) {
+      return (
+        <div className="absolute inset-0 flex flex-col">
+          <div className="relative overflow-hidden flex-1 min-h-0">
+            {showFilmstrips && (
+              <ClipFilmstrip
+                mediaId={compTopVideoMediaId}
+                clipWidth={clipWidth}
+                sourceStart={sourceStart}
+                sourceDuration={sourceDuration}
+                trimStart={0}
+                speed={1}
+                fps={fps}
+                isVisible={isClipVisible}
+                pixelsPerSecond={pixelsPerSecond}
+              />
+            )}
+            <div
+              className="absolute top-0 left-0 max-w-full px-2 text-[11px] font-medium truncate"
+              style={{ lineHeight: `${CLIP_LABEL_HEIGHT}px` }}
+            >
+              {item.label || 'Composition'}
+            </div>
+          </div>
+          {showWaveforms && (
+            <div className="relative overflow-hidden bg-waveform-gradient" style={{ height: VIDEO_WAVEFORM_HEIGHT }}>
+              <ClipWaveform
+                mediaId={compTopVideoMediaId}
+                clipWidth={clipWidth}
+                sourceStart={sourceStart}
+                sourceDuration={sourceDuration}
+                trimStart={0}
+                speed={1}
+                fps={fps}
+                isVisible={isClipVisible}
+                pixelsPerSecond={pixelsPerSecond}
+              />
+            </div>
+          )}
+        </div>
+      );
+    }
     return (
       <div className="absolute inset-0 flex flex-col px-2 py-1 overflow-hidden">
         <div className="text-[10px] text-muted-foreground truncate">Pre-Comp</div>

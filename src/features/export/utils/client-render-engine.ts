@@ -50,7 +50,7 @@ import {
 } from './canvas-transitions';
 import { type CachedGifFrames } from '../../timeline/services/gif-frame-cache';
 import { gifFrameCache } from '../../timeline/services/gif-frame-cache';
-import { isGifUrl } from '@/utils/media-utils';
+import { isGifUrl, isWebpUrl } from '@/utils/media-utils';
 import { CanvasPool, TextMeasurementCache } from './canvas-pool';
 import { VideoFrameExtractor } from './canvas-video-extractor';
 import { useCompositionsStore } from '../../timeline/stores/compositions-store';
@@ -75,11 +75,26 @@ const log = createLogger('ClientRenderEngine');
 // ---------------------------------------------------------------------------
 
 /**
- * Check if an image item is an animated GIF
+ * Check if an image item is a potentially animated image (GIF or WebP).
+ * Static WebP files will be detected during frame extraction and fall back
+ * to regular image rendering.
  */
-function isAnimatedGif(item: ImageItem): boolean {
-  return isGifUrl(item.src) || item.label.toLowerCase().endsWith('.gif');
+function isAnimatedImage(item: ImageItem): boolean {
+  const label = item.label?.toLowerCase() ?? '';
+  return isGifUrl(item.src) || label.endsWith('.gif') ||
+         isWebpUrl(item.src) || label.endsWith('.webp');
 }
+
+/**
+ * Check if an image item is specifically a GIF (for gifuct-js extraction).
+ */
+function isGifFormat(item: ImageItem): boolean {
+  return isGifUrl(item.src) || (item.label?.toLowerCase() ?? '').endsWith('.gif');
+}
+
+// WebP frame extraction is handled by gifFrameCache.getWebpFrames() —
+// the cache service uses the ImageDecoder API and provides the same
+// CachedGifFrames structure used for GIF.
 
 // ---------------------------------------------------------------------------
 // createCompositionRenderer
@@ -158,8 +173,9 @@ export async function createCompositionRenderer(
   const imageElements = new Map<string, WorkerLoadedImage>();
   const imageLoadPromises: Promise<void>[] = [];
 
-  // Track GIF items for animated frame extraction
+  // Track animated image items for frame extraction (GIF + animated WebP)
   const gifItems: ImageItem[] = [];
+  const webpItems: ImageItem[] = [];
   const gifFramesMap = new Map<string, CachedGifFrames>();
 
   for (const track of tracks) {
@@ -167,9 +183,13 @@ export async function createCompositionRenderer(
       if (item.type === 'image' && (item as ImageItem).src) {
         const imageItem = item as ImageItem;
 
-        // Check if this is an animated GIF
-        if (isAnimatedGif(imageItem)) {
-          gifItems.push(imageItem);
+        // Check if this is a potentially animated image
+        if (isAnimatedImage(imageItem)) {
+          if (isGifFormat(imageItem)) {
+            gifItems.push(imageItem);
+          } else {
+            webpItems.push(imageItem);
+          }
           // Still load as regular image for fallback
         }
 
@@ -304,8 +324,8 @@ export async function createCompositionRenderer(
       // Wait for images
       await Promise.all(imageLoadPromises);
 
-      if (!hasDom && gifItems.length > 0) {
-        throw new Error('WORKER_REQUIRES_MAIN_THREAD:gif');
+      if (!hasDom && (gifItems.length > 0 || webpItems.length > 0)) {
+        throw new Error('WORKER_REQUIRES_MAIN_THREAD:animated-image');
       }
 
       // === Initialize mediabunny video extractors (primary method) ===
@@ -390,6 +410,29 @@ export async function createCompositionRenderer(
 
         await Promise.all(gifLoadPromises);
         log.debug('All GIF frames loaded', { loadedCount: gifFramesMap.size });
+      }
+
+      // Load animated WebP frames via cache service (main thread only)
+      if (hasDom && webpItems.length > 0) {
+        log.debug('Preloading animated WebP frames', { webpCount: webpItems.length });
+
+        const webpLoadPromises = webpItems.map(async (webpItem) => {
+          try {
+            const mediaId = webpItem.mediaId ?? webpItem.id;
+            const cachedFrames = await gifFrameCache.getWebpFrames(mediaId, webpItem.src);
+            gifFramesMap.set(webpItem.id, cachedFrames);
+            log.debug('Animated WebP frames loaded', {
+              itemId: webpItem.id.substring(0, 8),
+              frameCount: cachedFrames.frames.length,
+              totalDuration: cachedFrames.totalDuration,
+            });
+          } catch (err) {
+            log.error('Failed to load WebP frames', { itemId: webpItem.id, error: err });
+            // WebP will fallback to static image rendering
+          }
+        });
+
+        await Promise.all(webpLoadPromises);
       }
 
       // === PRELOAD SUB-COMPOSITION MEDIA & BUILD RENDER DATA ===
@@ -525,13 +568,19 @@ export async function createCompositionRenderer(
         // Preload sub-comp images
         const subImagePromises: Promise<void>[] = [];
         const subGifItems: ImageItem[] = [];
+        const subWebpItems: ImageItem[] = [];
 
         for (const { subItem, src } of subCompMediaItems) {
           if (subItem.type === 'image' && !imageElements.has(subItem.id)) {
             const imageItem = subItem as ImageItem;
-            // Check for animated GIF
-            if (isAnimatedGif({ ...imageItem, src } as ImageItem)) {
-              subGifItems.push({ ...imageItem, src } as ImageItem);
+            const itemWithSrc = { ...imageItem, src } as ImageItem;
+            // Check for animated image (GIF or WebP)
+            if (isAnimatedImage(itemWithSrc)) {
+              if (isGifFormat(itemWithSrc)) {
+                subGifItems.push(itemWithSrc);
+              } else {
+                subWebpItems.push(itemWithSrc);
+              }
             }
 
             if (hasDom && typeof Image !== 'undefined') {
@@ -593,10 +642,29 @@ export async function createCompositionRenderer(
           await Promise.all(subGifPromises);
         }
 
+        // Load sub-comp animated WebP frames via cache service
+        if (hasDom && subWebpItems.length > 0) {
+          const subWebpPromises = subWebpItems.map(async (webpItem) => {
+            try {
+              const mediaId = webpItem.mediaId ?? webpItem.id;
+              const cachedFrames = await gifFrameCache.getWebpFrames(mediaId, webpItem.src);
+              gifFramesMap.set(webpItem.id, cachedFrames);
+              log.debug('Sub-comp animated WebP frames loaded', {
+                itemId: webpItem.id.substring(0, 8),
+                frameCount: cachedFrames.frames.length,
+              });
+            } catch (err) {
+              log.error('Failed to load sub-comp WebP frames', { itemId: webpItem.id, error: err });
+            }
+          });
+          await Promise.all(subWebpPromises);
+        }
+
         log.debug('Sub-composition media loaded', {
           videos: subCompMediaItems.filter(s => s.subItem.type === 'video').length,
           images: subCompMediaItems.filter(s => s.subItem.type === 'image').length,
           gifs: subGifItems.length,
+          webps: subWebpItems.length,
         });
       }
 
