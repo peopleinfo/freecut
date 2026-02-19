@@ -61,17 +61,29 @@ export function TimecodeDisplay({ fps, totalFrames }: TimecodeDisplayProps) {
       : formatTimecode(frame, fps);
   }, [showFrames, fps, formatFrameNumber]);
 
+  // Fixed character width per display mode to prevent layout shift
+  const charWidth = showFrames
+    ? Math.max(totalFrames.toString().length, 1) // frame digits (zero-padded)
+    : 11; // SMPTE "HH:MM:SS:FF" is always 11 chars
+
   return (
     <div
       className="px-4 py-2.5 bg-secondary/50 rounded-md border border-border cursor-pointer select-none hover:bg-secondary/70 transition-colors"
       onClick={() => setShowFrames((prev) => !prev)}
     >
       <div className="flex items-center gap-2 font-mono text-sm tabular-nums">
-        <span ref={currentTimeRef} className="text-primary font-semibold">
+        <span
+          ref={currentTimeRef}
+          className="text-primary font-semibold inline-block text-right"
+          style={{ width: `${charWidth}ch` }}
+        >
           {showFrames ? formatFrameNumber(usePlaybackStore.getState().currentFrame) : formatTimecode(usePlaybackStore.getState().currentFrame, fps)}
         </span>
         <span className="text-muted-foreground/50">/</span>
-        <span className="text-muted-foreground">
+        <span
+          className="text-muted-foreground inline-block text-right"
+          style={{ width: `${charWidth}ch` }}
+        >
           {showFrames ? formatFrameNumber(Math.max(0, totalFrames - 1)) : formatTimecode(Math.max(0, totalFrames - 1), fps)}
         </span>
       </div>
