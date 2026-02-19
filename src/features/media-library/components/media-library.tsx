@@ -623,7 +623,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
       )}
 
       {/* Scrollable content: collapsible sections for compositions and media */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 [scrollbar-gutter:stable]">
         {/* Compositions section — collapsible, auto-hidden when empty */}
         <CompositionsSection />
 
