@@ -58,7 +58,7 @@ export const TimelineInOutMarkers = memo(function TimelineInOutMarkers() {
     if (!isDraggingIn) return;
 
     const originalCursor = document.body.style.cursor;
-    document.body.style.cursor = 'grabbing';
+    document.body.style.cursor = 'col-resize';
 
     const handleMouseMove = (e: MouseEvent) => {
       const container = inMarkerRef.current?.closest('.timeline-ruler');
@@ -91,7 +91,7 @@ export const TimelineInOutMarkers = memo(function TimelineInOutMarkers() {
     if (!isDraggingOut) return;
 
     const originalCursor = document.body.style.cursor;
-    document.body.style.cursor = 'grabbing';
+    document.body.style.cursor = 'col-resize';
 
     const handleMouseMove = (e: MouseEvent) => {
       const container = outMarkerRef.current?.closest('.timeline-ruler');
@@ -128,7 +128,6 @@ export const TimelineInOutMarkers = memo(function TimelineInOutMarkers() {
   const renderMarker = (
     markerRef: React.RefObject<HTMLDivElement | null>,
     positionPx: number,
-    isDragging: boolean,
     onMouseDown: (e: React.MouseEvent) => void,
     side: 'in' | 'out'
   ) => (
@@ -165,7 +164,7 @@ export const TimelineInOutMarkers = memo(function TimelineInOutMarkers() {
           bottom: 0,
           left: '-8px',
           width: '18px',
-          cursor: isDragging ? 'grabbing' : 'grab',
+          cursor: 'col-resize',
         }}
         onMouseDown={onMouseDown}
       />
@@ -176,11 +175,11 @@ export const TimelineInOutMarkers = memo(function TimelineInOutMarkers() {
     <>
       {/* In-point marker */}
       {inPoint !== null &&
-        renderMarker(inMarkerRef, frameToPixels(inPoint), isDraggingIn, handleInMouseDown, 'in')}
+        renderMarker(inMarkerRef, frameToPixels(inPoint), handleInMouseDown, 'in')}
 
       {/* Out-point marker */}
       {outPoint !== null &&
-        renderMarker(outMarkerRef, frameToPixels(outPoint), isDraggingOut, handleOutMouseDown, 'out')}
+        renderMarker(outMarkerRef, frameToPixels(outPoint), handleOutMouseDown, 'out')}
     </>
   );
 });
