@@ -91,7 +91,22 @@ export const useMediaLibraryStore = create<
           );
           if (videoItems.length > 0) {
             const videoIds = videoItems.map((m) => m.id);
-            await proxyService.loadExistingProxies(videoIds);
+            const staleProxyIds = await proxyService.loadExistingProxies(videoIds);
+
+            if (staleProxyIds.length > 0) {
+              const staleProxyIdSet = new Set(staleProxyIds);
+              const staleVideoItems = videoItems.filter((item) => staleProxyIdSet.has(item.id));
+              const urls = await Promise.all(
+                staleVideoItems.map((item) => mediaLibraryService.getMediaBlobUrl(item.id))
+              );
+
+              staleVideoItems.forEach((item, index) => {
+                const blobUrl = urls[index];
+                if (blobUrl) {
+                  proxyService.generateProxy(item.id, blobUrl, item.width, item.height);
+                }
+              });
+            }
           }
         } catch (error) {
           logger.error('[MediaLibraryStore] loadMediaItems error:', error);

@@ -16,6 +16,7 @@ import type { Conversion as ConversionType } from 'mediabunny';
 const PROXY_DIR = 'proxies';
 const PROXY_WIDTH = 1280;
 const PROXY_HEIGHT = 720;
+const PROXY_SCHEMA_VERSION = 2;
 
 // Message types
 export interface ProxyGenerateRequest {
@@ -80,7 +81,15 @@ async function getProxyDir(mediaId: string): Promise<FileSystemDirectoryHandle> 
  */
 async function saveMetadata(
   dir: FileSystemDirectoryHandle,
-  metadata: { width: number; height: number; status: string; createdAt: number }
+  metadata: {
+    version: number;
+    width: number;
+    height: number;
+    sourceWidth: number;
+    sourceHeight: number;
+    status: string;
+    createdAt: number;
+  }
 ): Promise<void> {
   const fileHandle = await dir.getFileHandle('meta.json', { create: true });
   const writable = await fileHandle.createWritable();
@@ -88,11 +97,30 @@ async function saveMetadata(
   await writable.close();
 }
 
+function toEven(value: number): number {
+  const rounded = Math.max(2, Math.floor(value));
+  return rounded % 2 === 0 ? rounded : rounded - 1;
+}
+
+function calculateProxyDimensions(sourceWidth: number, sourceHeight: number): { width: number; height: number } {
+  const safeSourceWidth = Math.max(1, sourceWidth);
+  const safeSourceHeight = Math.max(1, sourceHeight);
+  const scale = Math.min(PROXY_WIDTH / safeSourceWidth, PROXY_HEIGHT / safeSourceHeight, 1);
+
+  const width = toEven(safeSourceWidth * scale);
+  const height = toEven(safeSourceHeight * scale);
+
+  return {
+    width,
+    height,
+  };
+}
+
 /**
  * Generate a 720p proxy video via mediabunny Conversion
  */
 async function generateProxy(request: ProxyGenerateRequest): Promise<void> {
-  const { mediaId, blobUrl } = request;
+  const { mediaId, blobUrl, sourceWidth, sourceHeight } = request;
 
   const {
     Input, UrlSource, Output, Mp4OutputFormat, BufferTarget, Conversion,
@@ -100,11 +128,15 @@ async function generateProxy(request: ProxyGenerateRequest): Promise<void> {
   } = await loadMediabunny();
 
   const dir = await getProxyDir(mediaId);
+  const proxyDimensions = calculateProxyDimensions(sourceWidth, sourceHeight);
 
   // Save initial metadata
   await saveMetadata(dir, {
-    width: PROXY_WIDTH,
-    height: PROXY_HEIGHT,
+    version: PROXY_SCHEMA_VERSION,
+    width: proxyDimensions.width,
+    height: proxyDimensions.height,
+    sourceWidth,
+    sourceHeight,
     status: 'generating',
     createdAt: Date.now(),
   });
@@ -127,9 +159,9 @@ async function generateProxy(request: ProxyGenerateRequest): Promise<void> {
       input,
       output,
       video: {
-        width: PROXY_WIDTH,
-        height: PROXY_HEIGHT,
-        fit: 'contain',
+        width: proxyDimensions.width,
+        height: proxyDimensions.height,
+        fit: 'fill',
         codec: 'avc',
         bitrate: QUALITY_MEDIUM,
       },
@@ -172,8 +204,11 @@ async function generateProxy(request: ProxyGenerateRequest): Promise<void> {
 
     // Update metadata
     await saveMetadata(dir, {
-      width: PROXY_WIDTH,
-      height: PROXY_HEIGHT,
+      version: PROXY_SCHEMA_VERSION,
+      width: proxyDimensions.width,
+      height: proxyDimensions.height,
+      sourceWidth,
+      sourceHeight,
       status: 'ready',
       createdAt: Date.now(),
     });

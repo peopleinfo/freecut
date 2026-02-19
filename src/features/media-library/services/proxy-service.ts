@@ -23,12 +23,16 @@ import type {
 const logger = createLogger('ProxyService');
 
 const PROXY_DIR = 'proxies';
+const PROXY_SCHEMA_VERSION = 2;
 const MIN_WIDTH_THRESHOLD = 1920;
 const MIN_HEIGHT_THRESHOLD = 1080;
 
 interface ProxyMetadata {
+  version?: number;
   width: number;
   height: number;
+  sourceWidth?: number;
+  sourceHeight?: number;
   status: string;
   createdAt: number;
 }
@@ -132,14 +136,15 @@ class ProxyService {
    * Load existing proxies from OPFS at startup.
    * Only loads proxies for the given mediaIds (project-scoped).
    */
-  async loadExistingProxies(mediaIds: string[]): Promise<void> {
+  async loadExistingProxies(mediaIds: string[]): Promise<string[]> {
+    const staleProxyIds: string[] = [];
     try {
       const root = await navigator.storage.getDirectory();
       let proxyRoot: FileSystemDirectoryHandle;
       try {
         proxyRoot = await root.getDirectoryHandle(PROXY_DIR);
       } catch {
-        return; // No proxies directory yet
+        return staleProxyIds; // No proxies directory yet
       }
 
       const mediaIdSet = new Set(mediaIds);
@@ -160,6 +165,15 @@ class ProxyService {
 
           if (metadata.status !== 'ready') continue;
 
+          // Invalidate stale proxy formats to avoid aspect distortion from
+          // legacy fixed-1280x720 transcodes.
+          if (metadata.version !== PROXY_SCHEMA_VERSION) {
+            await proxyRoot.removeEntry(mediaId, { recursive: true });
+            logger.debug(`Removed stale proxy (schema mismatch) for ${mediaId}`);
+            staleProxyIds.push(mediaId);
+            continue;
+          }
+
           // Load proxy file and create blob URL
           const proxyHandle = await mediaDir.getFileHandle('proxy.mp4');
           const proxyFile = await proxyHandle.getFile();
@@ -178,6 +192,8 @@ class ProxyService {
     } catch (error) {
       logger.warn('Failed to load existing proxies:', error);
     }
+
+    return staleProxyIds;
   }
 
   /**
