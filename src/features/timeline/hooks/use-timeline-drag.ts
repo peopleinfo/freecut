@@ -376,7 +376,7 @@ export function useTimelineDrag(
       window.addEventListener('mousemove', checkDragThreshold);
       window.addEventListener('mouseup', cancelDrag);
     },
-    [item.id, item.from, item.trackId, selectItems, trackLocked, setDragState]
+    [item.id, item.from, item.trackId, selectItems, trackLocked, setDragState, getItems]
   );
 
   /**
@@ -617,6 +617,9 @@ export function useTimelineDrag(
           if (finalPosition === null) {
             console.warn(isAltDrag ? 'Cannot duplicate items: no available space' : 'Cannot move items: no available space');
             // Clean up and cancel - defer drag state to avoid render cascade
+            if (elementRef?.current) {
+              elementRef.current.style.transform = '';
+            }
             dragOffsetRef.current = { x: 0, y: 0 };
             prevSnapTargetRef.current = null;
             dragStateRef.current = null;
@@ -701,6 +704,9 @@ export function useTimelineDrag(
       // Clean up - defer drag state clearing to avoid multiple render cycles
       // The move operation already triggered a re-render; clearing drag state
       // should happen after that render completes
+      if (elementRef?.current) {
+        elementRef.current.style.transform = '';
+      }
       dragOffsetRef.current = { x: 0, y: 0 }; // Reset shared ref immediately
       prevSnapTargetRef.current = null; // Reset snap target tracking
       dragStateRef.current = null;
@@ -730,7 +736,7 @@ export function useTimelineDrag(
         document.body.style.userSelect = '';
       };
     }
-  }, [isDragging, item.id, item.durationInFrames, getTrackIdFromMouseY, isMouseOverGroupTrack, calculateMagneticSnap]);
+  }, [isDragging, item.id, item.durationInFrames, getTrackIdFromMouseY, isMouseOverGroupTrack, calculateMagneticSnap, elementRef, getItems, setDragState]);
 
   return {
     isDragging,
