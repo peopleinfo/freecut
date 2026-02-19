@@ -221,11 +221,13 @@ async function renderVideoItem(
   const localFrame = frame - item.from;
   const localTime = localFrame / fps;
   const sourceStart = item.sourceStart ?? item.trimStart ?? 0;
+  const sourceFps = item.sourceFps ?? fps;
   const speed = item.speed ?? 1;
 
   // Normal: play from sourceStart forwards
+  // sourceStart is in source-native FPS frames, so divide by sourceFps (not project fps)
   const adjustedSourceStart = sourceStart + sourceFrameOffset;
-  const sourceTime = adjustedSourceStart / fps + localTime * speed;
+  const sourceTime = adjustedSourceStart / sourceFps + localTime * speed;
 
   // === TRY MEDIABUNNY FIRST (fast, precise frame access) ===
   if (useMediabunny.has(item.id) && !mediabunnyDisabledItems.has(item.id)) {
