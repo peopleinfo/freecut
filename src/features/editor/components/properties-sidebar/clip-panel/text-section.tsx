@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Type, AlignLeft, AlignCenter, AlignRight, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -18,20 +18,8 @@ import {
   NumberInput,
   ColorPicker,
 } from '../components';
-
-// Available Google Fonts (subset for initial implementation)
-const FONT_OPTIONS = [
-  { value: 'Inter', label: 'Inter' },
-  { value: 'Roboto', label: 'Roboto' },
-  { value: 'Open Sans', label: 'Open Sans' },
-  { value: 'Lato', label: 'Lato' },
-  { value: 'Montserrat', label: 'Montserrat' },
-  { value: 'Oswald', label: 'Oswald' },
-  { value: 'Poppins', label: 'Poppins' },
-  { value: 'Playfair Display', label: 'Playfair Display' },
-  { value: 'Bebas Neue', label: 'Bebas Neue' },
-  { value: 'Anton', label: 'Anton' },
-] as const;
+import { FontPicker } from './font-picker';
+import { FONT_CATALOG, FONT_WEIGHT_MAP } from '@/lib/fonts';
 
 const FONT_WEIGHT_OPTIONS = [
   { value: 'normal', label: 'Regular' },
@@ -39,6 +27,8 @@ const FONT_WEIGHT_OPTIONS = [
   { value: 'semibold', label: 'Semibold' },
   { value: 'bold', label: 'Bold' },
 ] as const;
+
+const FONT_WEIGHT_VALUES = FONT_WEIGHT_MAP as Record<NonNullable<TextItem['fontWeight']>, number>;
 
 
 interface TextSectionProps {
@@ -81,6 +71,30 @@ export function TextSection({ items }: TextSectionProps) {
       lineHeight: textItems.every(i => (i.lineHeight ?? 1.2) === (first.lineHeight ?? 1.2)) ? (first.lineHeight ?? 1.2) : 'mixed' as const,
     };
   }, [textItems]);
+
+  const supportedFontWeightOptions = useMemo(() => {
+    const selectedFontFamily = sharedValues?.fontFamily;
+    if (!selectedFontFamily) {
+      return FONT_WEIGHT_OPTIONS;
+    }
+
+    const selectedFont = FONT_CATALOG.find(
+      (font) => font.family === selectedFontFamily || font.value === selectedFontFamily
+    );
+    if (!selectedFont) {
+      return FONT_WEIGHT_OPTIONS;
+    }
+
+    const options = FONT_WEIGHT_OPTIONS.filter((weight) =>
+      selectedFont.weights.includes(FONT_WEIGHT_VALUES[weight.value])
+    );
+
+    return options.length > 0 ? options : FONT_WEIGHT_OPTIONS;
+  }, [sharedValues?.fontFamily]);
+
+  const previousFontFamilyRef = useRef<string | undefined>(sharedValues?.fontFamily);
+  const sharedFontWeightRef = useRef<TextItem['fontWeight'] | undefined>(sharedValues?.fontWeight);
+  sharedFontWeightRef.current = sharedValues?.fontWeight;
 
   // Update all selected text items
   const updateTextItems = useCallback(
@@ -133,10 +147,38 @@ export function TextSection({ items }: TextSectionProps) {
 
   const handleFontWeightChange = useCallback(
     (value: string) => {
+      if (!supportedFontWeightOptions.some((weight) => weight.value === value)) {
+        return;
+      }
       updateTextItems({ fontWeight: value as TextItem['fontWeight'] });
     },
-    [updateTextItems]
+    [supportedFontWeightOptions, updateTextItems]
   );
+
+  useEffect(() => {
+    const currentFontFamily = sharedValues?.fontFamily;
+    if (previousFontFamilyRef.current === currentFontFamily) {
+      return;
+    }
+
+    previousFontFamilyRef.current = currentFontFamily;
+
+    const currentWeight = sharedFontWeightRef.current;
+    if (!currentWeight) {
+      return;
+    }
+
+    if (supportedFontWeightOptions.some((weight) => weight.value === currentWeight)) {
+      return;
+    }
+
+    const fallbackWeight = supportedFontWeightOptions[0]?.value;
+    if (!fallbackWeight) {
+      return;
+    }
+
+    updateTextItems({ fontWeight: fallbackWeight });
+  }, [sharedValues?.fontFamily, supportedFontWeightOptions, updateTextItems]);
 
   // Live preview for color (during picker drag)
   const handleColorLiveChange = useCallback(
@@ -219,6 +261,8 @@ export function TextSection({ items }: TextSectionProps) {
     return null;
   }
 
+  const fontPreviewText = sharedValues.text ?? textItems[0]?.text ?? '';
+
   return (
     <PropertySection title="Text" icon={Type} defaultOpen={true}>
       {/* Text Content */}
@@ -233,22 +277,13 @@ export function TextSection({ items }: TextSectionProps) {
       </PropertyRow>
 
       {/* Font Family */}
-      <PropertyRow label="Font">
-        <Select
+      <PropertyRow label="Font" className="items-start">
+        <FontPicker
           value={sharedValues.fontFamily}
+          placeholder={sharedValues.fontFamily === undefined ? 'Mixed' : 'Select font'}
+          previewText={fontPreviewText}
           onValueChange={handleFontFamilyChange}
-        >
-          <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-            <SelectValue placeholder={sharedValues.fontFamily === undefined ? 'Mixed' : 'Select font'} />
-          </SelectTrigger>
-          <SelectContent>
-            {FONT_OPTIONS.map((font) => (
-              <SelectItem key={font.value} value={font.value} className="text-xs">
-                {font.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </PropertyRow>
 
       {/* Font Size */}
@@ -275,7 +310,7 @@ export function TextSection({ items }: TextSectionProps) {
             <SelectValue placeholder={sharedValues.fontWeight === undefined ? 'Mixed' : 'Select weight'} />
           </SelectTrigger>
           <SelectContent>
-            {FONT_WEIGHT_OPTIONS.map((weight) => (
+            {supportedFontWeightOptions.map((weight) => (
               <SelectItem key={weight.value} value={weight.value} className="text-xs">
                 {weight.label}
               </SelectItem>

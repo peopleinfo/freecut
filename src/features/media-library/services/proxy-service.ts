@@ -11,10 +11,11 @@
  * Storage structure (OPFS):
  *   proxies/{mediaId}/
  *     proxy.mp4
- *     meta.json - { width, height, status, createdAt }
+ *     meta.json - { width, height, status, createdAt, version, sourceWidth, sourceHeight }
  */
 
 import { createLogger } from '@/lib/logger';
+import { PROXY_DIR, PROXY_SCHEMA_VERSION } from '../proxy-constants';
 import type {
   ProxyWorkerRequest,
   ProxyWorkerResponse,
@@ -22,13 +23,15 @@ import type {
 
 const logger = createLogger('ProxyService');
 
-const PROXY_DIR = 'proxies';
 const MIN_WIDTH_THRESHOLD = 1920;
 const MIN_HEIGHT_THRESHOLD = 1080;
 
 interface ProxyMetadata {
+  version?: number;
   width: number;
   height: number;
+  sourceWidth?: number;
+  sourceHeight?: number;
   status: string;
   createdAt: number;
 }
@@ -38,6 +41,7 @@ type ProxyStatusListener = (mediaId: string, status: 'generating' | 'ready' | 'e
 class ProxyService {
   private worker: Worker | null = null;
   private blobUrlCache = new Map<string, string>();
+  private sourceBlobUrlByMediaId = new Map<string, string>();
   private statusListener: ProxyStatusListener | null = null;
   private generatingSet = new Set<string>();
 
@@ -61,6 +65,12 @@ class ProxyService {
    */
   generateProxy(mediaId: string, blobUrl: string, sourceWidth: number, sourceHeight: number): void {
     if (this.generatingSet.has(mediaId)) return;
+
+    const previousSourceBlobUrl = this.sourceBlobUrlByMediaId.get(mediaId);
+    if (previousSourceBlobUrl && previousSourceBlobUrl !== blobUrl) {
+      URL.revokeObjectURL(previousSourceBlobUrl);
+    }
+    this.sourceBlobUrlByMediaId.set(mediaId, blobUrl);
 
     this.generatingSet.add(mediaId);
     this.statusListener?.(mediaId, 'generating', 0);
@@ -109,6 +119,7 @@ class ProxyService {
   async deleteProxy(mediaId: string): Promise<void> {
     // Cancel if generating
     this.cancelProxy(mediaId);
+    this.revokeTrackedSourceBlobUrl(mediaId);
 
     // Revoke blob URL
     const url = this.blobUrlCache.get(mediaId);
@@ -132,14 +143,15 @@ class ProxyService {
    * Load existing proxies from OPFS at startup.
    * Only loads proxies for the given mediaIds (project-scoped).
    */
-  async loadExistingProxies(mediaIds: string[]): Promise<void> {
+  async loadExistingProxies(mediaIds: string[]): Promise<string[]> {
+    const staleProxyIds: string[] = [];
     try {
       const root = await navigator.storage.getDirectory();
       let proxyRoot: FileSystemDirectoryHandle;
       try {
         proxyRoot = await root.getDirectoryHandle(PROXY_DIR);
       } catch {
-        return; // No proxies directory yet
+        return staleProxyIds; // No proxies directory yet
       }
 
       const mediaIdSet = new Set(mediaIds);
@@ -160,6 +172,21 @@ class ProxyService {
 
           if (metadata.status !== 'ready') continue;
 
+          // Invalidate stale proxy formats to avoid aspect distortion from
+          // legacy fixed-1280x720 transcodes.
+          if (metadata.version !== PROXY_SCHEMA_VERSION) {
+            staleProxyIds.push(mediaId);
+
+            try {
+              await proxyRoot.removeEntry(mediaId, { recursive: true });
+              logger.debug(`Removed stale proxy (schema mismatch) for ${mediaId}`);
+            } catch (error) {
+              logger.error(`Failed to remove stale proxy for ${mediaId}:`, error);
+            }
+
+            continue;
+          }
+
           // Load proxy file and create blob URL
           const proxyHandle = await mediaDir.getFileHandle('proxy.mp4');
           const proxyFile = await proxyHandle.getFile();
@@ -178,6 +205,8 @@ class ProxyService {
     } catch (error) {
       logger.warn('Failed to load existing proxies:', error);
     }
+
+    return staleProxyIds;
   }
 
   /**
@@ -213,6 +242,7 @@ class ProxyService {
 
       case 'complete': {
         this.generatingSet.delete(message.mediaId);
+        this.revokeTrackedSourceBlobUrl(message.mediaId);
         // Load the completed proxy from OPFS
         void this.loadCompletedProxy(message.mediaId);
         break;
@@ -220,6 +250,7 @@ class ProxyService {
 
       case 'error': {
         this.generatingSet.delete(message.mediaId);
+        this.revokeTrackedSourceBlobUrl(message.mediaId);
         logger.error(`Proxy generation failed for ${message.mediaId}:`, message.error);
         this.statusListener?.(message.mediaId, 'error');
         break;
@@ -243,6 +274,11 @@ class ProxyService {
         return;
       }
 
+      const previousBlobUrl = this.blobUrlCache.get(mediaId);
+      if (previousBlobUrl) {
+        URL.revokeObjectURL(previousBlobUrl);
+      }
+
       const blobUrl = URL.createObjectURL(proxyFile);
       this.blobUrlCache.set(mediaId, blobUrl);
       this.statusListener?.(mediaId, 'ready');
@@ -252,6 +288,16 @@ class ProxyService {
       logger.error(`Failed to load completed proxy for ${mediaId}:`, error);
       this.statusListener?.(mediaId, 'error');
     }
+  }
+
+  private revokeTrackedSourceBlobUrl(mediaId: string): void {
+    const sourceBlobUrl = this.sourceBlobUrlByMediaId.get(mediaId);
+    if (!sourceBlobUrl) {
+      return;
+    }
+
+    URL.revokeObjectURL(sourceBlobUrl);
+    this.sourceBlobUrlByMediaId.delete(mediaId);
   }
 }
 

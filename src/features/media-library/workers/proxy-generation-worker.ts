@@ -8,12 +8,12 @@
  * Storage structure:
  *   proxies/{mediaId}/
  *     proxy.mp4
- *     meta.json - { width, height, status, createdAt }
+ *     meta.json - { width, height, status, createdAt, version, sourceWidth, sourceHeight }
  */
 
 import type { Conversion as ConversionType } from 'mediabunny';
+import { PROXY_DIR, PROXY_SCHEMA_VERSION } from '../proxy-constants';
 
-const PROXY_DIR = 'proxies';
 const PROXY_WIDTH = 1280;
 const PROXY_HEIGHT = 720;
 
@@ -80,19 +80,51 @@ async function getProxyDir(mediaId: string): Promise<FileSystemDirectoryHandle> 
  */
 async function saveMetadata(
   dir: FileSystemDirectoryHandle,
-  metadata: { width: number; height: number; status: string; createdAt: number }
+  metadata: {
+    version: number;
+    width: number;
+    height: number;
+    sourceWidth: number;
+    sourceHeight: number;
+    status: string;
+    createdAt: number;
+  }
 ): Promise<void> {
   const fileHandle = await dir.getFileHandle('meta.json', { create: true });
   const writable = await fileHandle.createWritable();
-  await writable.write(JSON.stringify(metadata));
-  await writable.close();
+  try {
+    await writable.write(JSON.stringify(metadata));
+    await writable.close();
+  } catch (error) {
+    await writable.abort().catch(() => undefined);
+    throw error;
+  }
+}
+
+function toEven(value: number): number {
+  const rounded = Math.max(2, Math.floor(value));
+  return rounded % 2 === 0 ? rounded : rounded - 1;
+}
+
+function calculateProxyDimensions(sourceWidth: number, sourceHeight: number): { width: number; height: number } {
+  const safeSourceWidth = Math.max(1, sourceWidth);
+  const safeSourceHeight = Math.max(1, sourceHeight);
+  const scale = Math.min(PROXY_WIDTH / safeSourceWidth, PROXY_HEIGHT / safeSourceHeight, 1);
+
+  const width = toEven(safeSourceWidth * scale);
+  const height = toEven(safeSourceHeight * scale);
+
+  return {
+    width,
+    height,
+  };
 }
 
 /**
  * Generate a 720p proxy video via mediabunny Conversion
  */
 async function generateProxy(request: ProxyGenerateRequest): Promise<void> {
-  const { mediaId, blobUrl } = request;
+  const { mediaId, blobUrl, sourceWidth, sourceHeight } = request;
 
   const {
     Input, UrlSource, Output, Mp4OutputFormat, BufferTarget, Conversion,
@@ -100,13 +132,18 @@ async function generateProxy(request: ProxyGenerateRequest): Promise<void> {
   } = await loadMediabunny();
 
   const dir = await getProxyDir(mediaId);
+  const proxyDimensions = calculateProxyDimensions(sourceWidth, sourceHeight);
+  const createdAt = Date.now();
 
   // Save initial metadata
   await saveMetadata(dir, {
-    width: PROXY_WIDTH,
-    height: PROXY_HEIGHT,
+    version: PROXY_SCHEMA_VERSION,
+    width: proxyDimensions.width,
+    height: proxyDimensions.height,
+    sourceWidth,
+    sourceHeight,
     status: 'generating',
-    createdAt: Date.now(),
+    createdAt,
   });
 
   const input = new Input({
@@ -127,8 +164,8 @@ async function generateProxy(request: ProxyGenerateRequest): Promise<void> {
       input,
       output,
       video: {
-        width: PROXY_WIDTH,
-        height: PROXY_HEIGHT,
+        width: proxyDimensions.width,
+        height: proxyDimensions.height,
         fit: 'contain',
         codec: 'avc',
         bitrate: QUALITY_MEDIUM,
@@ -167,15 +204,23 @@ async function generateProxy(request: ProxyGenerateRequest): Promise<void> {
     // Write proxy video to OPFS
     const fileHandle = await dir.getFileHandle('proxy.mp4', { create: true });
     const writable = await fileHandle.createWritable();
-    await writable.write(buffer);
-    await writable.close();
+    try {
+      await writable.write(buffer);
+      await writable.close();
+    } catch (error) {
+      await writable.abort().catch(() => undefined);
+      throw error;
+    }
 
     // Update metadata
     await saveMetadata(dir, {
-      width: PROXY_WIDTH,
-      height: PROXY_HEIGHT,
+      version: PROXY_SCHEMA_VERSION,
+      width: proxyDimensions.width,
+      height: proxyDimensions.height,
+      sourceWidth,
+      sourceHeight,
       status: 'ready',
-      createdAt: Date.now(),
+      createdAt,
     });
 
     self.postMessage({
