@@ -1,6 +1,7 @@
 import { useMemo, useCallback } from 'react';
 import type { SnapTarget } from '../types/drag';
 import { useTimelineStore } from '../stores/timeline-store';
+import { useTransitionsStore } from '../stores/transitions-store';
 import { useZoomStore } from '../stores/zoom-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useTimelineZoom } from './use-timeline-zoom';
@@ -8,14 +9,17 @@ import {
   generateGridSnapPoints,
   findNearestSnapTarget,
   calculateAdaptiveSnapThreshold,
+  getFilteredItemSnapEdges,
 } from '../utils/timeline-snap-utils';
+import { getVisibleTrackIds } from '../utils/group-utils';
 import { BASE_SNAP_THRESHOLD_PIXELS } from '../constants';
 
-// Helper to get items on-demand without subscribing
+// Helpers to get state on-demand without subscribing
 // This is CRITICAL: useSnapCalculator is used by every TimelineItem via
 // use-timeline-drag, use-timeline-trim, and use-rate-stretch hooks.
 // Subscribing to items would cause ALL items to re-render when ANY item moves!
 const getItemsOnDemand = () => useTimelineStore.getState().items;
+const getTracksOnDemand = () => useTimelineStore.getState().tracks;
 
 /**
  * Advanced snap calculator hook
@@ -63,6 +67,8 @@ export function useSnapCalculator(
    */
   const generateSnapTargets = useCallback(() => {
     const items = getItemsOnDemand();
+    const transitions = useTransitionsStore.getState().transitions;
+    const visibleTrackIds = getVisibleTrackIds(getTracksOnDemand());
     const targets: SnapTarget[] = [];
 
     // 1. Grid snap points (timeline markers)
@@ -71,24 +77,11 @@ export function useSnapCalculator(
       targets.push({ frame, type: 'grid' });
     });
 
-    // 2. Magnetic snap points (item edges)
-    // Exclude all dragging items (single or group selection)
-    items
-      .filter((item) => !excludeIds.includes(item.id))
-      .forEach((item) => {
-        // Item start
-        targets.push({
-          frame: item.from,
-          type: 'item-start',
-          itemId: item.id,
-        });
-        // Item end
-        targets.push({
-          frame: item.from + item.durationInFrames,
-          type: 'item-end',
-          itemId: item.id,
-        });
-      });
+    // 2. Item edges + transition midpoints (filtered by visible tracks,
+    //    transition inner edges suppressed, dragged items excluded)
+    for (const edge of getFilteredItemSnapEdges(items, transitions, visibleTrackIds, excludeIds)) {
+      targets.push(edge);
+    }
 
     return targets;
   }, [excludeIds, timelineDuration, fps, zoomLevel]);

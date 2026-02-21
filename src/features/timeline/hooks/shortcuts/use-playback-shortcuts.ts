@@ -6,18 +6,24 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
 import { useItemsStore } from '../../stores/items-store';
 import { useMarkersStore } from '../../stores/markers-store';
+import { useTransitionsStore } from '../../stores/transitions-store';
 import { HOTKEYS, HOTKEY_OPTIONS } from '@/config/hotkeys';
 import type { TimelineShortcutCallbacks } from '../use-timeline-shortcuts';
 import { useSourcePlayerStore } from '@/features/preview/stores/source-player-store';
+import { getFilteredItemSnapEdges } from '../../utils/timeline-snap-utils';
+import { getVisibleTrackIds } from '../../utils/group-utils';
 
 /** Compute snap points on-demand from current store state (avoids reactive subscriptions). */
 function getSnapPoints(): number[] {
   const items = useItemsStore.getState().items;
   const markers = useMarkersStore.getState().markers;
+  const transitions = useTransitionsStore.getState().transitions;
+  const tracks = useItemsStore.getState().tracks;
+  const visibleTrackIds = getVisibleTrackIds(tracks);
   const points = new Set<number>();
-  for (const item of items) {
-    points.add(item.from);
-    points.add(item.from + item.durationInFrames);
+
+  for (const edge of getFilteredItemSnapEdges(items, transitions, visibleTrackIds)) {
+    points.add(edge.frame);
   }
   for (const marker of markers) {
     points.add(marker.frame);
