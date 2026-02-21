@@ -83,3 +83,14 @@ export const useZoomStore = create<ZoomState & ZoomActions>((set) => ({
     set({ level: newLevel, pixelsPerSecond: newLevel * 100 });
   },
 }));
+
+// Non-reactive handler registration — avoids unnecessary subscriber notifications
+let _zoomTo100Handler: ((centerFrame: number) => void) | null = null;
+
+export function registerZoomTo100(handler: ((centerFrame: number) => void) | null) {
+  _zoomTo100Handler = handler;
+}
+
+export function getZoomTo100Handler() {
+  return _zoomTo100Handler;
+}
