@@ -1,5 +1,5 @@
 /**
- * Tool shortcuts: V (Select), C (Razor), Shift+C (Split at cursor), R (Rate Stretch).
+ * Tool shortcuts: V (Select), C (Razor), Shift+C (Split at cursor), R (Rate Stretch), N (Rolling Edit).
  */
 
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -65,6 +65,17 @@ export function useToolShortcuts(callbacks: TimelineShortcutCallbacks) {
     (event) => {
       event.preventDefault();
       setActiveTool(activeTool === 'rate-stretch' ? 'select' : 'rate-stretch');
+    },
+    HOTKEY_OPTIONS,
+    [activeTool, setActiveTool]
+  );
+
+  // Tool: N - Toggle Rolling Edit Tool
+  useHotkeys(
+    HOTKEYS.ROLLING_EDIT_TOOL,
+    (event) => {
+      event.preventDefault();
+      setActiveTool(activeTool === 'rolling-edit' ? 'select' : 'rolling-edit');
     },
     HOTKEY_OPTIONS,
     [activeTool, setActiveTool]

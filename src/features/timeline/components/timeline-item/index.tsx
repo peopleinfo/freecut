@@ -4,6 +4,7 @@ import { useTimelineZoomContext } from '../../contexts/timeline-zoom-context';
 import { useTimelineStore } from '../../stores/timeline-store';
 import { useTransitionsStore } from '../../stores/transitions-store';
 import { useTransitionResizePreviewStore } from '../../stores/transition-resize-preview-store';
+import { useRollingEditPreviewStore } from '../../stores/rolling-edit-preview-store';
 import { useSelectionStore } from '@/features/editor/stores/selection-store';
 import { useEditorStore } from '@/features/editor/stores/editor-store';
 import { useSourcePlayerStore } from '@/features/preview/stores/source-player-store';
@@ -372,6 +373,20 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     }, [item.id, item.trackId, item.from])
   );
 
+  // Rolling edit preview: this item is the neighbor being inversely adjusted
+  const rollingEditDelta = useRollingEditPreviewStore(
+    useCallback((s) => {
+      if (s.neighborItemId !== item.id) return 0;
+      return s.neighborDelta;
+    }, [item.id])
+  );
+  const rollingEditHandle = useRollingEditPreviewStore(
+    useCallback((s) => {
+      if (s.neighborItemId !== item.id) return null;
+      return s.handle;
+    }, [item.id])
+  );
+
   // Merge preview + committed overlap for the right edge (this clip is LEFT in a transition)
   const overlapRight = useMemo(() => {
     if (previewOverlapRight > 0) return previewOverlapRight;
@@ -461,6 +476,23 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
       }
     }
 
+    // Rolling edit neighbor visual feedback
+    if (rollingEditDelta !== 0) {
+      if (rollingEditHandle === 'end') {
+        // Trimmed item's end handle was dragged → this neighbor's start adjusts
+        // Positive delta = edit point moved right = neighbor shrinks from left
+        const deltaPixels = Math.round(timeToPixels(rollingEditDelta / fps));
+        trimVisualLeft += deltaPixels;
+        trimVisualWidth -= deltaPixels;
+      } else if (rollingEditHandle === 'start') {
+        // Trimmed item's start handle was dragged → this neighbor's end adjusts
+        // Positive delta = edit point moved right → neighbor extends from right
+        // Negative delta = edit point moved left → neighbor shrinks from right
+        const deltaPixels = Math.round(timeToPixels(rollingEditDelta / fps));
+        trimVisualWidth += deltaPixels;
+      }
+    }
+
     let stretchVisualLeft = trimVisualLeft;
     let stretchVisualWidth = trimVisualWidth;
 
@@ -471,14 +503,14 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     }
 
     return {
-      visualLeft: isStretching ? stretchVisualLeft : isTrimming ? trimVisualLeft : left,
-      visualWidth: isStretching ? stretchVisualWidth : isTrimming ? trimVisualWidth : width,
+      visualLeft: isStretching ? stretchVisualLeft : (isTrimming || rollingEditDelta !== 0) ? trimVisualLeft : left,
+      visualWidth: isStretching ? stretchVisualWidth : (isTrimming || rollingEditDelta !== 0) ? trimVisualWidth : width,
     };
   }, [
     left, width, isTrimming, trimHandle, isStretching, stretchFeedback,
     canExtendInfinitely, currentSourceStart, currentSpeed, item.from, item.durationInFrames,
     timeToPixels, fps, minWidthPixels, trimDeltaPixels, sourceDuration, currentSourceEnd,
-    subCompDuration
+    subCompDuration, rollingEditDelta, rollingEditHandle
   ]);
 
   // Get color based on item type - memoized
@@ -626,10 +658,12 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     ? 'cursor-not-allowed opacity-60'
     : activeTool === 'razor'
     ? 'cursor-scissors'
-    : hoveredEdge !== null && (activeTool === 'select' || activeTool === 'rate-stretch')
+    : hoveredEdge !== null && (activeTool === 'select' || activeTool === 'rate-stretch' || activeTool === 'rolling-edit')
     ? 'cursor-ew-resize'
     : activeTool === 'rate-stretch'
     ? 'cursor-gauge'
+    : activeTool === 'rolling-edit'
+    ? 'cursor-ew-resize'
     : isBeingDragged
     ? 'cursor-grabbing'
     : 'cursor-grab';
@@ -791,7 +825,9 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
         return;
       }
     }
-    if (trackLocked || isTrimming || isStretching || activeTool === 'razor' || activeTool === 'rate-stretch' || hoveredEdge !== null) return;
+    // Rolling edit tool: block body drag (only edge trim is allowed)
+    if (activeTool === 'rolling-edit' && !trackLocked && hoveredEdge === null) return;
+    if (trackLocked || isTrimming || isStretching || activeTool === 'razor' || activeTool === 'rate-stretch' || activeTool === 'rolling-edit' || hoveredEdge !== null) return;
     handleDragStart(e);
   }, [activeTool, trackLocked, isStretching, isTrimming, hoveredEdge, handleDragStart]);
 
