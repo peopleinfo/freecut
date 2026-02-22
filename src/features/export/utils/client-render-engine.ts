@@ -27,6 +27,7 @@ import type { ItemKeyframes } from '@/types/keyframe';
 import { createLogger } from '@/lib/logger';
 import { blobUrlManager } from '@/lib/blob-url-manager';
 import { resolveMediaUrl } from '@/features/preview/utils/media-resolver';
+import { VideoSourcePool } from '@/features/player/video/VideoSourcePool';
 
 // Import subsystems
 import { getAnimatedTransform, buildKeyframesMap } from './canvas-keyframes';
@@ -140,6 +141,35 @@ export async function createCompositionRenderer(
   const videoExtractors = new Map<string, VideoFrameExtractor>();
   // Keep video elements as fallback if mediabunny fails
   const videoElements = new Map<string, HTMLVideoElement>();
+  const fallbackVideoPool = hasDom ? new VideoSourcePool() : null;
+  const fallbackVideoBySrc = new Set<string>();
+  const fallbackVideoClipIdByItem = new Map<string, string>();
+  let fallbackVideoClipCounter = 0;
+
+  const bindFallbackVideoElement = (itemId: string, src: string): void => {
+    if (!fallbackVideoPool) return;
+
+    let clipId = fallbackVideoClipIdByItem.get(itemId);
+    if (!clipId) {
+      clipId = `export-fallback-${++fallbackVideoClipCounter}-${itemId}`;
+      fallbackVideoClipIdByItem.set(itemId, clipId);
+    }
+
+    const element = fallbackVideoPool.acquireForClip(clipId, src);
+    if (!element) return;
+
+    // Configure element immediately after acquire, then warm shared source preload.
+    element.crossOrigin = 'anonymous';
+    element.muted = true;
+    element.preload = 'auto';
+
+    if (!fallbackVideoBySrc.has(src)) {
+      fallbackVideoBySrc.add(src);
+      fallbackVideoPool.preloadSource(src).catch(() => {});
+    }
+
+    videoElements.set(itemId, element);
+  };
 
   for (const track of tracks) {
     for (const item of track.items ?? []) {
@@ -157,12 +187,7 @@ export async function createCompositionRenderer(
 
           // Also create fallback video element in case mediabunny fails (main thread only).
           if (hasDom) {
-            const video = document.createElement('video');
-            video.src = videoItem.src;
-            video.muted = true;
-            video.preload = 'auto';
-            video.crossOrigin = 'anonymous';
-            videoElements.set(item.id, video);
+            bindFallbackVideoElement(item.id, videoItem.src);
           }
         }
       }
@@ -360,32 +385,36 @@ export async function createCompositionRenderer(
       }
 
       if (hasDom && allVideoIds.length > 0) {
-        const videoLoadPromises = allVideoIds.map(
-          (itemId) => {
-            const video = videoElements.get(itemId)!;
-            return new Promise<void>((resolve) => {
-              const timeout = setTimeout(() => {
-                log.warn('Video load timeout', { itemId });
-                resolve();
-              }, 10000);
+        const uniqueVideoEntries = new Map<HTMLVideoElement, string>();
+        for (const [itemId, video] of videoElements.entries()) {
+          if (!uniqueVideoEntries.has(video)) {
+            uniqueVideoEntries.set(video, itemId);
+          }
+        }
 
-              if (video.readyState >= 2) {
+        const videoLoadPromises = Array.from(uniqueVideoEntries.entries()).map(
+          ([video, itemId]) => new Promise<void>((resolve) => {
+            const timeout = setTimeout(() => {
+              log.warn('Video load timeout', { itemId });
+              resolve();
+            }, 10000);
+
+            if (video.readyState >= 2) {
+              clearTimeout(timeout);
+              resolve();
+            } else {
+              video.addEventListener('loadeddata', () => {
                 clearTimeout(timeout);
                 resolve();
-              } else {
-                video.addEventListener('loadeddata', () => {
-                  clearTimeout(timeout);
-                  resolve();
-                }, { once: true });
-                video.addEventListener('error', () => {
-                  clearTimeout(timeout);
-                  log.error('Video load error', { itemId });
-                  resolve();
-                }, { once: true });
-                video.load();
-              }
-            });
-          }
+              }, { once: true });
+              video.addEventListener('error', () => {
+                clearTimeout(timeout);
+                log.error('Video load error', { itemId });
+                resolve();
+              }, { once: true });
+              video.load();
+            }
+          })
         );
 
         await Promise.all(videoLoadPromises);
@@ -558,12 +587,7 @@ export async function createCompositionRenderer(
               })
             );
             if (hasDom) {
-              const video = document.createElement('video');
-              video.src = src;
-              video.muted = true;
-              video.preload = 'auto';
-              video.crossOrigin = 'anonymous';
-              videoElements.set(subItem.id, video);
+              bindFallbackVideoElement(subItem.id, src);
             }
           }
         }
@@ -576,10 +600,16 @@ export async function createCompositionRenderer(
             .map(({ subItem }) => subItem.id);
 
           if (subFallbackVideoIds.length > 0) {
-            const subVideoLoadPromises = subFallbackVideoIds.map((itemId) => {
+            const uniqueSubVideos = new Map<HTMLVideoElement, string>();
+            for (const itemId of subFallbackVideoIds) {
               const video = videoElements.get(itemId);
-              if (!video) return Promise.resolve();
-              return new Promise<void>((resolve) => {
+              if (video && !uniqueSubVideos.has(video)) {
+                uniqueSubVideos.set(video, itemId);
+              }
+            }
+
+            const subVideoLoadPromises = Array.from(uniqueSubVideos.entries()).map(([video, itemId]) =>
+              new Promise<void>((resolve) => {
                 const timeout = setTimeout(() => {
                   log.warn('Sub-comp video load timeout', { itemId });
                   resolve();
@@ -600,8 +630,8 @@ export async function createCompositionRenderer(
                   }, { once: true });
                   video.load();
                 }
-              });
-            });
+              })
+            );
             await Promise.all(subVideoLoadPromises);
           }
         }
@@ -970,13 +1000,14 @@ export async function createCompositionRenderer(
       mediabunnyFailureCountByItem.clear();
       mediabunnyDisabledItems.clear();
 
-      // Clean up fallback video elements
-      for (const video of videoElements.values()) {
-        video.pause();
-        video.onerror = null;
-        video.removeAttribute('src');
-        video.load();
+      // Clean up fallback video pool and references.
+      // In this renderer, fallback video elements are only bound when a DOM is
+      // available, which is also when fallbackVideoPool exists.
+      if (fallbackVideoPool) {
+        fallbackVideoPool.dispose();
       }
+      fallbackVideoBySrc.clear();
+      fallbackVideoClipIdByItem.clear();
       videoElements.clear();
       for (const image of imageElements.values()) {
         if ('close' in image.source && typeof image.source.close === 'function') {

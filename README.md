@@ -21,7 +21,7 @@ FreeCut is a browser-based multi-track video editor. No installation, no uploads
 - Filmstrip thumbnails and audio waveform visualization
 - Pre-compositions (nested compositions, 1 level deep)
 - Markers for organizing your edit
-- Source monitor with mark in/out and insert/overwrite edits
+- Source monitor with mark in/out via playhead or skimmer and insert/overwrite edits
 - Undo/redo with configurable history depth
 
 ### Effects & Animation
@@ -123,7 +123,8 @@ Brave disables the File System Access API by default. To enable it:
 | Add keyframe | `K` |
 | Toggle keyframe editor | `Ctrl+K` |
 | Group / Ungroup tracks | `Ctrl+G` / `Ctrl+Shift+G` |
-| Mark In / Out | `I` / `O` |
+| Mark In / Out (playhead) | `I` / `O` |
+| Mark In / Out (skimmer) | `Shift+I` / `Shift+O` |
 | Insert / Overwrite edit | `,` / `.` |
 | Save | `Ctrl+S` |
 | Export | `Ctrl+E` |

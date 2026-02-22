@@ -18,10 +18,11 @@
  *   - localFrame 0..durationInFrames used by TransitionOverlay for progress
  *
  * TransitionOverlay applies transition styles (opacity, transform, clipPath,
- * mask) directly to its container div via useEffect, avoiding React re-renders.
+ * mask) directly to its container div via useLayoutEffect, avoiding post-paint
+ * boundary flicker in preview playback.
  */
 
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { AbsoluteFill, Sequence, useSequenceContext } from '@/features/player/composition';
 import { useVideoConfig, useIsPlaying } from '../hooks/use-player-compat';
 import { useVideoSourcePool } from '@/features/player/video/VideoSourcePoolContext';
@@ -138,18 +139,26 @@ const NativeTransitionVideo: React.FC<NativeTransitionVideoProps> = ({
     element.currentTime = Math.max(0, clampedTime);
 
     // Force a frame render — some browsers need play/pause after seek
+    let forceFrameTimer: ReturnType<typeof setTimeout> | null = null;
     const forceFrameRender = () => {
+      if (elementRef.current !== element) return;
       if (element.paused && element.readyState >= 2) {
         element.play().then(() => {
-          element.pause();
+          if (elementRef.current === element) {
+            element.pause();
+          }
         }).catch(() => {
           // Autoplay blocked — fine for muted transition video
         });
       }
     };
-    setTimeout(forceFrameRender, 100);
+    forceFrameTimer = setTimeout(forceFrameRender, 100);
 
     return () => {
+      if (forceFrameTimer !== null) {
+        clearTimeout(forceFrameTimer);
+        forceFrameTimer = null;
+      }
       element.pause();
       if (element.parentElement) {
         element.parentElement.removeChild(element);
@@ -163,7 +172,7 @@ const NativeTransitionVideo: React.FC<NativeTransitionVideoProps> = ({
   // Sync video with timeline — mirrors NativePreviewVideo's approach:
   // During playback: let video play naturally, only seek to correct drift
   // During scrub: pause and seek frame-by-frame
-  useEffect(() => {
+  useLayoutEffect(() => {
     const video = elementRef.current;
     if (!video) return;
 
@@ -195,7 +204,7 @@ const NativeTransitionVideo: React.FC<NativeTransitionVideoProps> = ({
       const videoFarAhead = drift > 0.5;
       const needsSync = needsInitialSyncRef.current
         || videoFarAhead
-        || (videoBehind && timeSinceLastSync > 500);
+        || (videoBehind && timeSinceLastSync > 80);
 
       if (needsSync && canSeek) {
         try {
@@ -472,7 +481,8 @@ interface TransitionOverlayProps {
  * transition window), maps it through the easing curve, then calls
  * calculateTransitionStyles to get opacity/transform/clipPath/mask values.
  *
- * Styles are applied via useEffect to bypass React rendering for performance.
+ * Styles are applied via useLayoutEffect so transition boundary frames are
+ * committed before paint (prevents stale-frame flicker in preview).
  */
 const TransitionOverlay: React.FC<TransitionOverlayProps> = React.memo(function TransitionOverlay({
   transition,
@@ -500,8 +510,9 @@ const TransitionOverlay: React.FC<TransitionOverlayProps> = React.memo(function 
     [transition.timing, fps, durationInFrames, transition.bezierPoints]
   );
 
-  // Apply styles directly to DOM each frame (bypasses React for performance)
-  useEffect(() => {
+  // Apply styles directly to DOM each frame before paint.
+  // useEffect caused one-frame stale styles at transition boundaries in preview.
+  useLayoutEffect(() => {
     if (!containerRef.current || frame < 0) return;
 
     // localFrame can be fractional if a transition window starts on a non-integer frame.
@@ -626,11 +637,16 @@ const OptimizedEffectsBasedTransitionRenderer = React.memo<OptimizedTransitionPr
     // The transition overlay and regular Sequence both start at the same
     // timeline position, so no playback rate compensation is needed.
     const incomingTransitionRate = rightClip.speed ?? 1;
+    // Player preview path guard frame at transition exit.
+    // This renderer is only used by MainComposition in the player runtime.
+    // Keeps the fully-resolved incoming overlay visible for one extra frame
+    // to hide occasional decoder handoff flicker in the underlying base clip.
+    const exitGuardFrames = 1;
 
     return (
       <Sequence
         from={window.startFrame}
-        durationInFrames={window.durationInFrames}
+        durationInFrames={window.durationInFrames + exitGuardFrames}
         premountFor={premountFrames}
       >
         <AbsoluteFill
@@ -731,3 +747,4 @@ export const OptimizedEffectsBasedTransitionsLayer = React.memo<{
     </>
   );
 });
+
