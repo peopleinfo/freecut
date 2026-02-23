@@ -1,13 +1,15 @@
 import { memo, useEffect, useState, useMemo, useDeferredValue, useCallback, useRef } from 'react';
 import { FilmstripSkeleton } from './filmstrip-skeleton';
 import { useFilmstrip, type FilmstripFrame } from '../../hooks/use-filmstrip';
-import { mediaLibraryService } from '@/features/media-library/services/media-library-service';
+import { resolveMediaUrl } from '@/features/preview/utils/media-resolver';
+import { useMediaBlobUrl } from '../../hooks/use-media-blob-url';
 import { THUMBNAIL_WIDTH } from '../../services/filmstrip-cache';
 
 const ZOOM_SETTLE_MS = 80;
 const MAX_DEFER_LAG_RATIO = 0.12;
 const MAX_DEFER_LAG_PX = 180;
 const PRIORITY_PAD_SECONDS = 0.75;
+const MAX_PRIORITY_WINDOW_SECONDS = 60;
 
 interface ClipFilmstripProps {
   /** Media ID from the timeline item */
@@ -127,7 +129,7 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
 }: ClipFilmstripProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(0);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const { blobUrl, setBlobUrl, hasStartedLoadingRef, blobUrlVersion } = useMediaBlobUrl(mediaId);
   const [isZooming, setIsZooming] = useState(false);
   const zoomSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -205,8 +207,12 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
     }
 
     const visibleSpanSeconds = (renderClipWidth / renderPixelsPerSecond) * speed;
+    const prioritySpanSeconds = Math.min(
+      visibleSpanSeconds + PRIORITY_PAD_SECONDS * 2,
+      MAX_PRIORITY_WINDOW_SECONDS
+    );
     const startTime = Math.max(0, effectiveStart - PRIORITY_PAD_SECONDS);
-    const endTime = Math.min(sourceDuration, effectiveStart + visibleSpanSeconds + PRIORITY_PAD_SECONDS);
+    const endTime = Math.min(sourceDuration, startTime + prioritySpanSeconds);
 
     if (endTime <= startTime) {
       return null;
@@ -221,16 +227,17 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
     effectiveStart,
   ]);
 
-  // Load blob URL for the media
+  // Load blob URL lazily when visible, and retry after global invalidation.
   useEffect(() => {
+    if (!isVisible || !mediaId || hasStartedLoadingRef.current) {
+      return;
+    }
+    hasStartedLoadingRef.current = true;
+
     let mounted = true;
-
-    // Reset blob URL when mediaId changes to force fresh load
-    setBlobUrl(null);
-
     const loadBlobUrl = async () => {
       try {
-        const url = await mediaLibraryService.getMediaBlobUrl(mediaId);
+        const url = await resolveMediaUrl(mediaId);
         if (mounted && url) {
           setBlobUrl(url);
         }
@@ -239,14 +246,12 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
       }
     };
 
-    if (isVisible && mediaId) {
-      loadBlobUrl();
-    }
+    loadBlobUrl();
 
     return () => {
       mounted = false;
     };
-  }, [mediaId, isVisible]);
+  }, [mediaId, isVisible, blobUrlVersion, setBlobUrl]);
 
   // Use filmstrip hook
   const { frames, isLoading, isComplete, error } = useFilmstrip({
@@ -254,7 +259,7 @@ export const ClipFilmstrip = memo(function ClipFilmstrip({
     blobUrl,
     duration: sourceDuration,
     isVisible,
-    enabled: isVisible && !!blobUrl && sourceDuration > 0,
+    enabled: !!blobUrl && sourceDuration > 0,
     priorityWindow,
   });
 

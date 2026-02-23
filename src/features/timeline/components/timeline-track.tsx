@@ -4,6 +4,7 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('TimelineTrack');
 import type { TimelineTrack as TimelineTrackType, TimelineItem as TimelineItemType, VideoItem, AudioItem, ImageItem, CompositionItem } from '@/types/timeline';
+import type { MediaMetadata } from '@/types/storage';
 import { TimelineItem } from './timeline-item';
 import { TransitionItem } from './transition-item';
 import { useTimelineStore } from '../stores/timeline-store';
@@ -12,11 +13,14 @@ import { useTimelineZoomContext } from '../contexts/timeline-zoom-context';
 import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store';
 import { useProjectStore } from '@/features/projects/stores/project-store';
 import { mediaLibraryService } from '@/features/media-library/services/media-library-service';
-import { findNearestAvailableSpace } from '../utils/collision-utils';
+import { resolveMediaUrl } from '@/features/preview/utils/media-resolver';
+import { findNearestAvailableSpace, type CollisionRect } from '../utils/collision-utils';
 import { getMediaDragData, type CompositionDragData } from '@/features/media-library/utils/drag-data-cache';
+import { mapWithConcurrency } from '@/lib/async-utils';
 import { useCompositionNavigationStore } from '../stores/composition-navigation-store';
 import { DEFAULT_TRACK_HEIGHT } from '@/features/timeline/constants';
 import { computeInitialTransform } from '../utils/transform-init';
+import { toast } from 'sonner';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -35,6 +39,137 @@ interface GhostPreviewItem {
   width: number;
   label: string;
   type: string;
+}
+
+interface DragMediaItem {
+  mediaId: string;
+  mediaType: string;
+  fileName: string;
+  duration: number;
+}
+
+interface TimelineBaseItem {
+  id: string;
+  trackId: string;
+  from: number;
+  durationInFrames: number;
+  label: string;
+  mediaId: string;
+  originId: string;
+  sourceStart: number;
+  sourceEnd: number;
+  sourceDuration: number;
+  sourceFps: number;
+  trimStart: number;
+  trimEnd: number;
+}
+
+interface PlannedDroppedMediaItem {
+  dragItem: DragMediaItem;
+  media: MediaMetadata;
+  finalPosition: number;
+  itemDuration: number;
+}
+
+const MULTI_DROP_METADATA_CONCURRENCY = 3;
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isValidDragMediaItem(value: unknown): value is DragMediaItem {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<DragMediaItem>;
+  return isNonEmptyString(candidate.mediaId)
+    && isNonEmptyString(candidate.mediaType)
+    && isNonEmptyString(candidate.fileName)
+    && typeof candidate.duration === 'number'
+    && Number.isFinite(candidate.duration);
+}
+
+function buildTimelineBaseItem(params: {
+  media: MediaMetadata;
+  mediaId: string;
+  label: string;
+  trackId: string;
+  from: number;
+  durationInFrames: number;
+  timelineFps: number;
+}): TimelineBaseItem {
+  const { media, mediaId, label, trackId, from, durationInFrames, timelineFps } = params;
+  const sourceFps = media.fps || timelineFps;
+  const actualSourceDurationFrames = Math.round(media.duration * sourceFps);
+  const sourceFramesForItemDuration = Math.min(
+    actualSourceDurationFrames,
+    Math.round(durationInFrames * sourceFps / timelineFps)
+  );
+
+  return {
+    id: crypto.randomUUID(),
+    trackId,
+    from,
+    durationInFrames,
+    label,
+    mediaId,
+    originId: crypto.randomUUID(),
+    sourceStart: 0,
+    sourceEnd: sourceFramesForItemDuration,
+    sourceDuration: actualSourceDurationFrames,
+    sourceFps,
+    trimStart: 0,
+    trimEnd: 0,
+  };
+}
+
+function buildTypedTimelineItem(params: {
+  baseItem: TimelineBaseItem;
+  mediaType: string;
+  blobUrl: string;
+  thumbnailUrl: string | null;
+  media: MediaMetadata;
+  canvasWidth: number;
+  canvasHeight: number;
+}): TimelineItemType | null {
+  const { baseItem, mediaType, blobUrl, thumbnailUrl, media, canvasWidth, canvasHeight } = params;
+
+  if (mediaType === 'video') {
+    const sourceW = media.width || canvasWidth;
+    const sourceH = media.height || canvasHeight;
+    return {
+      ...baseItem,
+      type: 'video',
+      src: blobUrl,
+      thumbnailUrl: thumbnailUrl || undefined,
+      sourceWidth: media.width || undefined,
+      sourceHeight: media.height || undefined,
+      transform: computeInitialTransform(sourceW, sourceH, canvasWidth, canvasHeight),
+    } as VideoItem;
+  }
+
+  if (mediaType === 'audio') {
+    return {
+      ...baseItem,
+      type: 'audio',
+      src: blobUrl,
+    } as AudioItem;
+  }
+
+  if (mediaType === 'image') {
+    const sourceW = media.width || canvasWidth;
+    const sourceH = media.height || canvasHeight;
+    return {
+      ...baseItem,
+      type: 'image',
+      src: blobUrl,
+      thumbnailUrl: thumbnailUrl || undefined,
+      sourceWidth: media.width || undefined,
+      sourceHeight: media.height || undefined,
+      transform: computeInitialTransform(sourceW, sourceH, canvasWidth, canvasHeight),
+    } as ImageItem;
+  }
+
+  logger.warn('Unsupported media type:', mediaType);
+  return null;
 }
 
 /**
@@ -76,6 +211,7 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
     useShallow((s) => s.transitions.filter((t) => t.trackId === track.id))
   );
   const addItem = useTimelineStore((s) => s.addItem);
+  const addItems = useTimelineStore((s) => s.addItems);
   const fps = useTimelineStore((s) => s.fps);
   const closeGapAtPosition = useTimelineStore((s) => s.closeGapAtPosition);
   const getMedia = useMediaLibraryStore((s) => s.mediaItems);
@@ -220,16 +356,23 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
 
         if (data.type === 'media-items' && data.items) {
           // Multi-item drop
+          const rawItems = Array.isArray(data.items) ? data.items : [];
+          const validItems = rawItems.filter(isValidDragMediaItem);
+          if (validItems.length !== rawItems.length) {
+            logger.warn('Skipping invalid media-items preview payload entries', {
+              invalidCount: rawItems.length - validItems.length,
+            });
+          }
           let currentPosition = Math.max(0, dropFrame);
-          const tempItems: Array<{ from: number; durationInFrames: number; trackId: string }> = [];
+          const tempItems: CollisionRect[] = [];
 
-          for (const item of data.items) {
+          for (const item of validItems) {
             const durationInFrames = Math.round(item.duration * fps);
             const itemDuration = durationInFrames > 0 ? durationInFrames : (item.mediaType === 'image' ? fps * 3 : fps);
 
             // Find collision-free position - read items from store directly to avoid subscription
             const storeItems = useTimelineStore.getState().items;
-            const itemsToCheck = [...storeItems, ...tempItems as unknown as TimelineItemType[]];
+            const itemsToCheck: CollisionRect[] = [...storeItems, ...tempItems];
             const finalPosition = findNearestAvailableSpace(currentPosition, itemDuration, track.id, itemsToCheck);
 
             if (finalPosition !== null) {
@@ -350,36 +493,34 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
 
       // Handle multi-item drop (media-items)
       if (data.type === 'media-items') {
-        const items = data.items as Array<{
-          mediaId: string;
-          mediaType: string;
-          fileName: string;
-          duration: number;
-        }>;
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const validItems = rawItems.filter(isValidDragMediaItem);
+        if (validItems.length === 0) {
+          return;
+        }
+        if (validItems.length !== rawItems.length) {
+          logger.warn('Skipping invalid media-items payload entries', {
+            invalidCount: rawItems.length - validItems.length,
+          });
+        }
 
-        // Track current position for sequential placement
         let currentPosition = Math.max(0, dropFrame);
-        // Keep track of items we're adding to include in collision detection
-        const addedItems: TimelineItemType[] = [];
+        const mediaById = new Map(getMedia.map((media) => [media.id, media]));
+        const storeItems = useTimelineStore.getState().items;
+        const reservedRanges: CollisionRect[] = [];
+        const plannedItems: PlannedDroppedMediaItem[] = [];
 
-        for (const item of items) {
-          const { mediaId, mediaType, fileName, duration } = item;
-
-          // Get media metadata from store for additional info
-          const media = getMedia.find((m) => m.id === mediaId);
+        for (const dragItem of validItems) {
+          const { mediaId, mediaType, fileName, duration } = dragItem;
+          const media = mediaById.get(mediaId);
           if (!media) {
             logger.error('Media not found:', mediaId);
             continue;
           }
 
-          // Calculate duration in frames
           const durationInFrames = Math.round(duration * fps);
           const itemDuration = durationInFrames > 0 ? durationInFrames : (mediaType === 'image' ? fps * 3 : fps);
-
-          // Find nearest available space considering both existing items and items we're adding
-          // Read items from store directly to avoid subscription
-          const storeItems = useTimelineStore.getState().items;
-          const itemsToCheck = [...storeItems, ...addedItems];
+          const itemsToCheck: CollisionRect[] = [...storeItems, ...reservedRanges];
           const finalPosition = findNearestAvailableSpace(
             currentPosition,
             itemDuration,
@@ -392,85 +533,83 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
             continue;
           }
 
-          // Get media blob URL for playback
-          const blobUrl = await mediaLibraryService.getMediaBlobUrl(mediaId);
-          if (!blobUrl) {
-            logger.error('Failed to get media blob URL for', fileName);
-            continue;
-          }
-
-          // Get thumbnail URL if available
-          const thumbnailUrl = await mediaLibraryService.getThumbnailBlobUrl(mediaId);
-
-          // Create timeline item
-          // source* fields are stored in source-native frame units.
-          const sourceFps = media.fps || fps;
-          const actualSourceDurationFrames = Math.round(media.duration * sourceFps);
-          const sourceFramesForItemDuration = Math.min(
-            actualSourceDurationFrames,
-            Math.round(itemDuration * sourceFps / fps)
-          );
-          const baseItem = {
-            id: crypto.randomUUID(),
-            trackId: track.id,
-            from: finalPosition,
-            durationInFrames: itemDuration,
-            label: fileName,
-            mediaId: mediaId,
-            originId: crypto.randomUUID(),
-            sourceStart: 0,
-            sourceEnd: sourceFramesForItemDuration,
-            sourceDuration: actualSourceDurationFrames,
-            sourceFps,
-            trimStart: 0,
-            trimEnd: 0,
-          };
-
-          let timelineItem: TimelineItemType;
-          if (mediaType === 'video') {
-            const sourceW = media.width || canvasWidth;
-            const sourceH = media.height || canvasHeight;
-            timelineItem = {
-              ...baseItem,
-              type: 'video',
-              src: blobUrl,
-              thumbnailUrl: thumbnailUrl || undefined,
-              sourceWidth: media.width || undefined,
-              sourceHeight: media.height || undefined,
-              transform: computeInitialTransform(sourceW, sourceH, canvasWidth, canvasHeight),
-            } as VideoItem;
-          } else if (mediaType === 'audio') {
-            timelineItem = {
-              ...baseItem,
-              type: 'audio',
-              src: blobUrl,
-            } as AudioItem;
-          } else if (mediaType === 'image') {
-            const sourceW = media.width || canvasWidth;
-            const sourceH = media.height || canvasHeight;
-            timelineItem = {
-              ...baseItem,
-              type: 'image',
-              src: blobUrl,
-              thumbnailUrl: thumbnailUrl || undefined,
-              sourceWidth: media.width || undefined,
-              sourceHeight: media.height || undefined,
-              transform: computeInitialTransform(sourceW, sourceH, canvasWidth, canvasHeight),
-            } as ImageItem;
-          } else {
-            logger.warn('Unsupported media type:', mediaType);
-            continue;
-          }
-
-          // Track the item for collision detection with subsequent items
-          addedItems.push(timelineItem);
-
-          // Update current position for next item (place after this one)
+          plannedItems.push({
+            dragItem,
+            media,
+            finalPosition,
+            itemDuration,
+          });
+          reservedRanges.push({ from: finalPosition, durationInFrames: itemDuration, trackId: track.id });
           currentPosition = finalPosition + itemDuration;
+        }
 
-          // Add the item to timeline
-          logger.debug('Adding item at frame:', timelineItem.from, 'which is', timelineItem.from / fps, 'seconds');
-          addItem(timelineItem);
+        if (plannedItems.length === 0) {
+          return;
+        }
+
+        const resolvedTimelineItems = await mapWithConcurrency(
+          plannedItems,
+          MULTI_DROP_METADATA_CONCURRENCY,
+          async (planned): Promise<TimelineItemType | null> => {
+            const { dragItem, media, finalPosition, itemDuration } = planned;
+            const needsThumbnail = dragItem.mediaType === 'video' || dragItem.mediaType === 'image';
+            const [blobUrl, thumbnailUrl] = await Promise.all([
+              resolveMediaUrl(dragItem.mediaId),
+              needsThumbnail
+                ? mediaLibraryService.getThumbnailBlobUrl(dragItem.mediaId)
+                : Promise.resolve(null),
+            ]);
+
+            if (!blobUrl) {
+              logger.error('Failed to get media blob URL for', dragItem.fileName);
+              return null;
+            }
+
+            const baseItem = buildTimelineBaseItem({
+              media,
+              mediaId: dragItem.mediaId,
+              label: dragItem.fileName,
+              trackId: track.id,
+              from: finalPosition,
+              durationInFrames: itemDuration,
+              timelineFps: fps,
+            });
+            return buildTypedTimelineItem({
+              baseItem,
+              mediaType: dragItem.mediaType,
+              blobUrl,
+              thumbnailUrl,
+              media,
+              canvasWidth,
+              canvasHeight,
+            });
+          }
+        );
+
+        const timelineItemsToAdd = resolvedTimelineItems.filter(
+          (timelineItem): timelineItem is TimelineItemType => timelineItem !== null
+        );
+        const resolvedCount = timelineItemsToAdd.length;
+
+        if (resolvedCount === 0 && plannedItems.length > 0) {
+          logger.error('Failed to resolve URLs for all dropped media items', {
+            plannedCount: plannedItems.length,
+          });
+          toast.error('Unable to add dropped media items');
+          return;
+        }
+
+        if (resolvedCount < plannedItems.length) {
+          const failedCount = plannedItems.length - resolvedCount;
+          logger.warn('Some dropped media items could not be resolved', {
+            plannedCount: plannedItems.length,
+            resolvedCount,
+          });
+          toast.warning(`Some dropped media items could not be added: ${failedCount} failed`);
+        }
+
+        if (resolvedCount > 0) {
+          addItems(timelineItemsToAdd);
         }
         return;
       }
@@ -525,73 +664,39 @@ export const TimelineTrack = memo(function TimelineTrack({ track }: TimelineTrac
         calculatedSeconds: offsetX / 100,
       });
 
-      const blobUrl = await mediaLibraryService.getMediaBlobUrl(mediaId);
+      const blobUrl = await resolveMediaUrl(mediaId);
       if (!blobUrl) {
         logger.error('Failed to get media blob URL');
         return;
       }
 
       // Get thumbnail URL if available
-      const thumbnailUrl = await mediaLibraryService.getThumbnailBlobUrl(mediaId);
+      const needsThumbnail = mediaType === 'video' || mediaType === 'image';
+      const thumbnailUrl = needsThumbnail
+        ? await mediaLibraryService.getThumbnailBlobUrl(mediaId)
+        : null;
 
       // Create timeline item at the collision-free position.
       // source* fields are stored in source-native frame units.
-      const sourceFps = media.fps || fps;
-      const actualSourceDurationFrames = Math.round(media.duration * sourceFps);
-      const sourceFramesForItemDuration = Math.min(
-        actualSourceDurationFrames,
-        Math.round(itemDuration * sourceFps / fps)
-      );
-      let timelineItem: TimelineItemType;
-      const baseItem = {
-        id: crypto.randomUUID(),
+      const baseItem = buildTimelineBaseItem({
+        media,
+        mediaId,
+        label: fileName,
         trackId: track.id,
         from: finalPosition,
         durationInFrames: itemDuration,
-        label: fileName,
-        mediaId: mediaId,
-        originId: crypto.randomUUID(), // Unique origin for stable React keys
-        // Initialize trim/source properties for new items
-        sourceStart: 0,
-        sourceEnd: sourceFramesForItemDuration,
-        sourceDuration: actualSourceDurationFrames,
-        sourceFps,
-        trimStart: 0,
-        trimEnd: 0,
-      };
-
-      if (mediaType === 'video') {
-        const sourceW = media.width || canvasWidth;
-        const sourceH = media.height || canvasHeight;
-        timelineItem = {
-          ...baseItem,
-          type: 'video',
-          src: blobUrl,
-          thumbnailUrl: thumbnailUrl || undefined,
-          sourceWidth: media.width || undefined,
-          sourceHeight: media.height || undefined,
-          transform: computeInitialTransform(sourceW, sourceH, canvasWidth, canvasHeight),
-        } as VideoItem;
-      } else if (mediaType === 'audio') {
-        timelineItem = {
-          ...baseItem,
-          type: 'audio',
-          src: blobUrl,
-        } as AudioItem;
-      } else if (mediaType === 'image') {
-        const sourceW = media.width || canvasWidth;
-        const sourceH = media.height || canvasHeight;
-        timelineItem = {
-          ...baseItem,
-          type: 'image',
-          src: blobUrl,
-          thumbnailUrl: thumbnailUrl || undefined,
-          sourceWidth: media.width || undefined,
-          sourceHeight: media.height || undefined,
-          transform: computeInitialTransform(sourceW, sourceH, canvasWidth, canvasHeight),
-        } as ImageItem;
-      } else {
-        logger.warn('Unsupported media type:', mediaType);
+        timelineFps: fps,
+      });
+      const timelineItem = buildTypedTimelineItem({
+        baseItem,
+        mediaType,
+        blobUrl,
+        thumbnailUrl,
+        media,
+        canvasWidth,
+        canvasHeight,
+      });
+      if (!timelineItem) {
         return;
       }
 
