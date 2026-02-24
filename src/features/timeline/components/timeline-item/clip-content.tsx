@@ -15,6 +15,8 @@ interface ClipContentProps {
   clipWidth: number;
   fps: number;
   isClipVisible: boolean;
+  visibleStartRatio?: number;
+  visibleEndRatio?: number;
   pixelsPerSecond: number;
   preferImmediateRendering?: boolean;
 }
@@ -33,6 +35,8 @@ export const ClipContent = memo(function ClipContent({
   clipWidth,
   fps,
   isClipVisible,
+  visibleStartRatio = 0,
+  visibleEndRatio = 1,
   pixelsPerSecond,
   preferImmediateRendering = false,
 }: ClipContentProps) {
@@ -44,7 +48,7 @@ export const ClipContent = memo(function ClipContent({
   const compTopVideoMediaId = useCompositionsStore(
     useCallback((s) => {
       if (!compositionId) return null;
-      const comp = s.compositions.find((c) => c.id === compositionId);
+      const comp = s.compositionById[compositionId];
       if (!comp) return null;
       const trackOrderMap = new Map(comp.tracks.map((t) => [t.id, t.order ?? 0]));
       let topMediaId: string | null = null;
@@ -69,14 +73,14 @@ export const ClipContent = memo(function ClipContent({
   const sourceFps = useMediaLibraryStore(
     useCallback((s) => {
       if (!effectiveMediaId) return fps;
-      const media = s.mediaItems.find((m) => m.id === effectiveMediaId);
+      const media = s.mediaById[effectiveMediaId];
       return media?.fps || fps;
     }, [effectiveMediaId, fps])
   );
   const mediaDuration = useMediaLibraryStore(
     useCallback((s) => {
       if (!effectiveMediaId) return 0;
-      const media = s.mediaItems.find((m) => m.id === effectiveMediaId);
+      const media = s.mediaById[effectiveMediaId];
       return media?.duration || 0;
     }, [effectiveMediaId])
   );
@@ -117,6 +121,8 @@ export const ClipContent = memo(function ClipContent({
               speed={speed}
               fps={fps}
               isVisible={isClipVisible}
+              visibleStartRatio={visibleStartRatio}
+              visibleEndRatio={visibleEndRatio}
               pixelsPerSecond={pixelsPerSecond}
               preferImmediateRendering={preferImmediateRendering}
             />
@@ -209,6 +215,8 @@ export const ClipContent = memo(function ClipContent({
                 speed={1}
                 fps={fps}
                 isVisible={isClipVisible}
+                visibleStartRatio={visibleStartRatio}
+                visibleEndRatio={visibleEndRatio}
                 pixelsPerSecond={pixelsPerSecond}
                 preferImmediateRendering={preferImmediateRendering}
               />

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import type { MediaMetadata } from '@/types/storage';
 import { mediaLibraryService } from '../services/media-library-service';
 import { getMediaType, formatDuration } from '../utils/validation';
+import { getSharedProxyKey } from '../utils/proxy-key';
 import { useMediaLibraryStore } from '../stores/media-library-store';
 import { setMediaDragData, clearMediaDragData } from '../utils/drag-data-cache';
 import { proxyService } from '../services/proxy-service';
@@ -36,7 +37,12 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
 
   const mediaType = getMediaType(media.mimeType);
   const isImporting = importingIds.includes(media.id);
-  const canGenerateProxy = proxyService.needsProxy(media.width, media.height, media.mimeType);
+  const canGenerateProxy = proxyService.needsProxy(
+    media.width,
+    media.height,
+    media.mimeType,
+    media.audioCodec
+  );
   const hasProxy = proxyStatus === 'ready';
 
   // Load thumbnail on mount and when thumbnailId changes (e.g. after regeneration)
@@ -69,7 +75,9 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
     try {
       const blobUrl = await mediaLibraryService.getMediaBlobUrl(media.id);
       if (blobUrl) {
-        proxyService.generateProxy(media.id, blobUrl, media.width, media.height);
+        const proxyKey = getSharedProxyKey(media);
+        proxyService.setProxyKey(media.id, proxyKey);
+        proxyService.generateProxy(media.id, blobUrl, media.width, media.height, proxyKey);
       }
     } catch {
       useMediaLibraryStore.getState().setProxyStatus(media.id, 'error');
@@ -80,8 +88,16 @@ export function MediaCard({ media, selected = false, isBroken = false, onSelect,
     e.preventDefault();
     e.stopPropagation();
     try {
-      await proxyService.deleteProxy(media.id);
-      useMediaLibraryStore.getState().clearProxyStatus(media.id);
+      const sharedProxyKey = getSharedProxyKey(media);
+      await proxyService.deleteProxy(media.id, sharedProxyKey);
+
+      const store = useMediaLibraryStore.getState();
+      for (const item of store.mediaItems) {
+        if (item.mimeType.startsWith('video/') && getSharedProxyKey(item) === sharedProxyKey) {
+          store.clearProxyStatus(item.id);
+          proxyService.clearProxyKey(item.id);
+        }
+      }
     } catch {
       useMediaLibraryStore.getState().setProxyStatus(media.id, 'error');
     }

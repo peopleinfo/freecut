@@ -36,7 +36,7 @@ import {
 import { renderShape } from './canvas-shapes';
 import { gifFrameCache, type CachedGifFrames } from '../../timeline/services/gif-frame-cache';
 import type { CanvasPool, TextMeasurementCache } from './canvas-pool';
-import type { VideoFrameExtractor } from './canvas-video-extractor';
+import type { VideoFrameSource } from './shared-video-extractor';
 
 const log = createLogger('CanvasItemRenderer');
 
@@ -96,13 +96,15 @@ export interface ItemRenderContext {
   canvasSettings: CanvasSettings;
   canvasPool: CanvasPool;
   textMeasureCache: TextMeasurementCache;
+  renderMode: 'export' | 'preview';
 
   // Video state
-  videoExtractors: Map<string, VideoFrameExtractor>;
+  videoExtractors: Map<string, VideoFrameSource>;
   videoElements: Map<string, HTMLVideoElement>;
   useMediabunny: Set<string>;
   mediabunnyDisabledItems: Set<string>;
   mediabunnyFailureCountByItem: Map<string, number>;
+  ensureVideoItemReady?: (itemId: string) => Promise<boolean>;
 
   // Image / GIF state
   imageElements: Map<string, WorkerLoadedImage>;
@@ -216,6 +218,9 @@ async function renderVideoItem(
   sourceFrameOffset: number = 0,
 ): Promise<void> {
   const { fps, videoExtractors, videoElements, useMediabunny, mediabunnyDisabledItems, mediabunnyFailureCountByItem, canvasSettings } = rctx;
+  const isPreviewMode = rctx.renderMode === 'preview';
+  const allowVideoElementFallback = !isPreviewMode;
+  let mediabunnyFailedThisFrame = false;
 
   // Calculate source time
   const localFrame = frame - item.from;
@@ -228,6 +233,19 @@ async function renderVideoItem(
   // sourceStart is in source-native FPS frames, so divide by sourceFps (not project fps)
   const adjustedSourceStart = sourceStart + sourceFrameOffset;
   const sourceTime = adjustedSourceStart / sourceFps + localTime * speed;
+
+  if (
+    isPreviewMode
+    && !useMediabunny.has(item.id)
+    && !mediabunnyDisabledItems.has(item.id)
+    && rctx.ensureVideoItemReady
+  ) {
+    try {
+      await rctx.ensureVideoItemReady(item.id);
+    } catch {
+      // Best effort in preview path; fallback behavior handled below.
+    }
+  }
 
   // === TRY MEDIABUNNY FIRST (fast, precise frame access) ===
   // With the overlap model, source times are always valid during transitions
@@ -262,6 +280,7 @@ async function renderVideoItem(
         mediabunnyFailureCountByItem.set(item.id, 0);
         return;
       }
+      mediabunnyFailedThisFrame = true;
 
       // Distinguish transient misses from decode failures.
       const failureKind = extractor.getLastFailureKind();
@@ -296,6 +315,12 @@ async function renderVideoItem(
   }
 
   // === FALLBACK TO HTML5 VIDEO ELEMENT (slower, seeks required) ===
+  const allowPreviewFallback = isPreviewMode
+    && (mediabunnyFailedThisFrame || !useMediabunny.has(item.id) || mediabunnyDisabledItems.has(item.id));
+  if (!allowVideoElementFallback && !allowPreviewFallback) {
+    return;
+  }
+
   const video = videoElements.get(item.id);
   if (!video) {
     log.warn('Video element not found', { itemId: item.id, frame });
@@ -304,29 +329,33 @@ async function renderVideoItem(
 
   const clampedTime = Math.max(0, Math.min(sourceTime, video.duration - 0.01));
 
-  const SEEK_TOLERANCE = 0.034;
-  const SEEK_TIMEOUT = 150;
-  const READY_TIMEOUT = 300;
+  const SEEK_TOLERANCE = isPreviewMode ? 0.05 : 0.034;
+  const SEEK_TIMEOUT = isPreviewMode ? 24 : 150;
+  const READY_TIMEOUT = isPreviewMode ? 40 : 300;
 
   const needsSeek = Math.abs(video.currentTime - clampedTime) > SEEK_TOLERANCE;
   if (needsSeek) {
     video.currentTime = clampedTime;
 
-    await new Promise<void>((resolve) => {
-      const onSeeked = () => {
-        video.removeEventListener('seeked', onSeeked);
-        resolve();
-      };
-      video.addEventListener('seeked', onSeeked);
-      setTimeout(() => {
-        video.removeEventListener('seeked', onSeeked);
-        resolve();
-      }, SEEK_TIMEOUT);
-    });
+    if (!isPreviewMode) {
+      await new Promise<void>((resolve) => {
+        const onSeeked = () => {
+          video.removeEventListener('seeked', onSeeked);
+          resolve();
+        };
+        video.addEventListener('seeked', onSeeked);
+        setTimeout(() => {
+          video.removeEventListener('seeked', onSeeked);
+          resolve();
+        }, SEEK_TIMEOUT);
+      });
+    }
   }
 
   // Wait for video to have enough data to draw
   if (video.readyState < 2) {
+    if (isPreviewMode) return;
+
     await new Promise<void>((resolve) => {
       const checkReady = () => {
         if (video.readyState >= 2) {

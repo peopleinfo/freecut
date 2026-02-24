@@ -41,6 +41,7 @@ import { useProjectStore } from '@/features/projects/stores/project-store';
 import { proxyService } from '../services/proxy-service';
 import { mediaLibraryService } from '../services/media-library-service';
 import { validateMediaFile } from '../utils/validation';
+import { getSharedProxyKey } from '../utils/proxy-key';
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -95,6 +96,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
   const setViewMode = useMediaLibraryStore((s) => s.setViewMode);
   const selectedMediaIds = useMediaLibraryStore((s) => s.selectedMediaIds);
   const mediaItems = useMediaLibraryStore((s) => s.mediaItems);
+  const mediaById = useMediaLibraryStore((s) => s.mediaById);
   const clearSelection = useMediaLibraryStore((s) => s.clearSelection);
   const error = useMediaLibraryStore((s) => s.error);
   const errorLink = useMediaLibraryStore((s) => s.errorLink);
@@ -154,8 +156,8 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
   // Resolve the selected media item for the info panel (single selection only)
   const selectedMediaForInfo = useMemo(() => {
     if (selectedMediaIds.length !== 1 || infoPanelDismissed) return null;
-    return mediaItems.find((m) => m.id === selectedMediaIds[0]) ?? null;
-  }, [selectedMediaIds, mediaItems, infoPanelDismissed]);
+    return mediaById[selectedMediaIds[0]!] ?? null;
+  }, [selectedMediaIds, mediaById, infoPanelDismissed]);
 
   // Track focus and clear selection when clicking outside the media library
   useEffect(() => {
@@ -351,10 +353,10 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
 
   const handleGenerateSelectedProxies = async () => {
     const selectedItems = selectedMediaIds
-      .map((id) => mediaItems.find((m) => m.id === id))
+      .map((id) => mediaById[id])
       .filter((m): m is typeof mediaItems[number] =>
         m !== undefined
-        && proxyService.needsProxy(m.width, m.height, m.mimeType)
+        && proxyService.needsProxy(m.width, m.height, m.mimeType, m.audioCodec)
         && proxyStatus.get(m.id) !== 'ready'
         && proxyStatus.get(m.id) !== 'generating'
       );
@@ -364,7 +366,9 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
     selectedItems.forEach((item, i) => {
       const blobUrl = urls[i];
       if (blobUrl) {
-        proxyService.generateProxy(item.id, blobUrl, item.width, item.height);
+        const proxyKey = getSharedProxyKey(item);
+        proxyService.setProxyKey(item.id, proxyKey);
+        proxyService.generateProxy(item.id, blobUrl, item.width, item.height, proxyKey);
       }
     });
   };
@@ -372,13 +376,13 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
   // Count selected items that are eligible for proxy generation
   const selectedProxyEligibleCount = useMemo(() => {
     return selectedMediaIds.filter((id) => {
-      const m = mediaItems.find((item) => item.id === id);
+      const m = mediaById[id];
       return m
-        && proxyService.needsProxy(m.width, m.height, m.mimeType)
+        && proxyService.needsProxy(m.width, m.height, m.mimeType, m.audioCodec)
         && proxyStatus.get(id) !== 'ready'
         && proxyStatus.get(id) !== 'generating';
     }).length;
-  }, [selectedMediaIds, mediaItems, proxyStatus]);
+  }, [selectedMediaIds, mediaById, proxyStatus]);
 
   // Find timeline items that reference the media being deleted (for batch delete from selection)
   // Read from store directly to avoid subscribing to items array

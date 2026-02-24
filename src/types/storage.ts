@@ -28,6 +28,11 @@ export interface MediaMetadata {
    * Only computed when needed for dedup checks
    */
   contentHash?: string;
+  /**
+   * Last modified timestamp from source file (File.lastModified).
+   * Used as part of source identity for shared proxy reuse.
+   */
+  fileLastModified?: number;
   fileName: string;
   fileSize: number;
   mimeType: string;
@@ -130,7 +135,7 @@ export interface WaveformBin {
 
 export type WaveformRecord = WaveformData | WaveformMeta | WaveformBin;
 
-// Decoded preview audio for AC-3/E-AC-3 codecs (persisted across refresh)
+// Decoded preview audio for custom-decoded codecs (persisted across refresh)
 // Stored as 30-second bins (Int16 @ 22050 Hz stereo ≈ 2.5 MB/bin)
 
 export interface DecodedPreviewAudioMeta {
@@ -152,6 +157,7 @@ export interface DecodedPreviewAudioBin {
   left: ArrayBuffer; // Int16 PCM
   right: ArrayBuffer; // Int16 PCM
   frames: number; // Actual frame count (last bin may be shorter)
+  sampleRate?: number; // Stored sample rate (may differ from STORAGE_SAMPLE_RATE for low-rate sources)
   createdAt?: number;
 }
 

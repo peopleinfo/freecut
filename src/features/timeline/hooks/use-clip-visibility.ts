@@ -1,45 +1,94 @@
-import { useEffect, useState, useRef, RefObject } from 'react';
+import { useEffect, useState } from 'react';
+import { useTimelineViewportStore } from '../stores/timeline-viewport-store';
+
+const PREFETCH_MARGIN_PX = 200;
+const RATIO_EPSILON = 0.002;
+
+export interface ClipVisibilityState {
+  isVisible: boolean;
+  visibleStartRatio: number;
+  visibleEndRatio: number;
+}
 
 /**
- * Hook to detect when a timeline clip becomes visible using IntersectionObserver
- *
- * Uses the timeline-container as the root element and adds 200px margin
- * for prefetching content before it becomes visible.
+ * Hook to detect when a timeline clip is visible in the shared timeline viewport.
+ * Uses clip geometry in timeline-content coordinates (left/width) and avoids
+ * per-clip scroll listeners/observers.
  */
-export function useClipVisibility(clipRef: RefObject<HTMLElement | null>): boolean {
-  const [isVisible, setIsVisible] = useState(false);
-  const observerRef = useRef<IntersectionObserver | null>(null);
+export function useClipVisibility(
+  clipLeftPx: number,
+  clipWidthPx: number
+): ClipVisibilityState {
+  const [visibility, setVisibility] = useState<ClipVisibilityState>(() => {
+    const viewport = useTimelineViewportStore.getState();
+    return computeVisibility(viewport, clipLeftPx, clipWidthPx);
+  });
 
   useEffect(() => {
-    const element = clipRef.current;
-    if (!element) return;
-
-    // Find the timeline container as the root
-    const timelineContainer = element.closest('.timeline-container');
-
-    // Create observer with margin for prefetching
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        // We only observe one element, so take the first entry
-        const entry = entries[0];
-        if (entry) {
-          setIsVisible(entry.isIntersecting);
+    const apply = (viewport: TimelineViewportSnapshot) => {
+      const next = computeVisibility(viewport, clipLeftPx, clipWidthPx);
+      setVisibility((prev) => {
+        if (
+          prev.isVisible === next.isVisible
+          && Math.abs(prev.visibleStartRatio - next.visibleStartRatio) < RATIO_EPSILON
+          && Math.abs(prev.visibleEndRatio - next.visibleEndRatio) < RATIO_EPSILON
+        ) {
+          return prev;
         }
-      },
-      {
-        root: timelineContainer || null, // Use viewport if container not found
-        rootMargin: '0px 200px', // 200px horizontal margin for prefetching
-        threshold: 0, // Trigger as soon as any part is visible
-      }
-    );
-
-    observerRef.current.observe(element);
-
-    return () => {
-      observerRef.current?.disconnect();
-      observerRef.current = null;
+        return next;
+      });
     };
-  }, [clipRef]);
 
-  return isVisible;
+    apply(useTimelineViewportStore.getState());
+    const unsubscribe = useTimelineViewportStore.subscribe(apply);
+    return unsubscribe;
+  }, [clipLeftPx, clipWidthPx]);
+
+  return visibility;
+}
+
+interface TimelineViewportSnapshot {
+  scrollLeft: number;
+  scrollTop: number;
+  viewportWidth: number;
+  viewportHeight: number;
+}
+
+function computeVisibility(
+  viewport: TimelineViewportSnapshot,
+  clipLeftPx: number,
+  clipWidthPx: number
+): ClipVisibilityState {
+  if (clipWidthPx <= 0 || viewport.viewportWidth <= 0) {
+    return {
+      isVisible: false,
+      visibleStartRatio: 0,
+      visibleEndRatio: 1,
+    };
+  }
+
+  const viewLeft = viewport.scrollLeft - PREFETCH_MARGIN_PX;
+  const viewRight = viewport.scrollLeft + viewport.viewportWidth + PREFETCH_MARGIN_PX;
+  const clipRightPx = clipLeftPx + clipWidthPx;
+
+  const overlapLeft = Math.max(clipLeftPx, viewLeft);
+  const overlapRight = Math.min(clipRightPx, viewRight);
+  const isVisible = overlapRight > overlapLeft;
+
+  if (!isVisible) {
+    return {
+      isVisible: false,
+      visibleStartRatio: 0,
+      visibleEndRatio: 1,
+    };
+  }
+
+  const startRatio = Math.max(0, Math.min(1, (overlapLeft - clipLeftPx) / clipWidthPx));
+  const endRatio = Math.max(startRatio, Math.min(1, (overlapRight - clipLeftPx) / clipWidthPx));
+
+  return {
+    isVisible: true,
+    visibleStartRatio: startRatio,
+    visibleEndRatio: endRatio,
+  };
 }
