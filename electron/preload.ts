@@ -43,6 +43,10 @@ contextBridge.exposeInMainWorld("opencut", {
     showItemInFolder: (fullPath: string): Promise<void> =>
       ipcRenderer.invoke("shell:showItemInFolder", fullPath),
   },
+  fs: {
+    writeFile: (filePath: string, data: ArrayBuffer): Promise<boolean> =>
+      ipcRenderer.invoke("fs:writeFile", filePath, data),
+  },
   ffmpeg: {
     check: (): Promise<{
       available: boolean;
@@ -69,6 +73,8 @@ contextBridge.exposeInMainWorld("opencut", {
     export: (options: {
       inputPath: string;
       outputPath: string;
+      startTimeSeconds?: number;
+      durationSeconds?: number;
       width?: number;
       height?: number;
       fps?: number;

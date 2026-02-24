@@ -11,10 +11,13 @@
  *   - shell:openExternal, shell:showItemInFolder
  */
 
-import { type BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import { registerFFmpegHandlers } from './ffmpeg';
+import { type BrowserWindow, dialog, ipcMain, shell } from "electron";
+import fs from "node:fs";
+import { registerFFmpegHandlers } from "./ffmpeg";
 
-export function registerCutHandlers(getMainWindow: () => BrowserWindow | null): void {
+export function registerCutHandlers(
+  getMainWindow: () => BrowserWindow | null,
+): void {
   // Register FFmpeg IPC handlers
   registerFFmpegHandlers();
 
@@ -22,7 +25,7 @@ export function registerCutHandlers(getMainWindow: () => BrowserWindow | null): 
   // Only register if not already registered by the MMO app
   try {
     ipcMain.handle(
-      'dialog:saveFile',
+      "dialog:saveFile",
       async (
         _event,
         options?: {
@@ -35,12 +38,12 @@ export function registerCutHandlers(getMainWindow: () => BrowserWindow | null): 
         if (!mainWindow) return null;
 
         const result = await dialog.showSaveDialog(mainWindow, {
-          title: options?.title || 'Export Video',
+          title: options?.title || "Export Video",
           defaultPath: options?.defaultPath,
           filters: options?.filters || [
-            { name: 'MP4 Video', extensions: ['mp4'] },
-            { name: 'WebM Video', extensions: ['webm'] },
-            { name: 'All Files', extensions: ['*'] },
+            { name: "MP4 Video", extensions: ["mp4"] },
+            { name: "WebM Video", extensions: ["webm"] },
+            { name: "All Files", extensions: ["*"] },
           ],
         });
 
@@ -48,16 +51,37 @@ export function registerCutHandlers(getMainWindow: () => BrowserWindow | null): 
         return result.filePath;
       },
     );
-  } catch {}
+  } catch (err) {
+    console.warn("Failed to register dialog:saveFile", err);
+  }
 
   // ============ Shell handlers (shared, register safely) ============
   try {
-    ipcMain.handle('shell:openExternal', (_event, url: string) => shell.openExternal(url));
-  } catch {}
+    ipcMain.handle("shell:openExternal", (_event, url: string) =>
+      shell.openExternal(url),
+    );
+  } catch (err) {
+    console.warn("Failed to register shell:openExternal", err);
+  }
 
   try {
-    ipcMain.handle('shell:showItemInFolder', (_event, fullPath: string) =>
+    ipcMain.handle("shell:showItemInFolder", (_event, fullPath: string) =>
       shell.showItemInFolder(fullPath),
     );
-  } catch {}
+  } catch (err) {
+    console.warn("Failed to register shell:showItemInFolder", err);
+  }
+
+  // ============ File System handlers ============
+  try {
+    ipcMain.handle(
+      "fs:writeFile",
+      async (_event, filePath: string, data: ArrayBuffer) => {
+        fs.writeFileSync(filePath, Buffer.from(data));
+        return true;
+      },
+    );
+  } catch (err) {
+    console.error(err);
+  }
 }

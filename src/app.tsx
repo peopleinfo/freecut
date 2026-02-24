@@ -1,14 +1,24 @@
-import { useEffect } from 'react';
-import { RouterProvider, createRouter } from '@tanstack/react-router';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { GlobalTooltip } from '@/components/ui/global-tooltip';
-import { Toaster } from '@/components/ui/sonner';
-import { ErrorBoundary } from '@/components/error-boundary';
-import { routeTree } from './routeTree.gen';
+import { useEffect } from "react";
+import {
+  RouterProvider,
+  createRouter,
+  createHashHistory,
+} from "@tanstack/react-router";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { GlobalTooltip } from "@/components/ui/global-tooltip";
+import { Toaster } from "@/components/ui/sonner";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { routeTree } from "./routeTree.gen";
 
-const router = createRouter({ routeTree });
+// Use hash history to ensure file:// paths in Electron do not cause "Not Found" errors
+const hashHistory = createHashHistory();
 
-declare module '@tanstack/react-router' {
+const router = createRouter({
+  routeTree,
+  history: hashHistory,
+});
+
+declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router;
   }
@@ -17,7 +27,10 @@ declare module '@tanstack/react-router' {
 export function App() {
   // Prevent default browser zoom application-wide
   useEffect(() => {
-    const wheelListenerOptions: AddEventListenerOptions = { passive: false, capture: true };
+    const wheelListenerOptions: AddEventListenerOptions = {
+      passive: false,
+      capture: true,
+    };
     const keyListenerOptions: AddEventListenerOptions = { capture: true };
 
     const preventBrowserZoom = (e: WheelEvent) => {
@@ -31,7 +44,13 @@ export function App() {
       // Prevent browser zoom shortcuts: Ctrl+=/+/-, Ctrl+0
       // Only preventDefault (blocks browser zoom), event still propagates to react-hotkeys-hook
       if (e.ctrlKey || e.metaKey) {
-        if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_' || e.key === '0') {
+        if (
+          e.key === "+" ||
+          e.key === "=" ||
+          e.key === "-" ||
+          e.key === "_" ||
+          e.key === "0"
+        ) {
           e.preventDefault();
           // DO NOT call stopPropagation() - we want react-hotkeys-hook to still receive this
         }
@@ -39,12 +58,28 @@ export function App() {
     };
 
     // Add listeners at capture phase to intercept before browser handles them
-    document.addEventListener('wheel', preventBrowserZoom, wheelListenerOptions);
-    document.addEventListener('keydown', preventKeyboardZoom, keyListenerOptions);
+    document.addEventListener(
+      "wheel",
+      preventBrowserZoom,
+      wheelListenerOptions,
+    );
+    document.addEventListener(
+      "keydown",
+      preventKeyboardZoom,
+      keyListenerOptions,
+    );
 
     return () => {
-      document.removeEventListener('wheel', preventBrowserZoom, wheelListenerOptions);
-      document.removeEventListener('keydown', preventKeyboardZoom, keyListenerOptions);
+      document.removeEventListener(
+        "wheel",
+        preventBrowserZoom,
+        wheelListenerOptions,
+      );
+      document.removeEventListener(
+        "keydown",
+        preventKeyboardZoom,
+        keyListenerOptions,
+      );
     };
   }, []);
 

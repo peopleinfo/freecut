@@ -1,7 +1,18 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow } from "electron";
 import { registerCutHandlers } from "./handlers/cut";
+
+// Hardware acceleration and GPU optimization
+app.commandLine.appendSwitch(
+  "enable-features",
+  "SharedArrayBuffer,WebCodecs,WebGPU",
+);
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
+app.commandLine.appendSwitch("enable-gpu-rasterization");
+app.commandLine.appendSwitch("enable-zero-copy");
+app.commandLine.appendSwitch("disable-software-rasterizer");
+app.commandLine.appendSwitch("enable-hardware-overlays");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,7 +34,7 @@ const createWindow = () => {
     height: 860,
     minWidth: 1024,
     minHeight: 720,
-    icon: path.join(process.env.VITE_PUBLIC, "favicon.ico"),
+    icon: path.join(process.env.VITE_PUBLIC as string, "favicon.ico"),
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
       contextIsolation: true,
@@ -34,7 +45,7 @@ const createWindow = () => {
   mainWindow.maximize();
 
   if (VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(VITE_DEV_SERVER_URL);
+    mainWindow.loadURL(VITE_DEV_SERVER_URL as string);
     mainWindow.webContents.openDevTools({ mode: "right" });
   } else {
     mainWindow.loadFile(path.join(RENDERER_DIST, "index.html"));
