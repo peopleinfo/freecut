@@ -3,6 +3,8 @@ import { useShallow } from 'zustand/react/shallow';
 
 // Stores and selectors
 import { useTimelineStore } from '../stores/timeline-store';
+import { useItemsStore } from '../stores/items-store';
+import { useTimelineViewportStore } from '../stores/timeline-viewport-store';
 import { useTimelineZoom } from '../hooks/use-timeline-zoom';
 import { registerZoomTo100 } from '../stores/zoom-store';
 import { usePlaybackStore } from '@/features/preview/stores/playback-store';
@@ -155,20 +157,26 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
         return;
       }
 
-      // Get the selected items - read on-demand to avoid subscription
-      const items = useTimelineStore.getState().items;
-      const selectedItems = items.filter(item => selectedItemIds.includes(item.id));
-      if (selectedItems.length === 0) {
+      // Read selected items by ID map to avoid O(n) scan per playback tick.
+      const itemById = useItemsStore.getState().itemById;
+      let hasExistingSelection = false;
+      let isWithinSelectedItems = false;
+      for (const selectedId of selectedItemIds) {
+        const item = itemById[selectedId];
+        if (!item) continue;
+        hasExistingSelection = true;
+        const itemStart = item.from;
+        const itemEnd = item.from + item.durationInFrames;
+        if (currentFrame >= itemStart && currentFrame < itemEnd) {
+          isWithinSelectedItems = true;
+          break;
+        }
+      }
+
+      if (!hasExistingSelection) {
         prevFrame = currentFrame;
         return;
       }
-
-      // Check if playhead is still within ANY of the selected items
-      const isWithinSelectedItems = selectedItems.some(item => {
-        const itemStart = item.from;
-        const itemEnd = item.from + item.durationInFrames;
-        return currentFrame >= itemStart && currentFrame < itemEnd;
-      });
 
       // If playhead moved outside all selected items, clear selection
       if (!isWithinSelectedItems) {
@@ -200,12 +208,40 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
   const pendingScrollRef = useRef<number | null>(null); // Queued scroll to apply after render
   const lastZoomApplyTimeRef = useRef(0); // Throttle zoom updates in momentum loop
   const ZOOM_UPDATE_INTERVAL = 50; // Match store throttle - update at most 20fps during momentum
+  const viewportSyncRafRef = useRef<number | null>(null);
+
+  const syncViewportFromContainer = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    useTimelineViewportStore.getState().setViewport({
+      scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop,
+      viewportWidth: container.clientWidth,
+      viewportHeight: container.clientHeight,
+    });
+  }, []);
+
+  const scheduleViewportSync = useCallback(() => {
+    if (viewportSyncRafRef.current !== null) return;
+    viewportSyncRafRef.current = requestAnimationFrame(() => {
+      viewportSyncRafRef.current = null;
+      syncViewportFromContainer();
+    });
+  }, [syncViewportFromContainer]);
 
   // Merge external scrollRef with internal containerRef
   const mergedRef = useCallback((node: HTMLDivElement | null) => {
     containerRef.current = node;
     if (scrollRef) {
       (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+    }
+    if (node) {
+      useTimelineViewportStore.getState().setViewport({
+        scrollLeft: node.scrollLeft,
+        scrollTop: node.scrollTop,
+        viewportWidth: node.clientWidth,
+        viewportHeight: node.clientHeight,
+      });
     }
   }, [scrollRef]);
 
@@ -214,6 +250,7 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
     const updateWidth = () => {
       if (containerRef.current) {
         setContainerWidth(containerRef.current.clientWidth);
+        syncViewportFromContainer();
       }
     };
 
@@ -228,9 +265,13 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
 
     return () => {
       cancelIdleCallback(idleId);
+      if (viewportSyncRafRef.current !== null) {
+        cancelAnimationFrame(viewportSyncRafRef.current);
+        viewportSyncRafRef.current = null;
+      }
       window.removeEventListener('resize', updateWidth);
     };
-  }, []);
+  }, [syncViewportFromContainer]);
 
   // Also remeasure when timeline content changes (might resize)
   useEffect(() => {
@@ -239,8 +280,9 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
       if (width > 0 && width !== containerWidth) {
         setContainerWidth(width);
       }
+      syncViewportFromContainer();
     }
-  }, [furthestItemEndFrame, containerWidth]); // Depends on content end, not full items array
+  }, [furthestItemEndFrame, containerWidth, syncViewportFromContainer]); // Depends on content end, not full items array
 
   // Track scroll position with coalesced updates for viewport culling
   // Throttle at 50ms to match zoom throttle rate - prevents width jitter during zoom+scroll
@@ -255,6 +297,7 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
 
     const handleScroll = () => {
       scrollLeftRef.current = container.scrollLeft;
+      scheduleViewportSync();
 
       // Coalesce scroll updates at same rate as zoom throttle
       if (scrollUpdateTimeoutRef.current === null) {
@@ -273,8 +316,12 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
       if (scrollUpdateTimeoutRef.current !== null) {
         clearTimeout(scrollUpdateTimeoutRef.current);
       }
+      if (viewportSyncRafRef.current !== null) {
+        cancelAnimationFrame(viewportSyncRafRef.current);
+        viewportSyncRafRef.current = null;
+      }
     };
-  }, [setScrollPosition]);
+  }, [setScrollPosition, scheduleViewportSync]);
 
   // Restore scroll position from store on initial mount
   const initialScrollRestored = useRef(false);
@@ -288,8 +335,9 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
       container.scrollLeft = savedScrollPosition;
       scrollLeftRef.current = savedScrollPosition;
     }
+    syncViewportFromContainer();
     initialScrollRestored.current = true;
-  }, []);
+  }, [syncViewportFromContainer]);
 
   // Apply pending scroll AFTER render when DOM has updated width
   // This ensures zoom anchor works correctly even when timeline extends beyond content
@@ -297,13 +345,14 @@ export const TimelineContent = memo(function TimelineContent({ duration, scrollR
     if (pendingScrollRef.current !== null && containerRef.current) {
       containerRef.current.scrollLeft = pendingScrollRef.current;
       pendingScrollRef.current = null;
+      syncViewportFromContainer();
     }
   });
 
   // Marquee selection - create items array for getBoundingRect lookups
   // Use derived selector for item IDs only (doesn't re-render when positions change)
   // useShallow prevents infinite loops from array reference changes
-  const itemIds = useTimelineStore(useShallow((s) => s.items.map((item) => item.id)));
+  const itemIds = useItemsStore(useShallow((s) => s.items.map((item) => item.id)));
 
   const marqueeItems = useMemo(
     () =>

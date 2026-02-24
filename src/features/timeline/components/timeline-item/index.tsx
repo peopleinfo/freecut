@@ -2,6 +2,7 @@ import { useRef, useEffect, useMemo, memo, useCallback, useState } from 'react';
 import type { TimelineItem as TimelineItemType } from '@/types/timeline';
 import { useTimelineZoomContext } from '../../contexts/timeline-zoom-context';
 import { useTimelineStore } from '../../stores/timeline-store';
+import { useItemsStore } from '../../stores/items-store';
 import { useTransitionsStore } from '../../stores/transitions-store';
 import { useTransitionResizePreviewStore } from '../../stores/transition-resize-preview-store';
 import { useRollingEditPreviewStore } from '../../stores/rolling-edit-preview-store';
@@ -90,23 +91,21 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     )
   );
 
-  // Granular selector: check if this item has keyframes and get keyframed properties
-  const itemKeyframeData = useTimelineStore(
+  // Selector returns stable item keyframe entry reference when unrelated store
+  // state updates occur, avoiding object-allocation churn in selectors.
+  const itemKeyframes = useTimelineStore(
     useCallback(
       (s) => {
-        const itemKeyframes = s.keyframes.find((k) => k.itemId === item.id);
-        if (!itemKeyframes) return { hasKeyframes: false, properties: [] };
-        const propertiesWithKeyframes = itemKeyframes.properties.filter((p) => p.keyframes.length > 0);
-        return {
-          hasKeyframes: propertiesWithKeyframes.length > 0,
-          properties: propertiesWithKeyframes,
-        };
+        return s.keyframes.find((k) => k.itemId === item.id) ?? null;
       },
       [item.id]
     )
   );
-  const hasKeyframes = itemKeyframeData.hasKeyframes;
-  const keyframedProperties = itemKeyframeData.properties;
+  const keyframedProperties = useMemo(
+    () => itemKeyframes?.properties.filter((p) => p.keyframes.length > 0) ?? [],
+    [itemKeyframes]
+  );
+  const hasKeyframes = keyframedProperties.length > 0;
 
   // Granular selector: sub-composition duration for trim clamping on composition items
   const compositionId = item.type === 'composition' ? item.compositionId : undefined;
@@ -114,7 +113,7 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     useCallback(
       (s) => {
         if (!compositionId) return null;
-        return s.compositions.find((c) => c.id === compositionId)?.durationInFrames ?? null;
+        return s.compositionById[compositionId]?.durationInFrames ?? null;
       },
       [compositionId]
     )
@@ -320,9 +319,6 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   const isAltDrag = dragParticipationRef.current === 2;
   const isPartOfDrag = isPartOfMultiDrag && !isDragging;
 
-  // Visibility detection for lazy filmstrip loading
-  const isClipVisible = useClipVisibility(transformRef);
-
   // Disable transition when anchor item drag ends to avoid animation
   useEffect(() => {
     if (wasDraggingRef.current && !isDragging && transformRef.current) {
@@ -352,11 +348,14 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   // Get FPS for frame-to-time conversion
   const fps = useTimelineStore((s) => s.fps);
 
-  // Compute overlap hidden at the clip's tail (this clip is the LEFT clip in a transition).
-  // In the overlap model, the right clip slides left by D frames, creating physical overlap.
-  // We split the visual trim equally: D/2 from the left clip's right edge, D/2 from the
-  // right clip's left edge. This centers the visual junction at the overlap midpoint (FCP-style).
-  const transitions = useTransitionsStore((s) => s.transitions);
+  // Committed transition overlap for this item (store-indexed lookup).
+  // right: this item is LEFT in a transition, left: this item is RIGHT.
+  const committedOverlapRight = useTransitionsStore(
+    useCallback((s) => s.transitionOverlapByItemId[item.id]?.right ?? 0, [item.id])
+  );
+  const committedOverlapLeft = useTransitionsStore(
+    useCallback((s) => s.transitionOverlapByItemId[item.id]?.left ?? 0, [item.id])
+  );
 
   // Smart per-concern selectors for transition resize preview.
   // Return primitives so unaffected clips always get 0 (stable, no re-render).
@@ -471,36 +470,24 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
   const slideRightNeighborIdForSlidItem = useSlideEditPreviewStore(
     useCallback((s) => (s.itemId === item.id ? s.rightNeighborId : null), [item.id])
   );
-  const slideLeftNeighborForSlidItem = useTimelineStore(
+  const slideLeftNeighborForSlidItem = useItemsStore(
     useCallback((s) => {
       if (!slideLeftNeighborIdForSlidItem) return null;
-      return s.items.find((i) => i.id === slideLeftNeighborIdForSlidItem) ?? null;
+      return s.itemById[slideLeftNeighborIdForSlidItem] ?? null;
     }, [slideLeftNeighborIdForSlidItem])
   );
-  const slideRightNeighborForSlidItem = useTimelineStore(
+  const slideRightNeighborForSlidItem = useItemsStore(
     useCallback((s) => {
       if (!slideRightNeighborIdForSlidItem) return null;
-      return s.items.find((i) => i.id === slideRightNeighborIdForSlidItem) ?? null;
+      return s.itemById[slideRightNeighborIdForSlidItem] ?? null;
     }, [slideRightNeighborIdForSlidItem])
   );
 
   // Merge preview + committed overlap for the right edge (this clip is LEFT in a transition)
-  const overlapRight = useMemo(() => {
-    if (previewOverlapRight > 0) return previewOverlapRight;
-    for (const t of transitions) {
-      if (t.leftClipId === item.id) return Math.ceil(t.durationInFrames / 2);
-    }
-    return 0;
-  }, [transitions, item.id, previewOverlapRight]);
+  const overlapRight = previewOverlapRight > 0 ? previewOverlapRight : committedOverlapRight;
 
   // Merge preview + committed overlap for the left edge (this clip is RIGHT in a transition)
-  const overlapLeft = useMemo(() => {
-    if (previewOverlapLeft > 0) return previewOverlapLeft;
-    for (const t of transitions) {
-      if (t.rightClipId === item.id) return Math.floor(t.durationInFrames / 2);
-    }
-    return 0;
-  }, [transitions, item.id, previewOverlapLeft]);
+  const overlapLeft = previewOverlapLeft > 0 ? previewOverlapLeft : committedOverlapLeft;
 
   // Calculate position and width (convert frames to seconds, then to pixels)
   // Display width hides overlap from both edges so the visual junction is centered.
@@ -755,6 +742,9 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
     timeToPixels, fps, minWidthPixels, trimDeltaPixels, sourceDuration, currentSourceEnd,
     subCompDuration, rollingEditDelta, rollingEditHandle, rippleEdgeDelta, overlapRight
   ]);
+
+  // Visibility detection for lazy filmstrip loading (shared viewport state)
+  const clipVisibility = useClipVisibility(visualLeft, visualWidth);
 
   // Get color based on item type - memoized
   const itemColorClasses = useMemo(() => {
@@ -1165,7 +1155,9 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
                 item={contentPreviewItem}
                 clipWidth={previewFullWidthPixels}
                 fps={fps}
-                isClipVisible={isClipVisible}
+                isClipVisible={clipVisibility.isVisible}
+                visibleStartRatio={clipVisibility.visibleStartRatio}
+                visibleEndRatio={clipVisibility.visibleEndRatio}
                 pixelsPerSecond={pixelsPerSecond}
                 preferImmediateRendering={preferImmediateContentRendering}
               />
@@ -1175,7 +1167,9 @@ export const TimelineItem = memo(function TimelineItem({ item, timelineDuration 
               item={contentPreviewItem}
               clipWidth={visualWidth}
               fps={fps}
-              isClipVisible={isClipVisible}
+              isClipVisible={clipVisibility.isVisible}
+              visibleStartRatio={clipVisibility.visibleStartRatio}
+              visibleEndRatio={clipVisibility.visibleEndRatio}
               pixelsPerSecond={pixelsPerSecond}
               preferImmediateRendering={preferImmediateContentRendering}
             />

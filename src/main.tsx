@@ -2,7 +2,6 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { toast } from 'sonner';
 import { App } from './app';
-import { filmstripCache } from '@/features/timeline/services/filmstrip-cache';
 import { initializeDebugUtils } from '@/lib/debug';
 import { createLogger } from '@/lib/logger';
 import './index.css';
@@ -26,8 +25,9 @@ window.addEventListener('error', (event) => {
 // Prompt the user to save before reloading so they don't lose work.
 window.addEventListener('vite:preloadError', () => {
   const projectIdMatch = window.location.pathname.match(/\/editor\/([^/]+)/);
+  const projectId = projectIdMatch?.[1];
 
-  if (projectIdMatch) {
+  if (projectId) {
     toast.error('A new version is available. Save your work and reload.', {
       duration: Infinity,
       action: {
@@ -37,7 +37,7 @@ window.addEventListener('vite:preloadError', () => {
             const { useTimelineStore } = await import(
               '@/features/timeline/stores/timeline-store-facade'
             );
-            await useTimelineStore.getState().saveTimeline(projectIdMatch[1]);
+            await useTimelineStore.getState().saveTimeline(projectId);
           } catch (e) {
             log.error('Failed to save before reload:', e);
           }
@@ -55,10 +55,9 @@ window.addEventListener('vite:preloadError', () => {
   }
 });
 
-// Cleanup filmstrip workers on page unload
-window.addEventListener('beforeunload', () => {
-  void filmstripCache.dispose();
-});
+// IMPORTANT: Intentionally do not dispose filmstrip cache on beforeunload.
+// Filmstrip OPFS data is persistent and should survive refresh/reload.
+// The browser tears down workers/resources on navigation anyway.
 
 const rootElement = document.getElementById('root');
 
