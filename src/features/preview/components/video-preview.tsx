@@ -1,31 +1,36 @@
-import { useRef, useEffect, useLayoutEffect, useState, useMemo, useCallback, memo } from 'react';
-import { Player, type PlayerRef } from '@/features/player';
-import { usePlaybackStore } from '@/features/preview/stores/playback-store';
-import { useTimelineStore } from '@/features/timeline/stores/timeline-store';
-import { useItemsStore } from '@/features/timeline/stores/items-store';
-import { useTransitionsStore } from '@/features/timeline/stores/transitions-store';
-import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store';
-import { useMediaDependencyStore } from '@/features/timeline/stores/media-dependency-store';
-import { useSelectionStore } from '@/features/editor/stores/selection-store';
-import { MainComposition } from '@/lib/composition-runtime/compositions/main-composition';
+﻿import { useRef, useEffect, useLayoutEffect, useState, useMemo, useCallback, memo } from 'react';
+import { Player, type PlayerRef } from '@/features/preview/deps/player-core';
+import { usePlaybackStore } from '@/shared/state/playback';
+import {
+  useTimelineStore,
+  useItemsStore,
+  useTransitionsStore,
+  useTimelineSettingsStore,
+  useMediaDependencyStore,
+} from '@/features/preview/deps/timeline-store';
+import { resolveEffectiveTrackStates } from '@/features/preview/deps/timeline-utils';
+import {
+  useRollingEditPreviewStore,
+  useRippleEditPreviewStore,
+  useSlipEditPreviewStore,
+  useSlideEditPreviewStore,
+} from '@/features/preview/deps/timeline-edit-preview';
+import { useSelectionStore } from '@/shared/state/selection';
+import { MainComposition } from '@/features/preview/deps/composition-runtime';
 import { resolveMediaUrl, resolveProxyUrl } from '../utils/media-resolver';
-import { useMediaLibraryStore } from '@/features/media-library/stores/media-library-store';
-import { proxyService } from '@/features/media-library/services/proxy-service';
-import { blobUrlManager } from '@/lib/blob-url-manager';
-import { getGlobalVideoSourcePool } from '@/features/player/video/VideoSourcePool';
-import { resolveEffectiveTrackStates } from '@/features/timeline/utils/group-utils';
+import { useMediaLibraryStore, proxyService } from '@/features/preview/deps/media-library';
+import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager';
+import { getGlobalVideoSourcePool } from '@/features/preview/deps/player-pool';
 import { GizmoOverlay } from './gizmo-overlay';
 import { RollingEditOverlay } from './rolling-edit-overlay';
 import { RippleEditOverlay } from './ripple-edit-overlay';
 import { SlipEditOverlay } from './slip-edit-overlay';
 import { SlideEditOverlay } from './slide-edit-overlay';
-import { useRollingEditPreviewStore } from '@/features/timeline/stores/rolling-edit-preview-store';
-import { useRippleEditPreviewStore } from '@/features/timeline/stores/ripple-edit-preview-store';
-import { useSlipEditPreviewStore } from '@/features/timeline/stores/slip-edit-preview-store';
-import { useSlideEditPreviewStore } from '@/features/timeline/stores/slide-edit-preview-store';
 import type { CompositionInputProps } from '@/types/export';
+import type { TimelineItem } from '@/types/timeline';
+import type { ItemEffect } from '@/types/effects';
 import { isMarqueeJustFinished } from '@/hooks/use-marquee-selection';
-import { createCompositionRenderer } from '@/features/export/utils/client-render-engine';
+import { createCompositionRenderer } from '@/features/preview/deps/export';
 
 // Preload media files ahead of the playhead to reduce buffering
 const PRELOAD_AHEAD_SECONDS = 5;
@@ -92,6 +97,134 @@ function toTrackFingerprint(tracks: CompositionInputProps['tracks']): string {
     }
   }
   return parts.join('|');
+}
+
+function scaleEffectsForPreview(
+  effects: ItemEffect[] | undefined,
+  uniformScale: number
+): ItemEffect[] | undefined {
+  if (!effects || effects.length === 0) return effects;
+
+  let changed = false;
+  const scaled = effects.map((entry) => {
+    const effect = entry.effect;
+
+    if (effect.type === 'css-filter' && effect.filter === 'blur') {
+      const nextValue = effect.value * uniformScale;
+      if (nextValue !== effect.value) changed = true;
+      return nextValue === effect.value
+        ? entry
+        : { ...entry, effect: { ...effect, value: nextValue } };
+    }
+
+    if (effect.type === 'canvas-effect' && effect.variant === 'halftone') {
+      const nextDotSize = effect.dotSize * uniformScale;
+      const nextSpacing = effect.spacing * uniformScale;
+      if (nextDotSize !== effect.dotSize || nextSpacing !== effect.spacing) changed = true;
+      return (nextDotSize === effect.dotSize && nextSpacing === effect.spacing)
+        ? entry
+        : {
+            ...entry,
+            effect: {
+              ...effect,
+              dotSize: nextDotSize,
+              spacing: nextSpacing,
+            },
+          };
+    }
+
+    return entry;
+  });
+
+  return changed ? scaled : effects;
+}
+
+function scaleItemForPreview(
+  item: TimelineItem,
+  scaleX: number,
+  scaleY: number,
+  uniformScale: number
+): TimelineItem {
+  let scaled = item as TimelineItem;
+  let changed = false;
+
+  if (item.transform) {
+    const nextTransform = {
+      ...item.transform,
+      x: item.transform.x !== undefined ? item.transform.x * scaleX : undefined,
+      y: item.transform.y !== undefined ? item.transform.y * scaleY : undefined,
+      width: item.transform.width !== undefined ? item.transform.width * scaleX : undefined,
+      height: item.transform.height !== undefined ? item.transform.height * scaleY : undefined,
+      cornerRadius: item.transform.cornerRadius !== undefined
+        ? item.transform.cornerRadius * uniformScale
+        : undefined,
+    };
+    scaled = { ...scaled, transform: nextTransform } as TimelineItem;
+    changed = true;
+  }
+
+  switch (item.type) {
+    case 'text': {
+      const nextTextShadow = item.textShadow
+        ? {
+            ...item.textShadow,
+            offsetX: item.textShadow.offsetX * scaleX,
+            offsetY: item.textShadow.offsetY * scaleY,
+            blur: item.textShadow.blur * uniformScale,
+          }
+        : item.textShadow;
+      const nextStroke = item.stroke
+        ? {
+            ...item.stroke,
+            width: item.stroke.width * uniformScale,
+          }
+        : item.stroke;
+
+      scaled = {
+        ...scaled,
+        fontSize: item.fontSize !== undefined ? item.fontSize * uniformScale : undefined,
+        letterSpacing: item.letterSpacing !== undefined ? item.letterSpacing * scaleX : undefined,
+        textShadow: nextTextShadow,
+        stroke: nextStroke,
+      } as TimelineItem;
+      changed = true;
+      break;
+    }
+    case 'shape': {
+      scaled = {
+        ...scaled,
+        strokeWidth: item.strokeWidth !== undefined ? item.strokeWidth * uniformScale : undefined,
+        cornerRadius: item.cornerRadius !== undefined ? item.cornerRadius * uniformScale : undefined,
+        maskFeather: item.maskFeather !== undefined ? item.maskFeather * uniformScale : undefined,
+      } as TimelineItem;
+      changed = true;
+      break;
+    }
+    default:
+      break;
+  }
+
+  const nextEffects = scaleEffectsForPreview(item.effects, uniformScale);
+  if (nextEffects !== item.effects) {
+    scaled = { ...scaled, effects: nextEffects } as TimelineItem;
+    changed = true;
+  }
+
+  return changed ? scaled : item;
+}
+
+function scaleTracksForPreview(
+  tracks: CompositionInputProps['tracks'],
+  scaleX: number,
+  scaleY: number,
+  uniformScale: number
+): CompositionInputProps['tracks'] {
+  return tracks.map((track) => ({
+    ...track,
+    items: track.items.map((item) =>
+      scaleItemForPreview(item, scaleX, scaleY, uniformScale)
+    ),
+  }));
 }
 
 function getPreloadBudget(isPlaying: boolean, previewFrame: number | null): number {
@@ -191,7 +324,7 @@ interface VideoPreviewProps {
  * Sync strategy:
  * - Timeline seeks trigger Player seeks (both playing and paused)
  * - Player updates are ignored briefly after seeks to prevent loops
- * - Player fires frameupdate → updates timeline scrubber position
+ * - Player fires frameupdate â†’ updates timeline scrubber position
  * - Play/pause state is synced bidirectionally
  * - Store is authoritative - if store says paused, Player follows
  */
@@ -257,7 +390,7 @@ function useCustomPlayer(
     };
   }, [playerRef, playerReady]);
 
-  // Timeline → Player: Sync play/pause state
+  // Timeline â†’ Player: Sync play/pause state
   useEffect(() => {
     if (!playerRef.current) return;
 
@@ -300,7 +433,7 @@ function useCustomPlayer(
   // loadTimeline() restores the saved currentFrame from IndexedDB.
   const isTimelineLoading = useTimelineSettingsStore((s) => s.isTimelineLoading);
 
-  // Timeline → Player: Sync frame position
+  // Timeline â†’ Player: Sync frame position
   useEffect(() => {
     if (!playerReady || !playerRef.current || isTimelineLoading) return;
 
@@ -424,6 +557,7 @@ export const VideoPreview = memo(function VideoPreview({
   const hasSlide4Up = useSlideEditPreviewStore((s) => Boolean(s.itemId));
   const zoom = usePlaybackStore((s) => s.zoom);
   const useProxy = usePlaybackStore((s) => s.useProxy);
+  const previewQuality = usePlaybackStore((s) => s.previewQuality);
   // Derive a stable count of ready proxies to avoid recomputing resolvedTracks
   // on every proxyStatus Map recreation (e.g. during progress updates)
   const proxyReadyCount = useMediaLibraryStore((s) => {
@@ -685,7 +819,6 @@ export const VideoPreview = memo(function VideoPreview({
     scrubVideoSourceSpans,
     fastScrubBoundaryFrames,
     fastScrubBoundarySources,
-    resolvedTracksFingerprint,
     fastScrubTracksFingerprint,
   } = useMemo(() => {
     const resolvedTrackList: CompositionInputProps['tracks'] = [];
@@ -776,7 +909,6 @@ export const VideoPreview = memo(function VideoPreview({
       scrubVideoSourceSpans: scrubSpans,
       fastScrubBoundaryFrames: sortedBoundaryFrames,
       fastScrubBoundarySources: sortedBoundarySources,
-      resolvedTracksFingerprint: toTrackFingerprint(resolvedTrackList),
       fastScrubTracksFingerprint: toTrackFingerprint(fastScrubTrackList),
     };
   }, [combinedTracks, resolvedUrls, useProxy, proxyReadyCount]);
@@ -941,7 +1073,10 @@ export const VideoPreview = memo(function VideoPreview({
         await new Promise(r => setTimeout(r, 150));
       }
 
-      if (isCancelled) return;
+      if (isCancelled) {
+        setIsResolving(false);
+        return;
+      }
 
       try {
         const newUrls = new Map(effectiveResolvedUrls);
@@ -973,9 +1108,7 @@ export const VideoPreview = memo(function VideoPreview({
       } catch (error) {
         console.error('Failed to resolve media URLs:', error);
       } finally {
-        if (!isCancelled) {
-          setIsResolving(false);
-        }
+        setIsResolving(false);
       }
     }
 
@@ -1139,13 +1272,23 @@ export const VideoPreview = memo(function VideoPreview({
         || state.previewFrame !== prev.previewFrame
         || state.isPlaying !== prev.isPlaying
       ) {
-        if (rafId !== null) {
-          cancelAnimationFrame(rafId);
-        }
-        rafId = requestAnimationFrame(() => {
-          rafId = null;
+        // When playback starts, warm sources synchronously so video elements
+        // start loading immediately â€” don't wait for the next animation frame.
+        if (state.isPlaying && !prev.isPlaying) {
+          if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
           refreshWarmSet();
-        });
+        } else {
+          if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+          }
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            refreshWarmSet();
+          });
+        }
       }
     });
 
@@ -1161,25 +1304,62 @@ export const VideoPreview = memo(function VideoPreview({
   // Memoize inputProps to prevent Player from re-rendering
   const inputProps: CompositionInputProps = useMemo(() => ({
     fps,
+    width: project.width,
+    height: project.height,
     tracks: resolvedTracks as CompositionInputProps['tracks'],
     transitions,
     backgroundColor: project.backgroundColor,
-  }), [fps, resolvedTracksFingerprint, transitions, project.backgroundColor]);
+  }), [fps, project.width, project.height, resolvedTracks, transitions, project.backgroundColor]);
+
+  // Compute scaled render resolution for preview quality.
+  // Keep dimensions even for decoder compatibility.
+  const renderSize = useMemo(() => {
+    const w = Math.round(project.width * previewQuality / 2) * 2;
+    const h = Math.round(project.height * previewQuality / 2) * 2;
+    return { width: Math.max(2, w), height: Math.max(2, h) };
+  }, [project.width, project.height, previewQuality]);
+
+  const fastScrubScaledTracks = useMemo(() => {
+    const tracks = fastScrubTracks as CompositionInputProps['tracks'];
+    if (previewQuality === 1) return tracks;
+
+    const sx = project.width > 0 ? renderSize.width / project.width : 1;
+    const sy = project.height > 0 ? renderSize.height / project.height : 1;
+    const s = Math.min(sx, sy);
+    return scaleTracksForPreview(tracks, sx, sy, s);
+  }, [
+    fastScrubTracks,
+    fastScrubTracksFingerprint,
+    previewQuality,
+    renderSize.width,
+    renderSize.height,
+    project.width,
+    project.height,
+  ]);
 
   const fastScrubInputProps: CompositionInputProps = useMemo(() => ({
     fps,
-    tracks: fastScrubTracks as CompositionInputProps['tracks'],
+    width: renderSize.width,
+    height: renderSize.height,
+    tracks: fastScrubScaledTracks,
     transitions,
     backgroundColor: project.backgroundColor,
-  }), [fps, fastScrubTracksFingerprint, transitions, project.backgroundColor]);
+  }), [
+    fps,
+    renderSize.width,
+    renderSize.height,
+    fastScrubScaledTracks,
+    transitions,
+    project.backgroundColor,
+  ]);
 
-  // Keep fast scrub canvas dimensions in sync with project dimensions.
+  // Keep fast scrub canvas dimensions in sync with preview render dimensions.
   useLayoutEffect(() => {
     const canvas = scrubCanvasRef.current;
     if (!canvas) return;
-    if (canvas.width !== project.width) canvas.width = project.width;
-    if (canvas.height !== project.height) canvas.height = project.height;
-  }, [project.width, project.height]);
+    if (canvas.width !== renderSize.width) canvas.width = renderSize.width;
+    if (canvas.height !== renderSize.height) canvas.height = renderSize.height;
+  }, [renderSize.width, renderSize.height]);
 
   const disposeFastScrubRenderer = useCallback(() => {
     scrubInitPromiseRef.current = null;
@@ -1215,7 +1395,7 @@ export const VideoPreview = memo(function VideoPreview({
 
     scrubInitPromiseRef.current = (async () => {
       try {
-        const offscreen = new OffscreenCanvas(project.width, project.height);
+        const offscreen = new OffscreenCanvas(renderSize.width, renderSize.height);
         const offscreenCtx = offscreen.getContext('2d');
         if (!offscreenCtx) return null;
 
@@ -1259,12 +1439,12 @@ export const VideoPreview = memo(function VideoPreview({
     })();
 
     return scrubInitPromiseRef.current;
-  }, [fastScrubInputProps, fps, isResolving, project.height, project.width]);
+  }, [fastScrubInputProps, fps, isResolving, renderSize.height, renderSize.width]);
 
   // Dispose/recreate fast scrub renderer when composition inputs change.
   useEffect(() => {
     disposeFastScrubRenderer();
-  }, [disposeFastScrubRenderer, fastScrubInputProps, project.height, project.width]);
+  }, [disposeFastScrubRenderer, fastScrubInputProps, renderSize.height, renderSize.width]);
 
   // Background warm-up so first scrub has lower startup latency.
   useEffect(() => {
@@ -1634,6 +1814,9 @@ export const VideoPreview = memo(function VideoPreview({
 
     const unsubscribe = usePlaybackStore.subscribe((state, prevState) => {
       if (state.isPlaying && !prevState.isPlaying) {
+        // Kick off an immediate preload pass so the first playback frames
+        // don't stall waiting for the 1-second interval to fire.
+        void preloadMedia();
         intervalId = setInterval(() => {
           void preloadMedia();
         }, 1000);
@@ -1642,6 +1825,13 @@ export const VideoPreview = memo(function VideoPreview({
         && state.previewFrame !== null
         && state.previewFrame !== prevState.previewFrame
       ) {
+        void preloadMedia();
+      } else if (
+        !state.isPlaying
+        && state.currentFrame !== prevState.currentFrame
+      ) {
+        // Ruler click sets currentFrame directly (no previewFrame).
+        // Preload around the new position so sources are warm before play.
         void preloadMedia();
       } else if (!state.isPlaying && prevState.isPlaying) {
         if (intervalId) {
@@ -1685,7 +1875,7 @@ export const VideoPreview = memo(function VideoPreview({
         return;
       }
 
-      // Tab became visible — check if we were hidden long enough for staleness
+      // Tab became visible â€” check if we were hidden long enough for staleness
       if (lastHiddenAt === 0 || Date.now() - lastHiddenAt < STALE_THRESHOLD_MS) {
         return;
       }
@@ -1695,7 +1885,7 @@ export const VideoPreview = memo(function VideoPreview({
       try {
         await proxyService.refreshAllBlobUrls();
       } catch {
-        // Best-effort — continue with source URL refresh even if proxy refresh fails
+        // Best-effort â€” continue with source URL refresh even if proxy refresh fails
       }
 
       // 2. Invalidate source media blob URLs so they get re-created on next resolve
@@ -1861,8 +2051,8 @@ export const VideoPreview = memo(function VideoPreview({
               ref={playerRef}
               durationInFrames={totalFrames}
               fps={fps}
-              width={project.width}
-              height={project.height}
+              width={renderSize.width}
+              height={renderSize.height}
               autoPlay={false}
               loop={false}
               controls={false}
@@ -1915,3 +2105,5 @@ export const VideoPreview = memo(function VideoPreview({
     </div>
   );
 });
+
+
