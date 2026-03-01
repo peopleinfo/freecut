@@ -1,6 +1,6 @@
 # FreeCut
 
-**[freecut-sandy.vercel.app](https://freecut-sandy.vercel.app/)**
+**[freecut.net](http://freecut.net/)**
 
 **Edit videos. In your browser.**
 
