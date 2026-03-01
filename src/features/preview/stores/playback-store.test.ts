@@ -5,6 +5,7 @@ describe('playback-store', () => {
   beforeEach(() => {
     usePlaybackStore.setState({
       currentFrame: 0,
+      currentFrameEpoch: 0,
       isPlaying: false,
       playbackRate: 1,
       loop: false,
@@ -12,7 +13,10 @@ describe('playback-store', () => {
       muted: false,
       zoom: -1,
       previewFrame: null,
+      previewFrameEpoch: 0,
+      frameUpdateEpoch: 0,
       captureFrame: null,
+      previewQuality: 1,
     });
   });
 
@@ -139,6 +143,20 @@ describe('playback-store', () => {
     it('supports auto-fit value (-1)', () => {
       usePlaybackStore.getState().setZoom(-1);
       expect(usePlaybackStore.getState().zoom).toBe(-1);
+    });
+  });
+
+  describe('preview quality', () => {
+    it('defaults to full quality', () => {
+      expect(usePlaybackStore.getState().previewQuality).toBe(1);
+    });
+
+    it('sets preview quality', () => {
+      usePlaybackStore.getState().setPreviewQuality(0.5);
+      expect(usePlaybackStore.getState().previewQuality).toBe(0.5);
+
+      usePlaybackStore.getState().setPreviewQuality(0.25);
+      expect(usePlaybackStore.getState().previewQuality).toBe(0.25);
     });
   });
 

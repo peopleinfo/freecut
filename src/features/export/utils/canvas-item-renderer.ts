@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Canvas Item Renderer
  *
  * Per-item render helpers that draw individual timeline items (video, image,
  * text, shape) to an OffscreenCanvas context.  Also contains the transition
  * compositing helper and shared geometry utilities.
  *
- * All functions are stateless – mutable renderer state is passed in via the
+ * All functions are stateless â€“ mutable renderer state is passed in via the
  * {@link ItemRenderContext} parameter.
  */
 
@@ -18,7 +18,7 @@ import type {
   CompositionItem,
 } from '@/types/timeline';
 import type { ItemKeyframes } from '@/types/keyframe';
-import { createLogger } from '@/lib/logger';
+import { createLogger } from '@/shared/logging/logger';
 
 // Subsystem imports
 import { getAnimatedTransform } from './canvas-keyframes';
@@ -34,7 +34,7 @@ import {
   type TransitionCanvasSettings,
 } from './canvas-transitions';
 import { renderShape } from './canvas-shapes';
-import { gifFrameCache, type CachedGifFrames } from '../../timeline/services/gif-frame-cache';
+import { gifFrameCache, type CachedGifFrames } from '@/features/export/deps/timeline';
 import type { CanvasPool, TextMeasurementCache } from './canvas-pool';
 import type { VideoFrameSource } from './shared-video-extractor';
 
@@ -45,7 +45,7 @@ const log = createLogger('CanvasItemRenderer');
 // ---------------------------------------------------------------------------
 
 /**
- * Canvas settings for rendering – width/height/fps of the composition.
+ * Canvas settings for rendering â€“ width/height/fps of the composition.
  */
 export interface CanvasSettings {
   width: number;
@@ -83,7 +83,7 @@ const FONT_WEIGHT_MAP: Record<string, number> = {
 };
 
 // ---------------------------------------------------------------------------
-// ItemRenderContext – closure state passed explicitly
+// ItemRenderContext â€“ closure state passed explicitly
 // ---------------------------------------------------------------------------
 
 /**
@@ -141,7 +141,7 @@ export interface SubCompRenderData {
 /**
  * Render a single timeline item to the given canvas context.
  *
- * @param sourceFrameOffset – optional frame-level offset added to the video
+ * @param sourceFrameOffset â€“ optional frame-level offset added to the video
  *   source timestamp (used by transitions that need to render a clip at an
  *   offset position).
  */
@@ -487,8 +487,10 @@ function renderTextItem(
 
   const fontSize = item.fontSize ?? 60;
   const fontFamily = item.fontFamily ?? 'Inter';
+  const fontStyle = item.fontStyle ?? 'normal';
   const fontWeightName = item.fontWeight ?? 'normal';
   const fontWeight = FONT_WEIGHT_MAP[fontWeightName] ?? 400;
+  const underline = item.underline ?? false;
   const lineHeight = item.lineHeight ?? 1.2;
   const letterSpacing = item.letterSpacing ?? 0;
   const textAlign = item.textAlign ?? 'center';
@@ -503,7 +505,7 @@ function renderTextItem(
   ctx.rect(itemLeft, itemTop, transform.width, transform.height);
   ctx.clip();
 
-  ctx.font = `${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
+  ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
   ctx.fillStyle = item.color ?? '#ffffff';
 
   const availableWidth = transform.width - padding * 2;
@@ -576,6 +578,19 @@ function renderTextItem(
     }
 
     drawTextWithLetterSpacing(ctx, line, lineX, lineY, letterSpacing, false, textMeasureCache);
+
+    if (underline) {
+      drawUnderline(
+        ctx,
+        line,
+        lineX,
+        lineY,
+        textAlign,
+        letterSpacing,
+        fontSize,
+        textMeasureCache,
+      );
+    }
   }
 
   ctx.restore();
@@ -710,6 +725,42 @@ function drawTextWithLetterSpacing(
   ctx.textAlign = currentAlign;
 }
 
+function drawUnderline(
+  ctx: OffscreenCanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  textAlign: 'left' | 'center' | 'right',
+  letterSpacing: number,
+  fontSize: number,
+  textMeasureCache: TextMeasurementCache,
+): void {
+  const lineWidth = textMeasureCache.measure(ctx, text, letterSpacing);
+  if (lineWidth <= 0) return;
+
+  let startX = x;
+  if (textAlign === 'center') {
+    startX = x - lineWidth / 2;
+  } else if (textAlign === 'right') {
+    startX = x - lineWidth;
+  }
+
+  const underlineY = y + Math.max(1, fontSize * 0.08);
+  const underlineThickness = Math.max(1, fontSize * 0.05);
+  const previousLineWidth = ctx.lineWidth;
+  const previousStrokeStyle = ctx.strokeStyle;
+
+  ctx.beginPath();
+  ctx.lineWidth = underlineThickness;
+  ctx.strokeStyle = ctx.fillStyle;
+  ctx.moveTo(startX, underlineY);
+  ctx.lineTo(startX + lineWidth, underlineY);
+  ctx.stroke();
+
+  ctx.lineWidth = previousLineWidth;
+  ctx.strokeStyle = previousStrokeStyle;
+}
+
 // ---------------------------------------------------------------------------
 // Composition item (sub-composition / pre-comp)
 // ---------------------------------------------------------------------------
@@ -741,7 +792,7 @@ async function renderCompositionItem(
   }
 
   // Calculate the local frame within the sub-composition.
-  // sourceStart accounts for trim (left-edge drag) and IO marker offsets —
+  // sourceStart accounts for trim (left-edge drag) and IO marker offsets â€”
   // it tells us how many frames into the sub-comp to start playing.
   const sourceOffset = item.sourceStart ?? item.trimStart ?? 0;
   const localFrame = frame - item.from + sourceOffset;
@@ -911,7 +962,7 @@ export async function renderTransitionToCanvas(
 
 /**
  * Calculate draw dimensions for media items.
- * Uses "contain" mode – fits content within bounds while maintaining aspect ratio.
+ * Uses "contain" mode â€“ fits content within bounds while maintaining aspect ratio.
  */
 export function calculateMediaDrawDimensions(
   sourceWidth: number,
