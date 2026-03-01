@@ -646,6 +646,12 @@ export function useClientRender(): UseClientRenderReturn {
               throw ffmpegError;
             }
 
+            // CRITICAL: Log the actual error so we can diagnose GPU pipeline failures
+            console.error(
+              "[GPU Export] FFmpeg composition export failed, falling back to browser export:",
+              ffmpegError instanceof Error ? ffmpegError.message : ffmpegError,
+              ffmpegError instanceof Error ? ffmpegError.stack : "",
+            );
             log.warn(
               "FFmpeg composition export failed, falling back to browser export",
               ffmpegError instanceof Error ? ffmpegError.message : ffmpegError,

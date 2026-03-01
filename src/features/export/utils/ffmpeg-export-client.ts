@@ -5,7 +5,7 @@
  * Handles job lifecycle: create → send frames → send audio → finalize → download.
  */
 
-import { createLogger } from "@/lib/logger";
+import { createLogger } from "@/shared/logging/logger";
 
 const log = createLogger("FFmpegExportClient");
 

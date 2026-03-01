@@ -15,7 +15,7 @@ import type {
   ClientRenderResult,
 } from "./client-renderer";
 import { getMimeType } from "./client-renderer";
-import { createLogger } from "@/lib/logger";
+import { createLogger } from "@/shared/logging/logger";
 import { createCompositionRenderer } from "./client-render-engine";
 import {
   processAudio,

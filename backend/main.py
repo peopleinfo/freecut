@@ -166,7 +166,15 @@ async def test_encoder(ffmpeg_path: str, encoder: str) -> bool:
         stdout, _ = await asyncio.wait_for(result.communicate(), timeout=5)
         return encoder.encode() in stdout
     except Exception:
-        return False
+        # Fallback to synchronous subprocess (Windows uvicorn compatibility)
+        try:
+            result = subprocess.run(
+                [ffmpeg_path, "-hide_banner", "-encoders"],
+                capture_output=True, timeout=5
+            )
+            return encoder.encode() in result.stdout
+        except Exception:
+            return False
 
 
 # ============= FFmpeg Operations =============
@@ -184,54 +192,59 @@ async def check_ffmpeg() -> FFmpegCheckResult:
         stdout, _ = await asyncio.wait_for(result.communicate(), timeout=5)
         
         if result.returncode != 0:
-            return FFmpegCheckResult(
-                available=False,
-                version="",
-                path=ffmpeg_path,
-                hw_accel=HWAccelInfo(encoder="libx264", hwaccel="", available=False)
-            )
+            raise RuntimeError(f"FFmpeg returned code {result.returncode}")
         
         output = stdout.decode()
-        version_match = output.split("ffmpeg version ")[1].split()[0] if "ffmpeg version" in output else "unknown"
-        
-        hw_accel = await detect_hardware_acceleration()
-        
-        return FFmpegCheckResult(
-            available=True,
-            version=version_match,
-            path=ffmpeg_path,
-            hw_accel=hw_accel
-        )
-    except Exception:
-        return FFmpegCheckResult(
-            available=False,
-            version="",
-            path=ffmpeg_path,
-            hw_accel=HWAccelInfo(encoder="libx264", hwaccel="", available=False)
-        )
+    except Exception as e:
+        # Fallback to synchronous subprocess (Windows uvicorn event loop issue)
+        print(f"[FFmpegCheck] Async subprocess failed ({e}), falling back to sync subprocess")
+        try:
+            sync_result = subprocess.run(
+                [ffmpeg_path, "-version"],
+                capture_output=True, timeout=5
+            )
+            if sync_result.returncode != 0:
+                return FFmpegCheckResult(
+                    available=False, version="", path=ffmpeg_path,
+                    hw_accel=HWAccelInfo(encoder="libx264", hwaccel="", available=False)
+                )
+            output = sync_result.stdout.decode()
+        except Exception as e2:
+            print(f"[FFmpegCheck] Sync subprocess also failed: {e2}")
+            return FFmpegCheckResult(
+                available=False, version="", path=ffmpeg_path,
+                hw_accel=HWAccelInfo(encoder="libx264", hwaccel="", available=False)
+            )
+    
+    version_match = output.split("ffmpeg version ")[1].split()[0] if "ffmpeg version" in output else "unknown"
+    
+    hw_accel = await detect_hardware_acceleration()
+    
+    return FFmpegCheckResult(
+        available=True,
+        version=version_match,
+        path=ffmpeg_path,
+        hw_accel=hw_accel
+    )
 
 
 async def probe_file(file_path: str) -> ProbeResult:
     """Probe a media file for its properties."""
     ffprobe_path = get_ffprobe_path()
     
-    result = await asyncio.create_subprocess_exec(
-        ffprobe_path,
-        "-v", "quiet",
-        "-print_format", "json",
-        "-show_format",
-        "-show_streams",
-        file_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
+    def run_probe():
+        return subprocess.run(
+            [ffprobe_path, "-v", "quiet", "-print_format", "json",
+             "-show_format", "-show_streams", file_path],
+            capture_output=True, timeout=15
+        )
     
-    stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=15)
+    result = await asyncio.to_thread(run_probe)
     
     if result.returncode != 0:
-        raise Exception(f"FFprobe failed: {stderr.decode()}")
+        raise Exception(f"FFprobe failed: {result.stderr.decode()}")
     
-    data = json.loads(stdout.decode())
+    data = json.loads(result.stdout.decode())
     streams = data.get("streams", [])
     video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
     audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
@@ -266,23 +279,22 @@ async def generate_thumbnail(file_path: str, time_seconds: float) -> str:
         output_path = tmp.name
     
     try:
-        result = await asyncio.create_subprocess_exec(
-            ffmpeg_path,
-            "-y", "-hide_banner",
-            "-ss", str(time_seconds),
-            "-i", file_path,
-            "-vframes", "1",
-            "-vf", "scale=320:-1",
-            "-q:v", "5",
-            output_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
+        def run_thumbnail():
+            return subprocess.run(
+                [ffmpeg_path, "-y", "-hide_banner",
+                 "-ss", str(time_seconds),
+                 "-i", file_path,
+                 "-vframes", "1",
+                 "-vf", "scale=320:-1",
+                 "-q:v", "5",
+                 output_path],
+                capture_output=True, timeout=10
+            )
         
-        _, stderr = await asyncio.wait_for(result.communicate(), timeout=10)
+        result = await asyncio.to_thread(run_thumbnail)
         
         if result.returncode != 0:
-            raise Exception(f"Thumbnail generation failed: {stderr.decode()}")
+            raise Exception(f"Thumbnail generation failed: {result.stderr.decode()}")
         
         # Read and encode as base64
         with open(output_path, "rb") as f:
@@ -512,29 +524,23 @@ async def ffmpeg_export(request: Request):
     active_progress_tracker = progress_tracker
     
     try:
-        # Start FFmpeg process
-        process = await asyncio.create_subprocess_exec(
-            ffmpeg_path, *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            stdin=asyncio.subprocess.DEVNULL
-        )
-        active_export_process = process
+        # Run FFmpeg via subprocess.Popen in a thread
+        # (asyncio subprocess fails under uvicorn on Windows)
+        def run_export_sync():
+            proc = subprocess.Popen(
+                [ffmpeg_path] + args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL
+            )
+            stdout, stderr = proc.communicate(timeout=600)
+            return proc.returncode, stdout, stderr
         
-        # Read stdout in background to parse progress
-        progress_task = asyncio.create_task(
-            _read_ffmpeg_progress(process.stdout, progress_tracker)
-        )
+        returncode, stdout, stderr = await asyncio.to_thread(run_export_sync)
         
-        # Wait for completion
-        stdout, stderr = await process.communicate()
-        
-        # Cancel progress reading
-        progress_task.cancel()
-        
-        if process.returncode != 0:
+        if returncode != 0:
             error_msg = stderr.decode()[-500:] if stderr else "Unknown error"
-            raise Exception(f"FFmpeg exited with code {process.returncode}: {error_msg}")
+            raise Exception(f"FFmpeg exited with code {returncode}: {error_msg}")
         
         progress_tracker.progress = 1.0
         return {"success": True, "progress": 1.0}
@@ -811,6 +817,24 @@ async def ffmpeg_export_composition(request: Request):
             args.extend(["-i", item["file_path"]])
         
         # Build filter_complex
+        # First, probe each input to check if it has an audio stream
+        input_has_audio = []
+        for item in sorted_items:
+            has_audio = False
+            if item["type"] != "image":
+                try:
+                    probe_result = subprocess.run(
+                        [get_ffprobe_path(), "-v", "quiet", "-print_format", "json",
+                         "-show_streams", "-select_streams", "a", item["file_path"]],
+                        capture_output=True, timeout=5
+                    )
+                    if probe_result.returncode == 0:
+                        probe_data = json.loads(probe_result.stdout.decode())
+                        has_audio = len(probe_data.get("streams", [])) > 0
+                except Exception:
+                    pass
+            input_has_audio.append(has_audio)
+        
         n = len(sorted_items)
         filter_parts = []
         concat_inputs = []
@@ -828,18 +852,22 @@ async def ffmpeg_export_composition(request: Request):
             
             filter_parts.append(f"[{i}:v]{','.join(vf_chain)}[v{i}]")
             
-            if not item.get("muted") and item["type"] != "image":
+            # Determine duration for this item (needed for anullsrc)
+            duration_s = item["duration_frames"] / max(comp_fps, 1)
+            
+            if not item.get("muted") and input_has_audio[i]:
+                # Input has real audio — use it
                 af_chain = []
                 if abs(speed - 1) > 0.01:
                     af_chain.append(f"atempo={speed}")
                 if af_chain:
                     filter_parts.append(f"[{i}:a]{','.join(af_chain)}[a{i}]")
-                    concat_inputs.append(f"[v{i}][a{i}]")
                 else:
-                    concat_inputs.append(f"[v{i}][{i}:a]")
+                    filter_parts.append(f"[{i}:a]acopy[a{i}]")
+                concat_inputs.append(f"[v{i}][a{i}]")
             else:
-                # Generate silent audio
-                filter_parts.append(f"anullsrc=r=48000:cl=stereo[a{i}]")
+                # No audio stream or muted — generate silent audio
+                filter_parts.append(f"anullsrc=r=48000:cl=stereo:d={duration_s}[a{i}]")
                 concat_inputs.append(f"[v{i}][a{i}]")
         
         concat_str = "".join(concat_inputs)
@@ -887,68 +915,44 @@ async def ffmpeg_export_composition(request: Request):
     )
     compose_jobs[job_id] = job
     
-    # Start FFmpeg
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            stdin=asyncio.subprocess.DEVNULL,
-        )
-        job.process = process
-    except Exception as e:
-        job.status = "error"
-        job.error = str(e)
-        return JSONResponse({"error": f"FFmpeg failed: {e}"}, status_code=500)
+    # Start FFmpeg using subprocess.Popen in a thread (asyncio subprocess
+    # fails silently under uvicorn on Windows)
+    print(f"[CompositionExport] Full command: {' '.join(args)}")
     
-    # Track progress from stdout (non-blocking)
-    progress_tracker = ExportProgressTracker(comp_duration_seconds)
-    
-    async def track_progress():
-        if not process.stdout:
-            return
+    def run_ffmpeg_sync():
+        """Run FFmpeg in a thread to avoid blocking the event loop."""
         try:
-            while True:
-                line = await process.stdout.readline()
-                if not line:
-                    break
-                text = line.decode()
-                if "out_time_ms=" in text:
-                    try:
-                        time_ms = int(text.split("out_time_ms=")[1].strip())
-                        progress_tracker.update(time_ms)
-                        job.frames_received = int(progress_tracker.progress * job.total_frames)
-                    except (ValueError, IndexError):
-                        pass
-                if "fps=" in text:
-                    try:
-                        fps_str = text.split("fps=")[1].strip().split()[0]
-                        job.encoder_fps = float(fps_str)
-                    except (ValueError, IndexError):
-                        pass
-        except Exception:
-            pass
+            proc = subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+            )
+            stdout_data, stderr_data = proc.communicate(timeout=600)
+            return proc.returncode, stdout_data, stderr_data
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            return -1, b"", b"FFmpeg timeout (600s)"
+        except Exception as e:
+            return -1, b"", str(e).encode()
     
-    # Wait for FFmpeg to finish
     try:
-        await asyncio.wait_for(track_progress(), timeout=600)
-        await process.wait()
+        start_time = time.time()
+        returncode, stdout_data, stderr_data = await asyncio.to_thread(run_ffmpeg_sync)
+        elapsed = time.time() - start_time
         
-        stderr_data = b""
-        if process.stderr:
-            stderr_data = await process.stderr.read()
-        
-        if process.returncode != 0:
+        if returncode != 0:
             error_msg = stderr_data.decode()[-500:] if stderr_data else "Unknown error"
             job.status = "error"
-            job.error = f"FFmpeg exited with code {process.returncode}: {error_msg}"
-            return JSONResponse({"error": job.error}, status_code=500)
+            job.error = f"FFmpeg exited with code {returncode}: {error_msg}"
+            print(f"[CompositionExport] FAILED: {job.error}")
+            return JSONResponse({"error": f"FFmpeg failed: {error_msg}"}, status_code=500)
         
         file_size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
         job.status = "done"
         job.frames_received = job.total_frames
         
-        elapsed = time.time() - job.created_at
         print(f"[CompositionExport] Complete in {elapsed:.1f}s: {file_size} bytes")
         
         return {
@@ -959,11 +963,11 @@ async def ffmpeg_export_composition(request: Request):
             "encoder": encoder_args[1] if len(encoder_args) > 1 else "unknown",
             "hwAccel": hw_info.available if use_hw else False,
         }
-    except asyncio.TimeoutError:
-        process.terminate()
+    except Exception as e:
         job.status = "error"
-        job.error = "FFmpeg timeout (600s)"
-        return JSONResponse({"error": job.error}, status_code=500)
+        job.error = str(e)
+        print(f"[CompositionExport] Exception: {e}")
+        return JSONResponse({"error": f"FFmpeg failed: {e}"}, status_code=500)
 
 @dataclass
 class ComposeExportJob:
