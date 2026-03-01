@@ -835,9 +835,30 @@ async def ffmpeg_export_composition(request: Request):
                     pass
             input_has_audio.append(has_audio)
         
+        # Check if any input lacks audio — if so, add a silent audio source as an extra input
+        silent_clip_indices = [
+            i for i in range(len(sorted_items))
+            if not input_has_audio[i] or sorted_items[i].get("muted")
+        ]
+        silent_input_idx = None
+        if silent_clip_indices:
+            silent_input_idx = len(sorted_items)  # Index of the silent audio input
+            args.extend(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"])
+        
         n = len(sorted_items)
         filter_parts = []
         concat_inputs = []
+        
+        # If multiple clips need silent audio, split the silent source into N copies
+        if len(silent_clip_indices) > 1:
+            split_labels = "".join(f"[sil{i}]" for i in range(len(silent_clip_indices)))
+            filter_parts.append(f"[{silent_input_idx}:a]asplit={len(silent_clip_indices)}{split_labels}")
+            # Map clip index to split label index
+            silent_label_map = {clip_i: f"sil{j}" for j, clip_i in enumerate(silent_clip_indices)}
+        elif len(silent_clip_indices) == 1:
+            silent_label_map = {silent_clip_indices[0]: f"{silent_input_idx}:a"}
+        else:
+            silent_label_map = {}
         
         for i, item in enumerate(sorted_items):
             speed = item.get("speed", 1) or 1
@@ -852,7 +873,7 @@ async def ffmpeg_export_composition(request: Request):
             
             filter_parts.append(f"[{i}:v]{','.join(vf_chain)}[v{i}]")
             
-            # Determine duration for this item (needed for anullsrc)
+            # Determine duration for this item (needed for silent audio trim)
             duration_s = item["duration_frames"] / max(comp_fps, 1)
             
             if not item.get("muted") and input_has_audio[i]:
@@ -866,14 +887,20 @@ async def ffmpeg_export_composition(request: Request):
                     filter_parts.append(f"[{i}:a]acopy[a{i}]")
                 concat_inputs.append(f"[v{i}][a{i}]")
             else:
-                # No audio stream or muted — generate silent audio
-                filter_parts.append(f"anullsrc=r=48000:cl=stereo:d={duration_s}[a{i}]")
+                # No audio stream or muted — use silent audio, trimmed to clip duration
+                sil_label = silent_label_map[i]
+                filter_parts.append(f"[{sil_label}]atrim=duration={duration_s},asetpts=PTS-STARTPTS[a{i}]")
                 concat_inputs.append(f"[v{i}][a{i}]")
         
         concat_str = "".join(concat_inputs)
         filter_parts.append(f"{concat_str}concat=n={n}:v=1:a=1[vout][aout]")
         
-        args.extend(["-filter_complex", ";".join(filter_parts)])
+        full_filter = ";".join(filter_parts)
+        print(f"[CompositionExport] input_has_audio: {input_has_audio}")
+        print(f"[CompositionExport] silent_clip_indices: {silent_clip_indices}")
+        print(f"[CompositionExport] filter_complex: {full_filter}")
+        
+        args.extend(["-filter_complex", full_filter])
         args.extend(["-map", "[vout]", "-map", "[aout]"])
         
         if container == "webm":
@@ -1637,10 +1664,16 @@ async def ffmpeg_export_download(job_id: str):
     }
     content_type = content_types.get(job.container, "video/mp4")
 
+    ext = job.container or "mp4"
+    filename = f"export.{ext}"
+    
     return FileResponse(
         job.output_path,
         media_type=content_type,
-        filename=f"export.{job.container}",
+        filename=filename,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
     )
 
 

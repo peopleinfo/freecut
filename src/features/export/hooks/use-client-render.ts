@@ -43,7 +43,6 @@ import { useTimelineStore } from "@/features/export/deps/timeline";
 import { useProjectStore } from "@/features/export/deps/projects";
 import { resolveMediaUrls } from "@/features/export/deps/media-library";
 import { createLogger } from "@/shared/logging/logger";
-import { opencut } from "@/features/api";
 import type {
   ExportRenderWorkerRequest,
   ExportRenderWorkerResponse,
@@ -780,12 +779,26 @@ export function useClientRender(): UseClientRenderReturn {
     const defaultFileName = `export-${Date.now()}.${extension}`;
 
     // NATIVE ELECTRON SAVING:
-    // If we're inside the Electron app with our filesystem handler exposed, we
-    // bypass the browser blob download, use a native file dialog, and write via IPC.
-    // This is significantly faster and uses less memory.
-    if (opencut?.dialog?.saveFile && opencut?.fs?.writeFile) {
+    // Only use when inside Electron with real IPC-based filesystem.
+    // The imported `opencut` from api.ts is always defined (HTTP fallback),
+    // so we check window.opencut which is only set by Electron's preload.
+    const electronApi = (window as unknown as Record<string, unknown>)
+      .opencut as
+      | {
+          dialog?: {
+            saveFile: (opts: {
+              title: string;
+              defaultPath: string;
+            }) => Promise<string | undefined>;
+          };
+          fs?: {
+            writeFile: (path: string, data: ArrayBuffer) => Promise<void>;
+          };
+        }
+      | undefined;
+    if (electronApi?.dialog?.saveFile && electronApi?.fs?.writeFile) {
       try {
-        const savePath = await opencut.dialog.saveFile({
+        const savePath = await electronApi.dialog.saveFile({
           title: "Save Export",
           defaultPath: defaultFileName,
         });
@@ -793,13 +806,46 @@ export function useClientRender(): UseClientRenderReturn {
         if (!savePath) return; // User cancelled the save dialog
 
         const arrayBuffer = await result.blob.arrayBuffer();
-        await opencut.fs.writeFile(savePath, arrayBuffer);
+        await electronApi.fs.writeFile(savePath, arrayBuffer);
         return; // Early return on successful native save
       } catch (err) {
         log.warn(
           "Failed to save natively, falling back to browser download",
           err,
         );
+      }
+    }
+
+    // BROWSER SAVING: Use File System Access API for a native-like save dialog
+    if ("showSaveFilePicker" in window) {
+      try {
+        const handle = await (
+          window as unknown as Record<string, unknown> & {
+            showSaveFilePicker: (
+              opts: unknown,
+            ) => Promise<FileSystemFileHandle>;
+          }
+        ).showSaveFilePicker({
+          suggestedName: defaultFileName,
+          types: [
+            {
+              description: "Video file",
+              accept: {
+                [`video/${extension === "mkv" ? "x-matroska" : extension}`]: [
+                  `.${extension}`,
+                ],
+              },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(result.blob);
+        await writable.close();
+        return;
+      } catch (err) {
+        // User cancelled (AbortError) — just return silently
+        if ((err as DOMException)?.name === "AbortError") return;
+        log.warn("showSaveFilePicker failed, using fallback download", err);
       }
     }
 

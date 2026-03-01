@@ -53,3 +53,4 @@ crates/*/Cargo.lock
 .knip-report.json
 release
 dist-electron
+__pycache__
