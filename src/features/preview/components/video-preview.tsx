@@ -32,6 +32,7 @@ import type { CompositionInputProps } from '@/types/export';
 import type { TimelineItem } from '@/types/timeline';
 import type { ItemEffect } from '@/types/effects';
 import type { ItemKeyframes } from '@/types/keyframe';
+import type { ResolvedTransform } from '@/types/transform';
 import { isMarqueeJustFinished } from '@/hooks/use-marquee-selection';
 import { createCompositionRenderer } from '@/features/preview/deps/export';
 import { shouldShowFastScrubOverlay } from '../utils/fast-scrub-overlay-guard';
@@ -929,6 +930,10 @@ export const VideoPreview = memo(function VideoPreview({
   useEffect(() => {
     const playback = usePlaybackStore.getState();
     if (playback.previewFrame !== null) {
+      // Preserve the currently viewed frame before clearing preview mode.
+      if (playback.currentFrame !== playback.previewFrame) {
+        playback.setCurrentFrame(playback.previewFrame);
+      }
       playback.setPreviewFrame(null);
     }
   }, []);
@@ -936,16 +941,15 @@ export const VideoPreview = memo(function VideoPreview({
   useEffect(() => {
     isGizmoInteractingRef.current = isGizmoInteracting;
     if (!isGizmoInteracting) return;
-    // During active transform drags, force preview output to come from Player.
-    // Clear stale hover-scrub state so runtime logic doesn't treat gizmo drag
-    // as scrubbing.
+    // During active transform drags, clear stale hover-scrub state without
+    // changing the viewed frame. This avoids a one-frame render source/frame jump.
     const playbackState = usePlaybackStore.getState();
     if (playbackState.previewFrame !== null) {
+      if (playbackState.currentFrame !== playbackState.previewFrame) {
+        playbackState.setCurrentFrame(playbackState.previewFrame);
+      }
       playbackState.setPreviewFrame(null);
     }
-    scrubRequestedFrameRef.current = null;
-    setShowFastScrubOverlay(false);
-    bypassPreviewSeekRef.current = false;
   }, [isGizmoInteracting]);
 
   useEffect(() => {
@@ -971,6 +975,19 @@ export const VideoPreview = memo(function VideoPreview({
   }, [adaptiveQualityCap, isPlaying]);
 
   const setCaptureFrame = usePlaybackStore((s) => s.setCaptureFrame);
+  const setDisplayedFrame = usePlaybackStore((s) => s.setDisplayedFrame);
+
+  // Provide live gizmo preview transforms to fast-scrub renderer so dragged
+  // items move with LUT preview instead of freezing at committed transforms.
+  const getPreviewTransformOverride = useCallback((itemId: string): Partial<ResolvedTransform> | undefined => {
+    const gizmoState = useGizmoStore.getState();
+    const unifiedPreviewTransform = gizmoState.preview?.[itemId]?.transform;
+    if (unifiedPreviewTransform) return unifiedPreviewTransform;
+    if (gizmoState.activeGizmo?.itemId === itemId && gizmoState.previewTransform) {
+      return gizmoState.previewTransform;
+    }
+    return undefined;
+  }, []);
 
   // Cache for resolved blob URLs (mediaId -> blobUrl)
   const [resolvedUrls, setResolvedUrls] = useState<Map<string, string>>(new Map());
@@ -1046,6 +1063,12 @@ export const VideoPreview = memo(function VideoPreview({
     }
     renderSourceRef.current = nextSource;
   }, [showFastScrubOverlay]);
+
+  useEffect(() => {
+    if (!showFastScrubOverlay) {
+      setDisplayedFrame(null);
+    }
+  }, [setDisplayedFrame, showFastScrubOverlay]);
 
   const rebuildUnresolvedMediaIds = useCallback((resolvedMap: Map<string, string>) => {
     const mediaIds = useMediaDependencyStore.getState().mediaIds;
@@ -2048,13 +2071,14 @@ export const VideoPreview = memo(function VideoPreview({
 
   const forceFastScrubOverlay = FAST_SCRUB_FORCE_OVERLAY_FOR_CUSTOM_CUBE && hasCustomCubePreview;
 
-  // Keep fast scrub canvas dimensions in sync with preview render dimensions.
+  // Keep the on-screen scrub canvas at project resolution so quality toggles
+  // only change offscreen sampling, not display buffer geometry.
   useLayoutEffect(() => {
     const canvas = scrubCanvasRef.current;
     if (!canvas) return;
-    if (canvas.width !== renderSize.width) canvas.width = renderSize.width;
-    if (canvas.height !== renderSize.height) canvas.height = renderSize.height;
-  }, [renderSize.width, renderSize.height]);
+    if (canvas.width !== playerRenderSize.width) canvas.width = playerRenderSize.width;
+    if (canvas.height !== playerRenderSize.height) canvas.height = playerRenderSize.height;
+  }, [playerRenderSize.width, playerRenderSize.height]);
 
   const disposeFastScrubRenderer = useCallback(() => {
     scrubInitPromiseRef.current = null;
@@ -2097,7 +2121,10 @@ export const VideoPreview = memo(function VideoPreview({
         const offscreenCtx = offscreen.getContext('2d');
         if (!offscreenCtx) return null;
 
-        const renderer = await createCompositionRenderer(fastScrubInputProps, offscreen, offscreenCtx, { mode: 'preview' });
+        const renderer = await createCompositionRenderer(fastScrubInputProps, offscreen, offscreenCtx, {
+          mode: 'preview',
+          getPreviewTransformOverride,
+        });
         const playbackState = usePlaybackStore.getState();
         const interactionMode = getPreviewInteractionMode({
           isPlaying: playbackState.isPlaying,
@@ -2145,7 +2172,7 @@ export const VideoPreview = memo(function VideoPreview({
     })();
 
     return scrubInitPromiseRef.current;
-  }, [fastScrubInputProps, fps, isResolving, renderSize.height, renderSize.width]);
+  }, [fastScrubInputProps, fps, getPreviewTransformOverride, isResolving, renderSize.height, renderSize.width]);
 
   // Dispose/recreate fast scrub renderer when composition inputs change.
   useEffect(() => {
@@ -2217,9 +2244,10 @@ export const VideoPreview = memo(function VideoPreview({
     setCaptureFrame(captureCurrentFrame);
     return () => {
       setCaptureFrame(null);
+      setDisplayedFrame(null);
       captureInFlightRef.current = null;
     };
-  }, [captureCurrentFrame, setCaptureFrame]);
+  }, [captureCurrentFrame, setCaptureFrame, setDisplayedFrame]);
 
   // Background warm-up so first scrub has lower startup latency.
   useEffect(() => {
@@ -2257,7 +2285,7 @@ export const VideoPreview = memo(function VideoPreview({
   useEffect(() => {
     scrubMountedRef.current = true;
 
-    const drawToDisplay = () => {
+    const drawToDisplay = (renderedFrame: number) => {
       const displayCanvas = scrubCanvasRef.current;
       const offscreen = scrubOffscreenCanvasRef.current;
       if (!displayCanvas || !offscreen) return;
@@ -2266,6 +2294,7 @@ export const VideoPreview = memo(function VideoPreview({
       if (!displayCtx) return;
       displayCtx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
       displayCtx.drawImage(offscreen, 0, 0, displayCanvas.width, displayCanvas.height);
+      setDisplayedFrame(renderedFrame);
     };
 
     const pumpRenderLoop = async () => {
@@ -2430,12 +2459,6 @@ export const VideoPreview = memo(function VideoPreview({
         };
 
         while (scrubMountedRef.current) {
-          if (isGizmoInteractingRef.current) {
-            setShowFastScrubOverlay(false);
-            bypassPreviewSeekRef.current = false;
-            scrubRequestedFrameRef.current = null;
-            break;
-          }
           if (fallbackToPlayerScrubRef.current) {
             scrubRequestedFrameRef.current = null;
             scrubPrewarmQueueRef.current = [];
@@ -2493,6 +2516,7 @@ export const VideoPreview = memo(function VideoPreview({
             if (!forceFastScrubOverlay && !shouldShowFastScrubOverlay({
               isGizmoInteracting: isGizmoInteractingRef.current,
               isPlaying: playbackState.isPlaying,
+              currentFrame: playbackState.currentFrame,
               previewFrame: playbackState.previewFrame,
               renderedFrame: frameToRender,
             })) {
@@ -2502,7 +2526,7 @@ export const VideoPreview = memo(function VideoPreview({
               continue;
             }
 
-            drawToDisplay();
+            drawToDisplay(frameToRender);
             setShowFastScrubOverlay(true);
             bypassPreviewSeekRef.current = true;
             if (!suppressScrubBackgroundPrewarmRef.current) {
@@ -2525,21 +2549,6 @@ export const VideoPreview = memo(function VideoPreview({
     };
 
     const unsubscribe = usePlaybackStore.subscribe((state, prev) => {
-      if (isGizmoInteractingRef.current) {
-        scrubRequestedFrameRef.current = null;
-        scrubDirectionRef.current = 0;
-        suppressScrubBackgroundPrewarmRef.current = false;
-        fallbackToPlayerScrubRef.current = false;
-        lastBackwardScrubPreloadAtRef.current = 0;
-        lastBackwardScrubRenderAtRef.current = 0;
-        lastBackwardRequestedFrameRef.current = null;
-        scrubPrewarmQueueRef.current = [];
-        scrubPrewarmQueuedSetRef.current.clear();
-        setShowFastScrubOverlay(false);
-        bypassPreviewSeekRef.current = false;
-        return;
-      }
-
       if (state.isPlaying && !forceFastScrubOverlay) {
         scrubRequestedFrameRef.current = null;
         scrubDirectionRef.current = 0;
@@ -2555,8 +2564,9 @@ export const VideoPreview = memo(function VideoPreview({
         return;
       }
 
-      const targetFrame = state.previewFrame ?? (forceFastScrubOverlay ? state.currentFrame : null);
-      const prevTargetFrame = prev.previewFrame ?? (forceFastScrubOverlay ? prev.currentFrame : null);
+      const useCurrentFrameAsTarget = forceFastScrubOverlay || isGizmoInteractingRef.current;
+      const targetFrame = state.previewFrame ?? (useCurrentFrameAsTarget ? state.currentFrame : null);
+      const prevTargetFrame = prev.previewFrame ?? (useCurrentFrameAsTarget ? prev.currentFrame : null);
       const playStateChanged = state.isPlaying !== prev.isPlaying;
 
       if (targetFrame === prevTargetFrame && !playStateChanged) return;
@@ -2668,7 +2678,21 @@ export const VideoPreview = memo(function VideoPreview({
       void pumpRenderLoop();
     });
 
-    if (forceFastScrubOverlay) {
+    // During gizmo drags, trigger re-renders even when frame is unchanged so
+    // transform previews stay on the fast-scrub render path.
+    const unsubscribeGizmo = useGizmoStore.subscribe((state, prev) => {
+      if (!forceFastScrubOverlay && !isGizmoInteractingRef.current) return;
+      if (!state.activeGizmo) return;
+      const transformPreviewChanged = state.previewTransform !== prev.previewTransform;
+      const unifiedPreviewChanged = state.preview !== prev.preview;
+      if (!transformPreviewChanged && !unifiedPreviewChanged) return;
+
+      const playbackState = usePlaybackStore.getState();
+      scrubRequestedFrameRef.current = playbackState.currentFrame;
+      void pumpRenderLoop();
+    });
+
+    if (forceFastScrubOverlay || isGizmoInteracting) {
       const playbackState = usePlaybackStore.getState();
       const initialFrame = playbackState.previewFrame ?? playbackState.currentFrame;
       scrubRequestedFrameRef.current = initialFrame;
@@ -2685,6 +2709,7 @@ export const VideoPreview = memo(function VideoPreview({
       lastBackwardScrubRenderAtRef.current = 0;
       lastBackwardRequestedFrameRef.current = null;
       unsubscribe();
+      unsubscribeGizmo();
     };
   }, [
     disposeFastScrubRenderer,
@@ -2693,6 +2718,10 @@ export const VideoPreview = memo(function VideoPreview({
     fastScrubBoundarySources,
     forceFastScrubOverlay,
     fps,
+    // Re-run when gizmo interaction toggles so drag overlays are requested
+    // immediately on interaction start/end.
+    isGizmoInteracting,
+    setDisplayedFrame,
     trackPlayerSeek,
   ]);
 
