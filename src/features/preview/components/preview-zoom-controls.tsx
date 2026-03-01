@@ -31,6 +31,12 @@ export function PreviewZoomControls() {
     qualityTriggerRef.current?.blur();
   }, []);
 
+  const handleSelectTriggerKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== ' ' && event.code !== 'Space') return;
+    // Space is reserved for global play/pause; prevent SelectTrigger from opening.
+    event.preventDefault();
+  }, []);
+
   const blurZoomTrigger = useCallback(() => {
     zoomTriggerRef.current?.blur();
   }, []);
@@ -40,7 +46,7 @@ export function PreviewZoomControls() {
     if (preset) {
       handlePresetZoom(preset);
     }
-    blurZoomTrigger();
+    requestAnimationFrame(blurZoomTrigger);
   };
 
   const currentQualityLabel = QUALITY_PRESETS.find((p) => p.value === previewQuality)?.label ?? 'Full';
@@ -51,23 +57,29 @@ export function PreviewZoomControls() {
         value={currentQualityLabel}
         onOpenChange={(open) => {
           if (!open) {
-            blurQualityTrigger();
+            requestAnimationFrame(blurQualityTrigger);
           }
         }}
         onValueChange={(value) => {
           const preset = QUALITY_PRESETS.find((p) => p.label === value);
           if (preset) setPreviewQuality(preset.value);
-          blurQualityTrigger();
+          requestAnimationFrame(blurQualityTrigger);
         }}
       >
         <SelectTrigger
           ref={qualityTriggerRef}
           className="w-[72px] h-7 text-xs"
           data-tooltip="Preview Quality"
+          onKeyDown={handleSelectTriggerKeyDown}
         >
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            requestAnimationFrame(blurQualityTrigger);
+          }}
+        >
           {QUALITY_PRESETS.map((preset) => (
             <SelectItem key={preset.label} value={preset.label} className="text-xs">
               {preset.label}
@@ -79,7 +91,7 @@ export function PreviewZoomControls() {
         value={currentLabel}
         onOpenChange={(open) => {
           if (!open) {
-            blurZoomTrigger();
+            requestAnimationFrame(blurZoomTrigger);
           }
         }}
         onValueChange={handleValueChange}
@@ -88,10 +100,16 @@ export function PreviewZoomControls() {
           ref={zoomTriggerRef}
           className="w-20 h-7 text-xs"
           data-tooltip="Preview Zoom"
+          onKeyDown={handleSelectTriggerKeyDown}
         >
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            requestAnimationFrame(blurZoomTrigger);
+          }}
+        >
           {zoomPresets.map((preset) => (
             <SelectItem key={preset.label} value={preset.label} className="text-xs">
               {preset.label}
