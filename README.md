@@ -2,13 +2,13 @@
 
 **[freecut.net](http://freecut.net/)**
 
-**Edit videos. In your browser.**
+**Edit videos locally with the power of Python, FFmpeg and a modern web UI.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ![FreeCut Timeline Editor](./public/assets/landing/timeline.png)
 
-FreeCut is a browser-based multi-track video editor. No installation, no uploads — everything runs locally in your browser using WebCodecs, OPFS, and the File System Access API.
+FreeCut is a fast, local multi-track video editor. It pairs a fluid browser-based UI with a powerful Python backend that handles hardware-accelerated FFmpeg processing. No internet uploads are required—everything runs locally on your machine.
 
 ## Features
 
@@ -42,7 +42,8 @@ FreeCut is a browser-based multi-track video editor. No installation, no uploads
 
 ### Export
 
-- In-browser rendering via WebCodecs (no server required)
+- **Blazing-fast GPU-accelerated export** (e.g., NVENC via FFmpeg) from the Python backend
+- Fallback in-browser rendering via WebCodecs for systems without a backend GPU
 - **Video:** MP4, MOV, WebM, MKV
 - **Audio-only:** MP3, AAC, WAV
 - **Codecs:** H.264, H.265, VP8, VP9, ProRes (proxy through 4444 XQ)
@@ -214,7 +215,7 @@ FreeCut now runs as a pure web application with a Python backend. Electron has b
 - **Python** 3.11+
 - **uv** - Python package manager (install via `pip install uv`)
 - **FFmpeg** - Must be installed on the system:
-  - Windows: Download from https://ffmpeg.org/download.html
+  - Windows: Download from <https://ffmpeg.org/download.html>
   - macOS: `brew install ffmpeg`
   - Linux: `sudo apt install ffmpeg`
 
@@ -226,11 +227,12 @@ FreeCut now runs as a pure web application with a Python backend. Electron has b
    npm install
    ```
 
-2. **Install Python backend dependencies (using uv):**
    ```bash
    npm run setup:python
    ```
+
    Or manually:
+
    ```bash
    cd backend
    uv venv
@@ -257,8 +259,8 @@ npm run dev
 
 The app will be available at:
 
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:8000
+- Frontend: <http://localhost:5173>
+- Backend API: <http://localhost:8000>
 
 ### Building for Production
 
@@ -273,9 +275,9 @@ cd backend
 uv run python main.py
 ```
 
-### Project Structure
+### Python Project Structure
 
-```
+```text
 freecut/
 ├── backend/               # Python backend (FastAPI)
 │   ├── main.py           # Backend server + serves frontend
@@ -290,4 +292,3 @@ freecut/
 ## License
 
 [MIT](LICENSE)
-
