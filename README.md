@@ -103,32 +103,32 @@ Brave disables the File System Access API by default. To enable it:
 
 ## Keyboard Shortcuts
 
-| Action | Shortcut |
-|---|---|
-| Play / Pause | `Space` |
-| Previous / Next frame | `Left` / `Right` |
-| Go to start / end | `Home` / `End` |
-| Split at playhead | `Alt+C` |
-| Join clips | `J` |
-| Delete selected | `Delete` |
-| Ripple delete | `Ctrl+Delete` |
-| Freeze frame | `Shift+F` |
-| Undo / Redo | `Ctrl+Z` / `Ctrl+Y` |
-| Copy / Cut / Paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
-| Selection tool | `V` |
-| Razor tool | `C` |
-| Rate stretch tool | `R` |
-| Toggle snap | `S` |
-| Add / Remove marker | `M` / `Shift+M` |
-| Add keyframe | `K` |
-| Toggle keyframe editor | `Ctrl+K` |
-| Group / Ungroup tracks | `Ctrl+G` / `Ctrl+Shift+G` |
-| Mark In / Out (playhead) | `I` / `O` |
-| Mark In / Out (skimmer) | `Shift+I` / `Shift+O` |
-| Insert / Overwrite edit | `,` / `.` |
-| Save | `Ctrl+S` |
-| Export | `Ctrl+E` |
-| Zoom to fit | `Z` |
+| Action                   | Shortcut                       |
+| ------------------------ | ------------------------------ |
+| Play / Pause             | `Space`                        |
+| Previous / Next frame    | `Left` / `Right`               |
+| Go to start / end        | `Home` / `End`                 |
+| Split at playhead        | `Alt+C`                        |
+| Join clips               | `J`                            |
+| Delete selected          | `Delete`                       |
+| Ripple delete            | `Ctrl+Delete`                  |
+| Freeze frame             | `Shift+F`                      |
+| Undo / Redo              | `Ctrl+Z` / `Ctrl+Y`            |
+| Copy / Cut / Paste       | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
+| Selection tool           | `V`                            |
+| Razor tool               | `C`                            |
+| Rate stretch tool        | `R`                            |
+| Toggle snap              | `S`                            |
+| Add / Remove marker      | `M` / `Shift+M`                |
+| Add keyframe             | `K`                            |
+| Toggle keyframe editor   | `Ctrl+K`                       |
+| Group / Ungroup tracks   | `Ctrl+G` / `Ctrl+Shift+G`      |
+| Mark In / Out (playhead) | `I` / `O`                      |
+| Mark In / Out (skimmer)  | `Shift+I` / `Shift+O`          |
+| Insert / Overwrite edit  | `,` / `.`                      |
+| Save                     | `Ctrl+S`                       |
+| Export                   | `Ctrl+E`                       |
+| Zoom to fit              | `Z`                            |
 
 ## Tech Stack
 
@@ -194,6 +194,89 @@ src/
 
 1. **Report bugs** — open an issue
 2. **Suggest features** — start a discussion
+
+## Desktop App (Python Backend)
+
+FreeCut now runs as a pure web application with a Python backend. Electron has been completely removed.
+
+### Prerequisites
+
+- **Node.js** 18+
+- **Python** 3.11+
+- **uv** - Python package manager (install via `pip install uv`)
+- **FFmpeg** - Must be installed on the system:
+  - Windows: Download from https://ffmpeg.org/download.html
+  - macOS: `brew install ffmpeg`
+  - Linux: `sudo apt install ffmpeg`
+
+### Setup
+
+1. **Install Node.js dependencies:**
+
+   ```bash
+   npm install
+   ```
+
+2. **Install Python backend dependencies (using uv):**
+   ```bash
+   npm run setup:python
+   ```
+   Or manually:
+   ```bash
+   cd backend
+   uv venv
+   uv pip install fastapi uvicorn python-multipart psutil
+   ```
+
+### Running the Application
+
+**Development mode (both frontend and backend):**
+
+```bash
+npm start
+```
+
+Or separately:
+
+```bash
+# Terminal 1: Start Python backend
+npm run dev:python
+
+# Terminal 2: Start frontend dev server
+npm run dev
+```
+
+The app will be available at:
+
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+
+### Building for Production
+
+```bash
+npm run build
+```
+
+Then run with Python:
+
+```bash
+cd backend
+uv run python main.py
+```
+
+### Project Structure
+
+```
+freecut/
+├── backend/               # Python backend (FastAPI)
+│   ├── main.py           # Backend server + serves frontend
+│   ├── pyproject.toml    # Python project config (uv)
+│   └── requirements.txt  # Python dependencies
+├── src/                  # Frontend (React + TypeScript)
+│   ├── lib/api.ts       # HTTP API client
+│   └── ...
+└── package.json
+```
 
 ## License
 

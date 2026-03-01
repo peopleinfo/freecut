@@ -3,54 +3,19 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite --host",
-    "dev:desktop": "vite --host -c vite.electron.config.ts",
+    "dev:python": "cd backend && uv run python main.py",
     "build": "vite build",
-    "build:desktop": "vite build -c vite.electron.config.ts && electron-builder",
-    "build:mac": "vite build -c vite.electron.config.ts && electron-builder --mac",
+    "build:python": "cd backend && uv run python main.py",
+    "start": "npm run dev:python & npm run dev",
+    "setup:python": "cd backend && uv venv && uv pip install fastapi uvicorn python-multipart psutil",
     "lint": "eslint .",
     "preview": "vite preview",
     "routes": "tsr generate",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage"
-  },
-  "build": {
-    "appId": "com.freecut.app",
-    "productName": "FreeCut",
-    "directories": {
-      "output": "release/${version}"
-    },
-    "files": [
-      "dist",
-      "dist-electron"
-    ],
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false
-    },
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ]
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -107,8 +72,6 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.0.17",
     "concurrently": "^9.2.1",
-    "electron": "^40.6.0",
-    "electron-builder": "^26.8.1",
     "eslint": "^9.18.0",
     "eslint-plugin-react-hooks": "^6.0.0",
     "eslint-plugin-react-refresh": "^0.4.16",
@@ -118,8 +81,6 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.19.1",
     "vite": "^6.0.0",
-    "vite-plugin-electron": "^0.29.0",
-    "vite-plugin-electron-renderer": "^0.14.6",
     "vitest": "^4.0.17"
   }
 }

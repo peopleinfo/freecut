@@ -1,5 +1,1 @@
-product ready quality perfomace and enterprise level, modular code following existing old project template
-tech: shadcn, zustand, tailwind, electron, vite, typescript, ipc
-
-convert 100% to electron vite can see starter here
-C:\Users\dila\Documents\projects\nde-mmo\apps\mmo
+this codebase it electron since i know only python can we fully 100% migrate to python but still keep frontend the same change only python with uv
