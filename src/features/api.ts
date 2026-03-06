@@ -109,10 +109,10 @@ export const ffmpeg = {
   cancelExport: (): Promise<{ success: boolean }> =>
     apiRequest("/ffmpeg/cancel-export", "POST"),
 
-  onExportProgress: (_callback: (progress: number) => void): (() => void) => {
+  onExportProgress: (_callback: (progress: number) => void): (() => void) => {  // eslint-disable-line @typescript-eslint/no-unused-vars
     // For HTTP-based implementation, polling is handled in export()
     // This is a no-op to maintain API compatibility
-    return () => {};
+    return () => { };
   },
 };
 
@@ -133,11 +133,11 @@ export const dialog = {
             description: f.name,
             accept: { "*": f.extensions.map((e) => `.${e}`) },
           })) || [
-            {
-              description: "All Files",
-              accept: { "*": ["*"] },
-            },
-          ],
+              {
+                description: "All Files",
+                accept: { "*": ["*"] },
+              },
+            ],
         });
 
         // Get file paths from handles (Chromium only)
@@ -192,11 +192,11 @@ export const dialog = {
             description: f.name,
             accept: { "*": f.extensions.map((e) => `.${e}`) },
           })) || [
-            {
-              description: "All Files",
-              accept: { "*": ["*"] },
-            },
-          ],
+              {
+                description: "All Files",
+                accept: { "*": ["*"] },
+              },
+            ],
         });
 
         return handle.name || "";
