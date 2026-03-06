@@ -11,10 +11,20 @@ import {
   getSourceDimensions,
 } from '@/features/preview/deps/composition-runtime';
 import { resolveAnimatedTransform } from '@/features/preview/deps/keyframes';
+import { expandTextTransformForPreview } from '../utils/text-layout';
 
 interface ProjectSize {
   width: number;
   height: number;
+}
+
+function applyTextExpansion(
+  item: TimelineItem,
+  transform: ResolvedTransform,
+  preview: Record<string, { properties?: Parameters<typeof expandTextTransformForPreview>[2] }> | null,
+): ResolvedTransform {
+  if (item.type !== 'text') return transform;
+  return expandTextTransformForPreview(item, transform, preview?.[item.id]?.properties);
 }
 
 /**
@@ -27,6 +37,7 @@ export function useVisualTransforms(
   const allKeyframes = useTimelineStore((s: TimelineState) => s.keyframes);
   const currentFrame = usePlaybackStore((s) => s.currentFrame);
   const previewFrame = usePlaybackStore((s) => s.previewFrame);
+  const displayedFrame = usePlaybackStore((s) => s.displayedFrame);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const currentFrameEpoch = usePlaybackStore((s) => s.currentFrameEpoch);
   const previewFrameEpoch = usePlaybackStore((s) => s.previewFrameEpoch);
@@ -36,6 +47,7 @@ export function useVisualTransforms(
   const animationFrame = getResolvedPlaybackFrame({
     currentFrame,
     previewFrame,
+    displayedFrame,
     isPlaying,
     currentFrameEpoch,
     previewFrameEpoch,
@@ -60,7 +72,7 @@ export function useVisualTransforms(
       }
 
       if (activeGizmo?.itemId === item.id && gizmoPreviewTransform) {
-        transforms.set(item.id, {
+        let gizmoTransform: ResolvedTransform = {
           x: gizmoPreviewTransform.x,
           y: gizmoPreviewTransform.y,
           width: gizmoPreviewTransform.width,
@@ -68,14 +80,17 @@ export function useVisualTransforms(
           rotation: gizmoPreviewTransform.rotation,
           opacity: gizmoPreviewTransform.opacity,
           cornerRadius: gizmoPreviewTransform.cornerRadius ?? 0,
-        });
+        };
+        gizmoTransform = applyTextExpansion(item, gizmoTransform, preview);
+        transforms.set(item.id, gizmoTransform);
         continue;
       }
 
       const previewTransform = preview?.[item.id]?.transform;
       if (previewTransform) {
+        let resolvedPreview: ResolvedTransform;
         if (isFullTransform(previewTransform)) {
-          transforms.set(item.id, {
+          resolvedPreview = {
             x: previewTransform.x,
             y: previewTransform.y,
             width: previewTransform.width,
@@ -83,18 +98,20 @@ export function useVisualTransforms(
             rotation: previewTransform.rotation,
             opacity: previewTransform.opacity ?? animatedTransform.opacity,
             cornerRadius: previewTransform.cornerRadius ?? animatedTransform.cornerRadius,
-          });
+          };
         } else {
-          transforms.set(item.id, {
+          resolvedPreview = {
             ...animatedTransform,
             ...previewTransform,
             cornerRadius: previewTransform.cornerRadius ?? animatedTransform.cornerRadius,
-          });
+          };
         }
+        resolvedPreview = applyTextExpansion(item, resolvedPreview, preview);
+        transforms.set(item.id, resolvedPreview);
         continue;
       }
 
-      transforms.set(item.id, animatedTransform);
+      transforms.set(item.id, applyTextExpansion(item, animatedTransform, preview));
     }
 
     return transforms;

@@ -280,7 +280,7 @@ export const PreviewArea = memo(function PreviewArea({ project }: PreviewAreaPro
             <div className="flex-1 min-w-0" />
             <PlaybackControls totalFrames={totalFrames} />
             <div className="flex-1 min-w-0" />
-            <div className="flex-shrink-0">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <PreviewZoomControls />
             </div>
           </div>
@@ -290,4 +290,3 @@ export const PreviewArea = memo(function PreviewArea({ project }: PreviewAreaPro
     </div>
   );
 });
-

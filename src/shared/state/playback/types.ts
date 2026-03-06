@@ -13,6 +13,8 @@ export interface PlaybackState {
   currentFrame: number;
   /** Internal epoch for last currentFrame mutation (monotonic per store session) */
   currentFrameEpoch: number;
+  /** Frame currently presented to the user in preview output (null when Player path is active) */
+  displayedFrame: number | null;
   isPlaying: boolean;
   playbackRate: number;
   loop: boolean;
@@ -29,6 +31,8 @@ export interface PlaybackState {
   previewItemId: string | null;
   /** Function to capture the current Player frame as a data URL (set by VideoPreview) */
   captureFrame: ((options?: CaptureOptions) => Promise<string | null>) | null;
+  /** Optional raw capture path that returns ImageData directly (avoids encode/decode overhead) */
+  captureFrameImageData?: ((options?: CaptureOptions) => Promise<ImageData | null>) | null;
   /** Whether to use proxy videos for preview playback (true = use 720p proxies when available) */
   useProxy: boolean;
   /** Preview render resolution multiplier (1 = full, 0.5 = half, 0.25 = quarter) */
@@ -46,8 +50,11 @@ export interface PlaybackActions {
   toggleMute: () => void;
   setZoom: (zoom: number) => void;
   setPreviewFrame: (frame: number | null, itemId?: string | null) => void;
+  setDisplayedFrame: (frame: number | null) => void;
   /** Register a frame capture function (called by VideoPreview on mount) */
   setCaptureFrame: (fn: ((options?: CaptureOptions) => Promise<string | null>) | null) => void;
+  /** Register raw frame capture function for scopes (optional) */
+  setCaptureFrameImageData?: (fn: ((options?: CaptureOptions) => Promise<ImageData | null>) | null) => void;
   /** Toggle proxy playback mode */
   toggleUseProxy: () => void;
   /** Set preview render quality */
