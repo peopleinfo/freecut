@@ -531,7 +531,7 @@ export function useClientRender(): UseClientRenderReturn {
 
               // Upload each media file to backend
               const { mediaLibraryService } = await import(
-                "@/features/media-library/services/media-library-service"
+                "@/features/export/deps/media-library"
               );
 
               let uploadedCount = 0;
@@ -785,16 +785,16 @@ export function useClientRender(): UseClientRenderReturn {
     const electronApi = (window as unknown as Record<string, unknown>)
       .opencut as
       | {
-          dialog?: {
-            saveFile: (opts: {
-              title: string;
-              defaultPath: string;
-            }) => Promise<string | undefined>;
-          };
-          fs?: {
-            writeFile: (path: string, data: ArrayBuffer) => Promise<void>;
-          };
-        }
+        dialog?: {
+          saveFile: (opts: {
+            title: string;
+            defaultPath: string;
+          }) => Promise<string | undefined>;
+        };
+        fs?: {
+          writeFile: (path: string, data: ArrayBuffer) => Promise<void>;
+        };
+      }
       | undefined;
     if (electronApi?.dialog?.saveFile && electronApi?.fs?.writeFile) {
       try {
