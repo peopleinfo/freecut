@@ -28,6 +28,8 @@
     "test:preview-sync": "vitest run src/features/preview/components/video-preview.sync.test.tsx",
     "test:preview-sync:stress": "node scripts/preview-sync-stress.mjs --runs 20",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "prepare": "husky"
   },
   "dependencies": {
@@ -74,6 +76,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.1.17",
     "@tanstack/router-cli": "^1.136.6",
     "@testing-library/dom": "^10.4.1",

@@ -34,6 +34,13 @@ out
 
 # Testing
 coverage
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# E2E test fixtures (auto-generated videos)
+e2e/fixtures/
 
 # Misc
 .cache
