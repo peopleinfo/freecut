@@ -61,3 +61,9 @@ crates/*/Cargo.lock
 release
 dist-electron
 __pycache__
+nul
+
+# Playwright / test screenshots
+*.png
+!public/**/*.png
+!src/**/*.png
