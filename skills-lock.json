@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "local-security-audit": {
+      "source": "C:\\Users\\dila\\Documents\\projects\\freecut\\skills",
+      "sourceType": "local",
+      "computedHash": "e1878f6f5b631c968b22e5a84446c276a42bb98f47a756a7b205af755f304e2b"
+    }
+  }
+}

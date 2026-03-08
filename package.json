@@ -34,7 +34,10 @@
     "prepare": "husky",
     "electron:dev": "concurrently -n be,fe,app -c blue,green,magenta \"npm run dev:python\" \"npm run dev\" \"node electron/wait-and-launch.cjs\"",
     "electron:build": "npm run build && electron-builder --config electron-builder.json",
-    "electron:pack": "npm run build && electron-builder --config electron-builder.json --dir"
+    "electron:pack": "npm run build && electron-builder --config electron-builder.json --dir",
+    "skills:sync": "bash scripts/sync-skills.sh",
+    "skills:pull": "bash scripts/sync-skills.sh --pull",
+    "skills:list": "bash scripts/sync-skills.sh --list"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
