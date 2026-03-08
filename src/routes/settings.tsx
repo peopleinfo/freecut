@@ -10,6 +10,7 @@ import {
   Sparkles,
   ExternalLink,
   Github,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -31,6 +32,135 @@ import type { UpdateEvent } from "@/types/electron-updater";
 export const Route = createFileRoute("/settings")({
   component: Settings,
 });
+
+// ── FFmpeg Setup Section ────────────────────────────────────────
+
+interface FFmpegStatus {
+  ffmpegAvailable: boolean;
+  ffprobeAvailable: boolean;
+  ffmpegVersion: string;
+  ffmpegPath: string | null;
+  source: "user-download" | "system" | "none";
+  needsSetup: boolean;
+  platform: string;
+  arch: string;
+}
+
+function FFmpegSetupSection() {
+  const [status, setStatus] = useState<FFmpegStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState("");
+
+  const checkStatus = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/ffmpeg/setup-status");
+      if (res.ok) {
+        setStatus(await res.json());
+      }
+    } catch {
+      // Backend not available (browser-only mode)
+      setStatus(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkStatus();
+  }, [checkStatus]);
+
+  const handleDownload = useCallback(async () => {
+    setDownloading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/ffmpeg/download", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Download failed");
+      } else {
+        // Refresh status
+        await checkStatus();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setDownloading(false);
+    }
+  }, [checkStatus]);
+
+  // Don't show if backend unavailable (browser-only mode)
+  if (!loading && status === null) return null;
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-lg font-semibold border-b border-border pb-2">
+        FFmpeg
+      </h2>
+
+      <div className="grid gap-4">
+        <div className="flex items-center justify-between">
+          <div className="flex-1 mr-4">
+            <Label>FFmpeg Status</Label>
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Checking...</p>
+            ) : status?.ffmpegAvailable ? (
+              <div className="flex items-center gap-2 mt-1">
+                <Check className="w-4 h-4 text-emerald-500" />
+                <p className="text-sm text-muted-foreground">
+                  Installed — {status.ffmpegVersion || "unknown version"}
+                  {status.source === "user-download" && " (app-managed)"}
+                  {status.source === "system" && " (system)"}
+                </p>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center gap-2 mt-1">
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                  <p className="text-sm text-amber-500">
+                    Not installed — required for GPU-accelerated exports
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  The editor still works without FFmpeg, but exports will use
+                  slower browser-based encoding.
+                </p>
+              </div>
+            )}
+            {error && <p className="text-sm text-destructive mt-1">{error}</p>}
+          </div>
+
+          {!loading && status && !status.ffmpegAvailable && (
+            <Button
+              className="gap-2"
+              onClick={handleDownload}
+              disabled={downloading}
+            >
+              {downloading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Downloading...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Download FFmpeg
+                </>
+              )}
+            </Button>
+          )}
+          {!loading && status?.ffmpegAvailable && (
+            <Button variant="outline" className="gap-2" onClick={checkStatus}>
+              <RefreshCw className="w-4 h-4" />
+              Re-check
+            </Button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function Settings() {
   const defaultFps = useSettingsStore((s) => s.defaultFps);
@@ -288,6 +418,9 @@ function Settings() {
             </div>
           </section>
         )}
+
+        {/* FFmpeg Setup Section */}
+        <FFmpegSetupSection />
 
         {/* General Section */}
         <section className="space-y-4">

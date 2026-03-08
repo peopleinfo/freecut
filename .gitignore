@@ -95,6 +95,9 @@ crates/*/Cargo.lock
 .knip-report.json
 release
 dist-electron
+backend-dist
+backend/build
+ffmpeg-bin
 __pycache__
 nul
 

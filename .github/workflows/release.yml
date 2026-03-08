@@ -57,7 +57,8 @@ jobs:
             ### What's New
             _Auto-generated from merge to master._
 
-            > **Note:** This release requires FFmpeg installed on your system for GPU-accelerated exports.
+            > **Note:** FFmpeg is required for GPU-accelerated exports.
+            > You can download it directly from within the app via **Settings → FFmpeg → Download FFmpeg**.
             > The app will still work without FFmpeg, but exports will use browser-based encoding (slower).
           draft: true
           prerelease: false
@@ -71,14 +72,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
+      - name: Install Node dependencies
         run: npm ci
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          uv sync
+
+      - name: Build backend (PyInstaller)
+        run: npm run build:backend
 
       - name: Build frontend
         run: npm run build
@@ -138,14 +155,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
+      - name: Install Node dependencies
         run: npm ci
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          uv sync
+
+      - name: Build backend (PyInstaller)
+        run: npm run build:backend
 
       - name: Build frontend
         run: npm run build

@@ -10,6 +10,7 @@ import json
 import os
 import platform
 import subprocess
+import sys
 import tempfile
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -59,26 +60,32 @@ FRONTEND_DIST = BASE_DIR / "dist"
 
 # ============= FFmpeg Path Resolution =============
 
+# User-managed FFmpeg directory — set up properly later in the file,
+# but we define a helper here for path resolution.
+def _user_ffmpeg_dir() -> Path:
+    """Get the directory where user-downloaded FFmpeg binaries live."""
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent / "ffmpeg"
+    return BASE_DIR / "ffmpeg-bin"
+
+
 def get_ffmpeg_path() -> str:
     """Get the FFmpeg binary path.
     
     Priority:
-    1. imageio-ffmpeg bundled binary (Python package)
+    1. User-managed download directory (downloaded via Settings UI)
     2. Local bin directory (for development)
     3. System PATH fallback
     """
-    # 1. Use imageio-ffmpeg (bundled, no system install needed)
-    try:
-        import imageio_ffmpeg
-        path = imageio_ffmpeg.get_ffmpeg_exe()
-        if path and os.path.exists(path):
-            return path
-    except ImportError:
-        pass
-    
-    # 2. Check local bin directory
     system = platform.system()
     binary_name = "ffmpeg.exe" if system == "Windows" else "ffmpeg"
+    
+    # 1. User-managed download directory
+    user_path = _user_ffmpeg_dir() / binary_name
+    if user_path.exists():
+        return str(user_path)
+    
+    # 2. Check local bin directory
     local_bin = BASE_DIR / "bin" / f"{platform.system().lower()}-{platform.machine()}" / binary_name
     
     if local_bin.exists():
@@ -91,26 +98,20 @@ def get_ffmpeg_path() -> str:
 def get_ffprobe_path() -> str:
     """Get the FFprobe binary path.
     
-    Uses imageio-ffmpeg's bundled binary directory to find ffprobe,
-    or falls back to local bin / system PATH.
+    Priority:
+    1. User-managed download directory (downloaded via Settings UI)
+    2. Local bin directory (for development)
+    3. System PATH fallback
     """
-    # 1. Try to find ffprobe next to imageio-ffmpeg's bundled ffmpeg
-    try:
-        import imageio_ffmpeg
-        ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
-        if ffmpeg_path:
-            ffmpeg_dir = os.path.dirname(ffmpeg_path)
-            system = platform.system()
-            probe_name = "ffprobe.exe" if system == "Windows" else "ffprobe"
-            probe_path = os.path.join(ffmpeg_dir, probe_name)
-            if os.path.exists(probe_path):
-                return probe_path
-    except ImportError:
-        pass
-    
-    # 2. Check local bin directory
     system = platform.system()
     binary_name = "ffprobe.exe" if system == "Windows" else "ffprobe"
+    
+    # 1. User-managed download directory
+    user_path = _user_ffmpeg_dir() / binary_name
+    if user_path.exists():
+        return str(user_path)
+    
+    # 2. Check local bin directory
     local_bin = BASE_DIR / "bin" / f"{platform.system().lower()}-{platform.machine()}" / binary_name
     
     if local_bin.exists():
@@ -2082,6 +2083,239 @@ async def system_info():
         "cpu_count": psutil.cpu_count(),
         "memory_total": psutil.virtual_memory().total,
     }
+
+
+# ============= FFmpeg Setup / Download =============
+
+# Directory where user-downloaded FFmpeg binaries are stored.
+# In production (PyInstaller), use a persistent writable directory next to the exe.
+# In development, use <project>/ffmpeg-bin/.
+if getattr(sys, 'frozen', False):
+    # PyInstaller: write to a directory alongside the exe
+    _exe_dir = Path(sys.executable).parent
+    FFMPEG_DIR = _exe_dir / "ffmpeg"
+else:
+    FFMPEG_DIR = BASE_DIR / "ffmpeg-bin"
+
+# FFmpeg download URLs per platform
+# These point to well-known community builds
+FFMPEG_DOWNLOAD_URLS = {
+    "Windows": {
+        "x86_64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+        "AMD64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+    },
+    "Darwin": {
+        "x86_64": "https://evermeet.cx/ffmpeg/getrelease/zip",
+        "arm64": "https://evermeet.cx/ffmpeg/getrelease/zip",
+    },
+    "Linux": {
+        "x86_64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+        "aarch64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz",
+    },
+}
+
+
+def _get_user_ffmpeg_paths() -> tuple[Optional[str], Optional[str]]:
+    """Check if user-downloaded FFmpeg binaries exist in our managed directory."""
+    system = platform.system()
+    ext = ".exe" if system == "Windows" else ""
+    
+    ffmpeg_path = FFMPEG_DIR / f"ffmpeg{ext}"
+    ffprobe_path = FFMPEG_DIR / f"ffprobe{ext}"
+    
+    ff = str(ffmpeg_path) if ffmpeg_path.exists() else None
+    fp = str(ffprobe_path) if ffprobe_path.exists() else None
+    return ff, fp
+
+
+@api_router.get("/ffmpeg/setup-status")
+async def ffmpeg_setup_status():
+    """Check FFmpeg availability and provide setup guidance.
+    
+    Returns the current status of FFmpeg: whether it's available,
+    where it was found, and if the user needs to download it.
+    """
+    # 1. Check our managed download directory first
+    user_ff, user_fp = _get_user_ffmpeg_paths()
+    
+    # 2. Check system-level availability
+    ffmpeg_path = get_ffmpeg_path()
+    ffprobe_path = get_ffprobe_path()
+    
+    # Test if ffmpeg actually works
+    ffmpeg_works = False
+    ffmpeg_version = ""
+    try:
+        result = subprocess.run(
+            [ffmpeg_path, "-version"],
+            capture_output=True, timeout=5
+        )
+        if result.returncode == 0:
+            ffmpeg_works = True
+            output = result.stdout.decode()
+            if "ffmpeg version" in output:
+                ffmpeg_version = output.split("ffmpeg version ")[1].split()[0]
+    except Exception:
+        pass
+    
+    # Test if ffprobe works
+    ffprobe_works = False
+    try:
+        result = subprocess.run(
+            [ffprobe_path, "-version"],
+            capture_output=True, timeout=5
+        )
+        ffprobe_works = result.returncode == 0
+    except Exception:
+        pass
+    
+    # Determine download URL for this platform
+    system = platform.system()
+    arch = platform.machine()
+    download_url = FFMPEG_DOWNLOAD_URLS.get(system, {}).get(arch, "")
+    
+    return {
+        "ffmpegAvailable": ffmpeg_works,
+        "ffprobeAvailable": ffprobe_works,
+        "ffmpegPath": ffmpeg_path if ffmpeg_works else None,
+        "ffprobePath": ffprobe_path if ffprobe_works else None,
+        "ffmpegVersion": ffmpeg_version,
+        "source": "user-download" if user_ff else ("system" if ffmpeg_works else "none"),
+        "downloadUrl": download_url,
+        "downloadDir": str(FFMPEG_DIR),
+        "needsSetup": not ffmpeg_works,
+        "platform": system,
+        "arch": arch,
+    }
+
+
+@api_router.post("/ffmpeg/download")
+async def ffmpeg_download():
+    """Download and extract FFmpeg binaries for the current platform.
+    
+    Downloads from well-known community builds and extracts ffmpeg + ffprobe
+    to the managed ffmpeg directory.
+    """
+    system = platform.system()
+    arch = platform.machine()
+    
+    download_url = FFMPEG_DOWNLOAD_URLS.get(system, {}).get(arch, "")
+    if not download_url:
+        return JSONResponse(
+            {"error": f"No FFmpeg download available for {system}/{arch}"},
+            status_code=400
+        )
+    
+    FFMPEG_DIR.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        import urllib.request
+        import zipfile
+        import tarfile
+        import shutil
+        
+        # Download to temp file
+        print(f"[FFmpegSetup] Downloading from {download_url}...")
+        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
+        tmp_path = tmp_file.name
+        tmp_file.close()
+        
+        def do_download():
+            urllib.request.urlretrieve(download_url, tmp_path)
+        
+        await asyncio.to_thread(do_download)
+        
+        file_size = os.path.getsize(tmp_path)
+        print(f"[FFmpegSetup] Downloaded {file_size / 1024 / 1024:.1f} MB")
+        
+        # Extract
+        extract_dir = tempfile.mkdtemp(prefix="freecut_ffmpeg_extract_")
+        
+        def do_extract():
+            if tmp_path.endswith(".tmp"):
+                # Detect format from URL
+                if download_url.endswith(".zip") or "zip" in download_url:
+                    with zipfile.ZipFile(tmp_path, 'r') as zf:
+                        zf.extractall(extract_dir)
+                elif download_url.endswith(".tar.xz"):
+                    with tarfile.open(tmp_path, 'r:xz') as tf:
+                        tf.extractall(extract_dir)
+                elif download_url.endswith(".tar.gz"):
+                    with tarfile.open(tmp_path, 'r:gz') as tf:
+                        tf.extractall(extract_dir)
+                else:
+                    # Try zip first, then tar
+                    try:
+                        with zipfile.ZipFile(tmp_path, 'r') as zf:
+                            zf.extractall(extract_dir)
+                    except zipfile.BadZipFile:
+                        with tarfile.open(tmp_path) as tf:
+                            tf.extractall(extract_dir)
+        
+        await asyncio.to_thread(do_extract)
+        print(f"[FFmpegSetup] Extracted to {extract_dir}")
+        
+        # Find ffmpeg and ffprobe binaries in extracted files
+        ext = ".exe" if system == "Windows" else ""
+        ffmpeg_name = f"ffmpeg{ext}"
+        ffprobe_name = f"ffprobe{ext}"
+        
+        def find_binary(name):
+            for root, dirs, files in os.walk(extract_dir):
+                if name in files:
+                    return os.path.join(root, name)
+            return None
+        
+        ffmpeg_src = find_binary(ffmpeg_name)
+        ffprobe_src = find_binary(ffprobe_name)
+        
+        if not ffmpeg_src:
+            return JSONResponse(
+                {"error": "Could not find ffmpeg binary in downloaded archive"},
+                status_code=500
+            )
+        
+        # Copy to managed directory
+        ffmpeg_dest = FFMPEG_DIR / ffmpeg_name
+        shutil.copy2(ffmpeg_src, str(ffmpeg_dest))
+        os.chmod(str(ffmpeg_dest), 0o755)
+        print(f"[FFmpegSetup] Installed ffmpeg to {ffmpeg_dest}")
+        
+        if ffprobe_src:
+            ffprobe_dest = FFMPEG_DIR / ffprobe_name
+            shutil.copy2(ffprobe_src, str(ffprobe_dest))
+            os.chmod(str(ffprobe_dest), 0o755)
+            print(f"[FFmpegSetup] Installed ffprobe to {ffprobe_dest}")
+        
+        # Cleanup
+        try:
+            os.unlink(tmp_path)
+            shutil.rmtree(extract_dir, ignore_errors=True)
+        except Exception:
+            pass
+        
+        # Verify
+        result = subprocess.run(
+            [str(ffmpeg_dest), "-version"],
+            capture_output=True, timeout=5
+        )
+        
+        version = ""
+        if result.returncode == 0:
+            output = result.stdout.decode()
+            if "ffmpeg version" in output:
+                version = output.split("ffmpeg version ")[1].split()[0]
+        
+        return {
+            "success": True,
+            "ffmpegPath": str(ffmpeg_dest),
+            "ffprobePath": str(FFMPEG_DIR / ffprobe_name) if ffprobe_src else None,
+            "version": version,
+        }
+        
+    except Exception as e:
+        print(f"[FFmpegSetup] Error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ============= Include API Router =============

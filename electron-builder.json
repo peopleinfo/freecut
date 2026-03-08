@@ -6,13 +6,13 @@
     "output": "release",
     "buildResources": "build"
   },
-  "files": [
-    "dist/**/*",
-    "electron/**/*",
-    "backend/**/*",
-    "!backend/__pycache__",
-    "!backend/.venv",
-    "!**/node_modules/**"
+  "files": ["dist/**/*", "electron/**/*", "!**/node_modules/**"],
+  "extraResources": [
+    {
+      "from": "backend-dist/freecut-backend",
+      "to": "backend-dist/freecut-backend",
+      "filter": ["**/*"]
+    }
   ],
   "publish": {
     "provider": "github",

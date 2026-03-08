@@ -19,7 +19,6 @@ test.describe("Projects Page", () => {
   });
 
   test("has GitHub link in header", async ({ page }) => {
-    const githubLink = page.getByRole("link", { name: /View on GitHub/i });
     // The GitHub icon link uses data-tooltip, find by href instead
     const ghLink = page.locator(
       'a[href="https://github.com/walterlow/freecut"]',

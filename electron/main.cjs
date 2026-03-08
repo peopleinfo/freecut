@@ -63,17 +63,45 @@ function createWindow() {
 
 /**
  * Start the Python backend process.
- * In production, the backend is bundled alongside the app.
+ * In production: runs the PyInstaller-compiled freecut-backend exe.
+ * In development: runs via uv (started by concurrently, not here).
  */
 function startBackend() {
-  const backendDir = path.join(__dirname, "../backend");
+  let command, args, options;
 
-  try {
-    backendProcess = spawn("uv", ["run", "python", "main.py"], {
-      cwd: backendDir,
+  if (isDev) {
+    // Dev mode — this branch is only called if you manually invoke startBackend()
+    // in dev. Normally concurrently handles it via `npm run electron:dev`.
+    command = "uv";
+    args = ["run", "python", "main.py"];
+    options = {
+      cwd: path.join(__dirname, "../backend"),
       stdio: "pipe",
       shell: true,
-    });
+    };
+  } else {
+    // Production — use PyInstaller-compiled executable
+    const backendDir = path.join(
+      process.resourcesPath,
+      "backend-dist",
+      "freecut-backend",
+    );
+    const exeName =
+      process.platform === "win32" ? "freecut-backend.exe" : "freecut-backend";
+    const exePath = path.join(backendDir, exeName);
+
+    console.log(`[Backend] Launching: ${exePath}`);
+    command = exePath;
+    args = [];
+    options = {
+      cwd: backendDir,
+      stdio: "pipe",
+      // Don't use shell in production — direct exe launch is more reliable
+    };
+  }
+
+  try {
+    backendProcess = spawn(command, args, options);
 
     backendProcess.stdout?.on("data", (data) => {
       console.log(`[Backend] ${data.toString().trim()}`);
@@ -92,7 +120,7 @@ function startBackend() {
       backendProcess = null;
     });
 
-    console.log("[Backend] Starting Python backend...");
+    console.log("[Backend] Starting backend server...");
   } catch (err) {
     console.error("[Backend] Failed to spawn:", err.message);
   }
