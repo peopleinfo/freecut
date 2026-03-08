@@ -1424,11 +1424,39 @@ async def _read_compose_progress(job: ComposeExportJob):
 
 @api_router.post("/ffmpeg/export-frame")
 async def ffmpeg_export_frame(request: Request):
-    """Receive a raw RGBA frame and write it to FFmpeg stdin."""
-    body = await request.json()
-    job_id = body.get("jobId")
-    frame_index = body.get("frameIndex", 0)
-    data_b64 = body.get("data")
+    """Receive a raw RGBA frame and write it to FFmpeg stdin.
+    
+    Supports two formats:
+    1. Binary (preferred, ~3x faster): Content-Type: application/octet-stream
+       Body = jobId (36 bytes, null-padded) + frameIndex (4 bytes LE) + RGBA data
+    2. JSON (legacy): Content-Type: application/json
+       Body = { "jobId": "...", "frameIndex": 0, "data": "<base64>" }
+    """
+    content_type = request.headers.get("content-type", "")
+    
+    if "octet-stream" in content_type:
+        # Binary protocol: header (40 bytes) + RGBA data
+        raw = await request.body()
+        if len(raw) < 40:
+            return JSONResponse({"error": "Binary frame too small (need 40-byte header)"}, status_code=400)
+        
+        job_id = raw[:36].decode("ascii").rstrip("\x00")
+        frame_index = int.from_bytes(raw[36:40], byteorder="little")
+        frame_data = raw[40:]
+    else:
+        # JSON + base64 (backward compatibility)
+        body = await request.json()
+        job_id = body.get("jobId")
+        frame_index = body.get("frameIndex", 0)
+        data_b64 = body.get("data")
+        
+        if not data_b64:
+            return JSONResponse({"error": "Missing frame data"}, status_code=400)
+        
+        try:
+            frame_data = base64.b64decode(data_b64)
+        except Exception as e:
+            return JSONResponse({"error": f"Invalid base64 data: {e}"}, status_code=400)
 
     if not job_id or job_id not in compose_jobs:
         return JSONResponse({"error": "Invalid jobId"}, status_code=400)
@@ -1438,16 +1466,8 @@ async def ffmpeg_export_frame(request: Request):
     if job.status not in ("encoding",):
         return JSONResponse({"error": f"Job not accepting frames (status: {job.status})"}, status_code=400)
 
-    if not data_b64:
-        return JSONResponse({"error": "Missing frame data"}, status_code=400)
-
     if not job.process or not job.process.stdin:
         return JSONResponse({"error": "FFmpeg process not available"}, status_code=500)
-
-    try:
-        frame_data = base64.b64decode(data_b64)
-    except Exception as e:
-        return JSONResponse({"error": f"Invalid base64 data: {e}"}, status_code=400)
 
     expected_size = job.width * job.height * 4  # RGBA = 4 bytes per pixel
     if len(frame_data) != expected_size:
@@ -1695,6 +1715,335 @@ async def ffmpeg_export_cancel(job_id: str):
     _cleanup_job_files(job)
 
     return {"success": True}
+
+
+# ============= Proxy Generation (Backend FFmpeg) =============
+
+# Active proxy generation jobs
+proxy_jobs: dict[str, dict] = {}
+
+
+@api_router.post("/media/generate-proxy")
+async def generate_proxy(request: Request):
+    """Generate a 720p proxy video using FFmpeg with GPU acceleration.
+    
+    Accepts either:
+    - An uploaded media file (mediaId in uploaded_media)
+    - Binary file data in request body with X-Media-Id header
+    
+    Returns a job ID for tracking; result is downloadable via /media/proxy-download/{jobId}.
+    This replaces the browser-only mediabunny proxy generation for massive speedup.
+    """
+    media_id = request.headers.get("X-Media-Id", "")
+    
+    if not media_id:
+        return JSONResponse({"error": "X-Media-Id header required"}, status_code=400)
+    
+    # Resolve source file path
+    source_path = uploaded_media.get(media_id)
+    if not source_path or not os.path.exists(source_path):
+        return JSONResponse({"error": f"Media not found: {media_id}. Upload it first via /api/media/upload"}, status_code=400)
+    
+    # Check FFmpeg
+    ffmpeg_result = await check_ffmpeg()
+    if not ffmpeg_result.available:
+        return JSONResponse({"error": "FFmpeg not available"}, status_code=500)
+    
+    ffmpeg_path = get_ffmpeg_path()
+    hw_info = ffmpeg_result.hw_accel
+    
+    # Probe source to get dimensions
+    try:
+        probe_result = await probe_file(source_path)
+        source_width = probe_result.width
+        source_height = probe_result.height
+    except Exception:
+        source_width = 1920
+        source_height = 1080
+    
+    # Calculate proxy dimensions (720p, preserving aspect ratio, even numbers)
+    proxy_max_height = 720
+    proxy_max_width = 1280
+    if source_width > source_height:
+        # Landscape
+        proxy_width = min(source_width, proxy_max_width)
+        proxy_height = int(proxy_width * source_height / source_width)
+    else:
+        # Portrait
+        proxy_height = min(source_height, proxy_max_height)
+        proxy_width = int(proxy_height * source_width / source_height)
+    
+    # Ensure even numbers (required by most codecs)
+    proxy_width = proxy_width + (proxy_width % 2)
+    proxy_height = proxy_height + (proxy_height % 2)
+    
+    # Create output
+    job_id = str(uuid.uuid4())
+    output_dir = tempfile.mkdtemp(prefix="freecut_proxy_")
+    output_path = os.path.join(output_dir, f"proxy_{media_id}.mp4")
+    
+    # Build FFmpeg command
+    args = [ffmpeg_path, "-y", "-hide_banner"]
+    
+    # Hardware decode
+    if hw_info.available and hw_info.hwaccel:
+        args.extend(["-hwaccel", hw_info.hwaccel])
+    
+    args.extend(["-i", source_path])
+    
+    # Scale to proxy resolution, drop audio for preview performance
+    args.extend(["-vf", f"scale={proxy_width}:{proxy_height}"])
+    
+    # Use fast encoder settings for proxy (speed > quality)
+    encoder = hw_info.encoder if hw_info.available else "libx264"
+    args.extend(["-c:v", encoder])
+    
+    if "nvenc" in encoder:
+        args.extend(["-preset", "p1", "-cq", "30", "-pix_fmt", "yuv420p"])
+    elif "videotoolbox" in encoder:
+        args.extend(["-q:v", "40", "-pix_fmt", "yuv420p"])
+    else:
+        args.extend(["-crf", "28", "-preset", "ultrafast", "-pix_fmt", "yuv420p"])
+    
+    # Keep audio for proxy playback (re-encode to AAC for browser compatibility)
+    args.extend(["-c:a", "aac", "-b:a", "128k"])
+    args.extend(["-movflags", "+faststart"])
+    args.append(output_path)
+    
+    print(f"[ProxyGen] Starting: {' '.join(args[:15])}...")
+    
+    # Track job
+    proxy_jobs[job_id] = {
+        "media_id": media_id,
+        "status": "encoding",
+        "output_path": output_path,
+        "source_width": source_width,
+        "source_height": source_height,
+        "proxy_width": proxy_width,
+        "proxy_height": proxy_height,
+        "created_at": time.time(),
+        "error": None,
+    }
+    
+    # Run FFmpeg in thread
+    def run_proxy_ffmpeg():
+        try:
+            proc = subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+            )
+            _, stderr = proc.communicate(timeout=300)
+            return proc.returncode, stderr
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            return -1, b"Proxy generation timeout (300s)"
+        except Exception as e:
+            return -1, str(e).encode()
+    
+    try:
+        start_time = time.time()
+        returncode, stderr = await asyncio.to_thread(run_proxy_ffmpeg)
+        elapsed = time.time() - start_time
+        
+        if returncode != 0:
+            error_msg = stderr.decode()[-300:] if stderr else "Unknown error"
+            proxy_jobs[job_id]["status"] = "error"
+            proxy_jobs[job_id]["error"] = error_msg
+            print(f"[ProxyGen] FAILED: {error_msg}")
+            return JSONResponse({"error": f"Proxy generation failed: {error_msg}"}, status_code=500)
+        
+        file_size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+        proxy_jobs[job_id]["status"] = "done"
+        
+        print(f"[ProxyGen] Complete in {elapsed:.1f}s: {file_size} bytes ({proxy_width}x{proxy_height})")
+        
+        return {
+            "success": True,
+            "jobId": job_id,
+            "mediaId": media_id,
+            "fileSize": file_size,
+            "elapsed": round(elapsed, 2),
+            "width": proxy_width,
+            "height": proxy_height,
+            "encoder": encoder,
+        }
+    except Exception as e:
+        proxy_jobs[job_id]["status"] = "error"
+        proxy_jobs[job_id]["error"] = str(e)
+        return JSONResponse({"error": f"Proxy generation failed: {e}"}, status_code=500)
+
+
+@api_router.get("/media/proxy-download/{job_id}")
+async def proxy_download(job_id: str):
+    """Download a generated proxy video."""
+    if job_id not in proxy_jobs:
+        return JSONResponse({"error": "Invalid jobId"}, status_code=404)
+    
+    job = proxy_jobs[job_id]
+    if job["status"] != "done":
+        return JSONResponse({"error": f"Proxy not ready (status: {job['status']})"}, status_code=400)
+    
+    output_path = job["output_path"]
+    if not os.path.exists(output_path):
+        return JSONResponse({"error": "Proxy file not found"}, status_code=404)
+    
+    return FileResponse(
+        output_path,
+        media_type="video/mp4",
+        filename=f"proxy_{job['media_id']}.mp4",
+    )
+
+
+# ============= Waveform Extraction (Backend FFmpeg) =============
+
+@api_router.post("/media/waveform")
+async def extract_waveform(request: Request):
+    """Extract audio waveform peaks from a media file using FFmpeg.
+    
+    Returns an array of peak values suitable for rendering a waveform display.
+    This replaces the browser-only mediabunny audio decoding for better performance.
+    
+    Expected: X-Media-Id header or JSON body with { mediaId, samplesPerSecond }
+    """
+    content_type = request.headers.get("content-type", "")
+    
+    if "json" in content_type:
+        body = await request.json()
+        media_id = body.get("mediaId", "")
+        samples_per_second = body.get("samplesPerSecond", 50)
+    else:
+        media_id = request.headers.get("X-Media-Id", "")
+        samples_per_second = int(request.headers.get("X-Samples-Per-Second", "50"))
+    
+    if not media_id:
+        return JSONResponse({"error": "mediaId required"}, status_code=400)
+    
+    # Resolve source file path
+    source_path = uploaded_media.get(media_id)
+    if not source_path or not os.path.exists(source_path):
+        return JSONResponse({"error": f"Media not found: {media_id}"}, status_code=400)
+    
+    ffmpeg_path = get_ffmpeg_path()
+    
+    # Use FFmpeg to extract raw audio samples as 16-bit PCM mono
+    # Then compute peaks at the requested resolution
+    with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
+        raw_audio_path = tmp.name
+    
+    try:
+        # Extract audio as raw PCM s16le mono at a reasonable sample rate
+        # Use a lower sample rate (8000 Hz) for peak extraction — we only need peaks
+        extract_args = [
+            ffmpeg_path, "-y", "-hide_banner",
+            "-i", source_path,
+            "-vn",  # No video
+            "-ac", "1",  # Mono
+            "-ar", "8000",  # 8kHz sample rate (enough for peaks)
+            "-f", "s16le",  # Raw 16-bit signed little-endian
+            "-acodec", "pcm_s16le",
+            raw_audio_path,
+        ]
+        
+        def run_extract():
+            proc = subprocess.Popen(
+                extract_args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+            )
+            _, stderr = proc.communicate(timeout=60)
+            return proc.returncode, stderr
+        
+        returncode, stderr = await asyncio.to_thread(run_extract)
+        
+        if returncode != 0:
+            error_msg = stderr.decode()[-200:] if stderr else "Unknown error"
+            return JSONResponse({"error": f"Waveform extraction failed: {error_msg}"}, status_code=500)
+        
+        # Read raw PCM data
+        with open(raw_audio_path, "rb") as f:
+            raw_data = f.read()
+        
+        if len(raw_data) < 2:
+            return JSONResponse({"error": "No audio data extracted"}, status_code=400)
+        
+        # Convert to numpy-like processing (without numpy dependency)
+        import struct
+        sample_count = len(raw_data) // 2  # 16-bit = 2 bytes per sample
+        samples = struct.unpack(f"<{sample_count}h", raw_data[:sample_count * 2])
+        
+        # Get duration from probe
+        try:
+            probe_result = await probe_file(source_path)
+            duration = probe_result.duration
+        except Exception:
+            duration = sample_count / 8000.0
+        
+        # Calculate peaks — samples_per_second peaks per second of audio
+        total_peaks = max(1, int(duration * samples_per_second))
+        samples_per_peak = max(1, sample_count // total_peaks)
+        
+        peaks = []
+        for i in range(total_peaks):
+            start = i * samples_per_peak
+            end = min(start + samples_per_peak, sample_count)
+            if start >= sample_count:
+                break
+            
+            chunk = samples[start:end]
+            if chunk:
+                peak = max(abs(s) for s in chunk) / 32768.0  # Normalize to 0-1
+                peaks.append(round(peak, 4))
+            else:
+                peaks.append(0)
+        
+        return {
+            "success": True,
+            "mediaId": media_id,
+            "peaks": peaks,
+            "duration": duration,
+            "sampleRate": 8000,
+            "totalPeaks": len(peaks),
+            "samplesPerSecond": samples_per_second,
+        }
+    finally:
+        if os.path.exists(raw_audio_path):
+            os.unlink(raw_audio_path)
+
+
+# ============= Thumbnail from Uploaded Media =============
+
+@api_router.post("/media/thumbnail")
+async def media_thumbnail(request: Request):
+    """Generate a thumbnail from an uploaded media file.
+    
+    Uses FFmpeg to extract a frame, much faster than browser-based mediabunny.
+    Returns base64 JPEG data.
+    
+    Accepts JSON: { mediaId, timeSeconds?, maxSize? }
+    """
+    body = await request.json()
+    media_id = body.get("mediaId", "")
+    time_seconds = body.get("timeSeconds", 1.0)
+    max_size = body.get("maxSize", 320)
+    
+    if not media_id:
+        return JSONResponse({"error": "mediaId required"}, status_code=400)
+    
+    # Resolve source file path
+    source_path = uploaded_media.get(media_id)
+    if not source_path or not os.path.exists(source_path):
+        return JSONResponse({"error": f"Media not found: {media_id}"}, status_code=400)
+    
+    # Generate thumbnail using existing function
+    try:
+        result = await generate_thumbnail(source_path, time_seconds)
+        return {"thumbnail": result, "mediaId": media_id}
+    except Exception as e:
+        return JSONResponse({"error": f"Thumbnail generation failed: {e}"}, status_code=500)
 
 
 # ============= File System =============
