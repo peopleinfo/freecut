@@ -243,7 +243,7 @@ class ProxyService {
       uploadMediaFile,
       generateProxy: backendGenerateProxy,
       downloadProxy,
-    } = await import("@/features/export/utils/ffmpeg-export-client");
+    } = await import("../deps/export");
 
     // Check if backend is available
     const caps = await checkFFmpegCapabilities();
