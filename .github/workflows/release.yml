@@ -1,10 +1,10 @@
 name: Release Desktop App
 
-# Trigger: push to master (merge)
+# Trigger: push to main (merge)
 on:
   push:
     branches:
-      - master
+      - main
 
 # Prevent concurrent releases
 concurrency:
