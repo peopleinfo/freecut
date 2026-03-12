@@ -52,7 +52,11 @@ test.describe("Settings Page", () => {
   });
 
   test("About section shows GitHub link", async ({ page }) => {
-    const aboutLink = page.getByRole("link", { name: /View on GitHub/i });
+    // Scope to the About section to avoid matching the AppHeader GitHub icon link
+    const aboutSection = page.locator("section").filter({ hasText: "About" });
+    const aboutLink = aboutSection.getByRole("link", {
+      name: /View on GitHub/i,
+    });
     await expect(aboutLink).toBeVisible();
     await expect(aboutLink).toHaveAttribute(
       "href",

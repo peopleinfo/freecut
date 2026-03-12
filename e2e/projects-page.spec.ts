@@ -6,10 +6,11 @@ test.describe("Projects Page", () => {
   });
 
   test("renders page header with logo and action buttons", async ({ page }) => {
-    // Logo should be visible
-    await expect(page.locator('[class*="panel-header"]').first()).toBeVisible();
+    // App header logo link → projects
+    const logoLink = page.locator('a[aria-label="Home"]');
+    await expect(logoLink).toBeVisible();
 
-    // New Project button
+    // New Project button (inside a Link → Button component)
     const newProjectBtn = page.getByRole("link", { name: /New Project/i });
     await expect(newProjectBtn).toBeVisible();
 
@@ -19,11 +20,13 @@ test.describe("Projects Page", () => {
   });
 
   test("has GitHub link in header", async ({ page }) => {
-    // The GitHub icon link uses data-tooltip, find by href instead
-    const ghLink = page.locator(
-      'a[href="https://github.com/walterlow/freecut"]',
+    // The app-header has a GitHub icon link pointing to our fork
+    const ghLink = page.locator('a[aria-label="View on GitHub"]').first();
+    await expect(ghLink).toBeVisible();
+    await expect(ghLink).toHaveAttribute(
+      "href",
+      "https://github.com/peopleinfo/freecut",
     );
-    await expect(ghLink.first()).toBeVisible();
   });
 
   test("New Project button navigates to new project form", async ({ page }) => {

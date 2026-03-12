@@ -70,16 +70,19 @@ test.describe("New Project Page", () => {
   });
 
   test("creates a project and navigates to editor", async ({ page }) => {
+    // Wait for the page to finish its beforeLoad (loadProjects) and settle
+    await page.waitForURL(/#\/projects\/new/, { timeout: 10_000 });
+
     // Fill in the project name
     const nameInput = page.getByLabel(/Project Name/i);
     await nameInput.fill("E2E Test Project");
 
-    // Click Create Project
+    // Wait for form validation to run and enable the button
     const createBtn = page.getByRole("button", { name: /Create Project/i });
-    await expect(createBtn).toBeEnabled();
-    await createBtn.click();
+    await expect(createBtn).toBeEnabled({ timeout: 5_000 });
 
-    // Should navigate to editor with a project ID
+    // Click and expect navigation to editor
+    await createBtn.click();
     await expect(page).toHaveURL(/#\/editor\//, { timeout: 15_000 });
   });
 });

@@ -1,23 +1,6 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Navigation & Routing", () => {
-  test("landing page → projects via Get Started", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("link", { name: /Get Started/i }).click();
-    await expect(page).toHaveURL(/#\/projects/);
-  });
-
-  test("landing page → projects via Start Editing (CTA footer)", async ({
-    page,
-  }) => {
-    await page.goto("/");
-    // Scroll to CTA footer
-    const startEditingBtn = page.getByRole("link", { name: /Start Editing/i });
-    await startEditingBtn.scrollIntoViewIfNeeded();
-    await startEditingBtn.click();
-    await expect(page).toHaveURL(/#\/projects/);
-  });
-
   test("projects → new project → cancel → back to projects", async ({
     page,
   }) => {
@@ -32,12 +15,9 @@ test.describe("Navigation & Routing", () => {
     await expect(page).toHaveURL(/#\/projects/);
   });
 
-  test("full flow: landing → projects → new → create → editor", async ({
-    page,
-  }) => {
-    // Landing
-    await page.goto("/");
-    await page.getByRole("link", { name: /Get Started/i }).click();
+  test("full flow: projects → new → create → editor", async ({ page }) => {
+    // Start from projects page (root redirects here)
+    await page.goto("/#/projects");
     await expect(page).toHaveURL(/#\/projects/);
 
     // New project
@@ -71,5 +51,10 @@ test.describe("Navigation & Routing", () => {
     // Wait for content to load
     const newProjectBtn = page.getByRole("link", { name: /New Project/i });
     await expect(newProjectBtn).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("root URL redirects to projects", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveURL(/#\/projects/, { timeout: 5_000 });
   });
 });
