@@ -98,6 +98,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.0.17",
+    "@webgpu/types": "^0.1.69",
     "concurrently": "^9.2.1",
     "electron": "^35.0.0",
     "electron-builder": "^26.0.0",

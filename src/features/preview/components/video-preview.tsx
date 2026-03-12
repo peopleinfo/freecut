@@ -23,11 +23,14 @@ import { useMediaLibraryStore, proxyService } from '@/features/preview/deps/medi
 import { blobUrlManager, useBlobUrlVersion } from '@/infrastructure/browser/blob-url-manager';
 import { getGlobalVideoSourcePool } from '@/features/preview/deps/player-pool';
 import { GizmoOverlay } from './gizmo-overlay';
+import { MaskEditorContainer } from './mask-editor-container';
+import { CornerPinContainer } from './corner-pin-container';
 import { RollingEditOverlay } from './rolling-edit-overlay';
 import { RippleEditOverlay } from './ripple-edit-overlay';
 import { SlipEditOverlay } from './slip-edit-overlay';
 import { SlideEditOverlay } from './slide-edit-overlay';
 import { useGizmoStore } from '../stores/gizmo-store';
+import { useCornerPinStore } from '../stores/corner-pin-store';
 import type { CompositionInputProps } from '@/types/export';
 import type { ItemEffect } from '@/types/effects';
 import type { ResolvedTransform } from '@/types/transform';
@@ -59,6 +62,8 @@ import {
   getFrameBudgetMs,
   updateAdaptivePreviewQuality,
 } from '../utils/adaptive-preview-quality';
+import { useGpuEffectsOverlay } from '../hooks/use-gpu-effects-overlay';
+import { getBestDomVideoElementForItem } from '@/features/preview/deps/composition-runtime';
 
 // Preload media files ahead of the playhead to reduce buffering
 const PRELOAD_AHEAD_SECONDS = 5;
@@ -86,7 +91,7 @@ const FAST_SCRUB_BOUNDARY_SOURCE_PREWARM_MAX_SOURCES_PER_FRAME = 6;
 const FAST_SCRUB_SOURCE_TOUCH_COOLDOWN_FRAMES = 6;
 const FAST_SCRUB_DISABLE_BACKGROUND_PREWARM_ON_BACKWARD = true;
 const FAST_SCRUB_FALLBACK_TO_PLAYER_ON_BACKWARD = true;
-const FAST_SCRUB_DIRECTIONAL_PREWARM_FORWARD_STEPS = 1;
+const FAST_SCRUB_DIRECTIONAL_PREWARM_FORWARD_STEPS = 3;
 const FAST_SCRUB_DIRECTIONAL_PREWARM_BACKWARD_STEPS = 2;
 const FAST_SCRUB_DIRECTIONAL_PREWARM_OPPOSITE_STEPS = 0;
 const FAST_SCRUB_DIRECTIONAL_PREWARM_NEUTRAL_RADIUS = 1;
@@ -94,7 +99,8 @@ const FAST_SCRUB_PREWARM_QUEUE_MAX = 24;
 const FAST_SCRUB_BACKWARD_RENDER_THROTTLE_MS = 24;
 const FAST_SCRUB_BACKWARD_RENDER_QUANTIZE_FRAMES = 2;
 const FAST_SCRUB_BACKWARD_FORCE_JUMP_FRAMES = 8;
-const FAST_SCRUB_FORCE_OVERLAY_FOR_CUSTOM_CUBE = true;
+const FAST_SCRUB_PREWARM_RENDER_BUDGET_MS = 16;
+
 const PLAYER_BACKWARD_SCRUB_SEEK_THROTTLE_MS = 20;
 const PLAYER_BACKWARD_SCRUB_SEEK_QUANTIZE_FRAMES = 2;
 const PLAYER_BACKWARD_SCRUB_FORCE_JUMP_FRAMES = 8;
@@ -193,28 +199,6 @@ function toTrackFingerprint(tracks: CompositionInputProps['tracks']): string {
     }
   }
   return parts.join('|');
-}
-
-function hasCustomCubeLutInEffects(effects: ItemEffect[] | undefined): boolean {
-  if (!effects || effects.length === 0) return false;
-  return effects.some((entry) =>
-    entry.enabled
-    && entry.effect.type === 'color-grading'
-    && entry.effect.variant === 'lut'
-    && typeof entry.effect.cubeData === 'string'
-    && entry.effect.cubeData.trim().length > 0
-  );
-}
-
-function hasCustomCubeLutInTracks(tracks: CompositionInputProps['tracks']): boolean {
-  for (const track of tracks) {
-    for (const item of track.items) {
-      if (hasCustomCubeLutInEffects(item.effects)) {
-        return true;
-      }
-    }
-  }
-  return false;
 }
 
 function getPreloadBudget(mode: PreviewInteractionMode): number {
@@ -638,6 +622,8 @@ export const VideoPreview = memo(function VideoPreview({
   const playerRef = useRef<PlayerRef>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const scrubCanvasRef = useRef<HTMLCanvasElement>(null);
+  const gpuEffectsCanvasRef = useRef<HTMLCanvasElement>(null);
+  const scrubFrameDirtyRef = useRef(false);
   const bypassPreviewSeekRef = useRef(false);
   const scrubRendererRef = useRef<CompositionRenderer | null>(null);
   const scrubInitPromiseRef = useRef<Promise<CompositionRenderer | null> | null>(null);
@@ -707,6 +693,7 @@ export const VideoPreview = memo(function VideoPreview({
   const activeGizmoItemId = useGizmoStore((s) => s.activeGizmo?.itemId ?? null);
   const isGizmoInteracting = useGizmoStore((s) => s.activeGizmo !== null);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
+  const showGpuEffectsOverlay = useGpuEffectsOverlay(gpuEffectsCanvasRef, playerContainerRef, scrubOffscreenCanvasRef, scrubFrameDirtyRef);
   const zoom = usePlaybackStore((s) => s.zoom);
   const useProxy = usePlaybackStore((s) => s.useProxy);
   // Derive a stable count of ready proxies to avoid recomputing resolvedTracks
@@ -1841,6 +1828,19 @@ export const VideoPreview = memo(function VideoPreview({
     return undefined;
   }, []);
 
+  const getPreviewEffectsOverride = useCallback((itemId: string): ItemEffect[] | undefined => {
+    const gizmoState = useGizmoStore.getState();
+    return gizmoState.preview?.[itemId]?.effects;
+  }, []);
+
+  const getPreviewCornerPinOverride = useCallback((itemId: string) => {
+    const cpState = useCornerPinStore.getState();
+    if (cpState.editingItemId === itemId && cpState.previewCornerPin) {
+      return cpState.previewCornerPin;
+    }
+    return undefined;
+  }, []);
+
   const fastScrubScaledTracks = useMemo(() => {
     return fastScrubTracks as CompositionInputProps['tracks'];
   }, [
@@ -1872,12 +1872,7 @@ export const VideoPreview = memo(function VideoPreview({
     fastScrubScaledKeyframes,
   ]);
 
-  const hasCustomCubePreview = useMemo(
-    () => hasCustomCubeLutInTracks(fastScrubScaledTracks),
-    [fastScrubScaledTracks]
-  );
-
-  const forceFastScrubOverlay = FAST_SCRUB_FORCE_OVERLAY_FOR_CUSTOM_CUBE && hasCustomCubePreview;
+  const forceFastScrubOverlay = showGpuEffectsOverlay;
   const preferPlayerForTextGizmo = (
     !forceFastScrubOverlay
     && isGizmoInteracting
@@ -1938,6 +1933,8 @@ export const VideoPreview = memo(function VideoPreview({
         const renderer = await createCompositionRenderer(fastScrubInputProps, offscreen, offscreenCtx, {
           mode: 'preview',
           getPreviewTransformOverride,
+          getPreviewEffectsOverride,
+          getPreviewCornerPinOverride,
         });
         const playbackState = usePlaybackStore.getState();
         const interactionMode = getPreviewInteractionMode({
@@ -1986,7 +1983,7 @@ export const VideoPreview = memo(function VideoPreview({
     })();
 
     return scrubInitPromiseRef.current;
-  }, [fastScrubInputProps, fps, getPreviewTransformOverride, isResolving, renderSize.height, renderSize.width]);
+  }, [fastScrubInputProps, fps, getPreviewTransformOverride, getPreviewEffectsOverride, getPreviewCornerPinOverride, isResolving, renderSize.height, renderSize.width]);
 
   // Dispose/recreate fast scrub renderer when composition inputs change.
   useEffect(() => {
@@ -2101,19 +2098,39 @@ export const VideoPreview = memo(function VideoPreview({
     return task;
   }, [ensureFastScrubRenderer]);
 
+  const captureCanvasSource = useCallback(async (): Promise<OffscreenCanvas | HTMLCanvasElement | null> => {
+    try {
+      const renderer = await ensureFastScrubRenderer();
+      const offscreen = scrubOffscreenCanvasRef.current;
+      if (!renderer || !offscreen) return null;
+
+      const playback = usePlaybackStore.getState();
+      const targetFrame = playback.previewFrame ?? playback.currentFrame;
+      await renderer.renderFrame(targetFrame);
+      return offscreen;
+    } catch (error) {
+      console.warn('[PreviewCapture] Failed to capture canvas source:', error);
+      return null;
+    }
+  }, [ensureFastScrubRenderer]);
+
+  const setCaptureCanvasSource = usePlaybackStore((s) => s.setCaptureCanvasSource);
+
   // Register frame capture function for scopes and thumbnail workflows.
   useEffect(() => {
     setCaptureFrame(captureCurrentFrame);
     setCaptureFrameImageData?.(captureCurrentFrameImageData);
+    setCaptureCanvasSource?.(captureCanvasSource);
     return () => {
       setCaptureFrame(null);
       setCaptureFrameImageData?.(null);
+      setCaptureCanvasSource?.(null);
       setDisplayedFrame(null);
       captureInFlightRef.current = null;
       captureImageDataInFlightRef.current = null;
       captureScaleCanvasRef.current = null;
     };
-  }, [captureCurrentFrame, captureCurrentFrameImageData, setCaptureFrame, setCaptureFrameImageData, setDisplayedFrame]);
+  }, [captureCurrentFrame, captureCurrentFrameImageData, captureCanvasSource, setCaptureFrame, setCaptureFrameImageData, setCaptureCanvasSource, setDisplayedFrame]);
 
   // Background warm-up so first scrub has lower startup latency.
   useEffect(() => {
@@ -2152,10 +2169,11 @@ export const VideoPreview = memo(function VideoPreview({
     scrubMountedRef.current = true;
 
     const drawToDisplay = (renderedFrame: number) => {
-      const displayCanvas = scrubCanvasRef.current;
       const offscreen = scrubOffscreenCanvasRef.current;
-      if (!displayCanvas || !offscreen) return;
+      if (!offscreen) return;
 
+      const displayCanvas = scrubCanvasRef.current;
+      if (!displayCanvas) return;
       const displayCtx = displayCanvas.getContext('2d');
       if (!displayCtx) return;
       displayCtx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
@@ -2324,6 +2342,7 @@ export const VideoPreview = memo(function VideoPreview({
           }
         };
 
+        let prewarmBudgetStart = 0;
         while (scrubMountedRef.current) {
           if (preferPlayerForTextGizmoRef.current) {
             setShowFastScrubOverlay(false);
@@ -2350,6 +2369,7 @@ export const VideoPreview = memo(function VideoPreview({
 
           if (isPriorityFrame) {
             scrubRequestedFrameRef.current = null;
+            prewarmBudgetStart = 0; // Reset budget for prewarm after this priority frame
           } else {
             scrubPrewarmQueuedSetRef.current.delete(frameToRender);
             // Skip stale prewarm if a newer scrub frame is pending.
@@ -2358,6 +2378,17 @@ export const VideoPreview = memo(function VideoPreview({
             }
             if (suppressScrubBackgroundPrewarmRef.current) {
               continue;
+            }
+            // Skip prewarm during playback — WASM decode prewarm renders
+            // (40-80ms each) block the loop from processing priority frames,
+            // causing the overlay to fall behind and show stale content.
+            if (usePlaybackStore.getState().isPlaying) {
+              break;
+            }
+            // Time-budget prewarm renders to keep scrubbing responsive.
+            // After exhausting the budget, yield so new priority frames aren't delayed.
+            if (prewarmBudgetStart > 0 && performance.now() - prewarmBudgetStart > FAST_SCRUB_PREWARM_RENDER_BUDGET_MS) {
+              break;
             }
           }
 
@@ -2368,14 +2399,26 @@ export const VideoPreview = memo(function VideoPreview({
             break;
           }
 
-          if (isPriorityFrame || !('prewarmFrame' in renderer) || typeof renderer.prewarmFrame !== 'function') {
-            await renderer.renderFrame(frameToRender);
-          } else {
-            await renderer.prewarmFrame(frameToRender);
+          // Enable DOM video element provider during playback for zero-copy rendering.
+          // During playback, the Remotion Player's <video> elements are already at
+          // the correct frame — reading from them avoids mediabunny decode entirely.
+          if ('setDomVideoElementProvider' in renderer) {
+            const playbackNow = usePlaybackStore.getState();
+            if (playbackNow.isPlaying) {
+              renderer.setDomVideoElementProvider(getBestDomVideoElementForItem);
+            } else {
+              renderer.setDomVideoElementProvider(undefined);
+            }
           }
+
+          // Use full renderFrame for both priority and prewarm frames.
+          // Prewarm renders populate the frame cache so subsequent scrubs
+          // to those frames are instant cache hits (~0.1ms vs 5-80ms).
+          await renderer.renderFrame(frameToRender);
           if (!scrubMountedRef.current) break;
 
           if (isPriorityFrame) {
+
             const playbackState = usePlaybackStore.getState();
             if (fallbackToPlayerScrubRef.current) {
               setShowFastScrubOverlay(false);
@@ -2406,6 +2449,7 @@ export const VideoPreview = memo(function VideoPreview({
               enqueueBoundaryPrewarm(frameToRender);
               enqueueBoundarySourcePrewarm(frameToRender);
             }
+            prewarmBudgetStart = performance.now();
           } else {
             markPrewarmed(frameToRender);
           }
@@ -2568,18 +2612,41 @@ export const VideoPreview = memo(function VideoPreview({
       void pumpRenderLoop();
     });
 
-    // During gizmo drags, trigger re-renders even when frame is unchanged so
-    // transform previews stay on the fast-scrub render path.
+    // During gizmo drags or live effect parameter changes, trigger re-renders
+    // even when frame is unchanged so previews stay on the fast-scrub render path.
     const unsubscribeGizmo = useGizmoStore.subscribe((state, prev) => {
       if (preferPlayerForTextGizmoRef.current) return;
       if (!forceFastScrubOverlay && !isGizmoInteractingRef.current) return;
-      if (!state.activeGizmo) return;
-      const transformPreviewChanged = state.previewTransform !== prev.previewTransform;
       const unifiedPreviewChanged = state.preview !== prev.preview;
-      if (!transformPreviewChanged && !unifiedPreviewChanged) return;
+      const transformPreviewChanged = state.previewTransform !== prev.previewTransform;
+      // Gizmo transform changes require an active gizmo; effect preview changes don't.
+      if (!unifiedPreviewChanged && !(transformPreviewChanged && state.activeGizmo)) return;
 
       const playbackState = usePlaybackStore.getState();
-      scrubRequestedFrameRef.current = playbackState.currentFrame;
+      const currentFrame = playbackState.currentFrame;
+
+      // Effect param changes don't change the frame number, so the frame cache
+      // would return the stale bitmap. Invalidate the current frame so the
+      // renderer re-composites with the updated effect params.
+      if (unifiedPreviewChanged && scrubRendererRef.current) {
+        scrubRendererRef.current.invalidateFrameCache([currentFrame]);
+      }
+
+      scrubRequestedFrameRef.current = currentFrame;
+      void pumpRenderLoop();
+    });
+
+    // During corner pin drag, re-render with the live preview values so the
+    // scrub overlay reflects the warp in real-time instead of waiting for commit.
+    const unsubscribeCornerPin = useCornerPinStore.subscribe((state, prev) => {
+      if (!forceFastScrubOverlay) return;
+      if (state.previewCornerPin === prev.previewCornerPin) return;
+
+      const currentFrame = usePlaybackStore.getState().currentFrame;
+      if (scrubRendererRef.current) {
+        scrubRendererRef.current.invalidateFrameCache([currentFrame]);
+      }
+      scrubRequestedFrameRef.current = currentFrame;
       void pumpRenderLoop();
     });
 
@@ -2601,6 +2668,7 @@ export const VideoPreview = memo(function VideoPreview({
       lastBackwardRequestedFrameRef.current = null;
       unsubscribe();
       unsubscribeGizmo();
+      unsubscribeCornerPin();
     };
   }, [
     disposeFastScrubRenderer,
@@ -3297,6 +3365,20 @@ export const VideoPreview = memo(function VideoPreview({
               />
             )}
 
+            {/* GPU effects overlay canvas — kept hidden. GPU effects are now
+                applied per-item in the composition renderer. The canvas ref is
+                retained for API compatibility. */}
+            <canvas
+              ref={gpuEffectsCanvasRef}
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                width: '100%',
+                height: '100%',
+                zIndex: 5,
+                visibility: 'hidden',
+              }}
+            />
+
             {import.meta.env.DEV && showPerfPanel && perfPanelSnapshot && (
               <div
                 className="absolute right-2 bottom-2 z-30 bg-black/75 text-white px-2 py-1 rounded text-[11px] leading-tight font-mono pointer-events-none select-none"
@@ -3402,13 +3484,27 @@ export const VideoPreview = memo(function VideoPreview({
           </div>
 
           {!suspendOverlay && (
-            <GizmoOverlay
-              containerRect={playerContainerRect}
-              playerSize={playerSize}
-              projectSize={{ width: project.width, height: project.height }}
-              zoom={zoom}
-              hitAreaRef={backgroundRef as React.RefObject<HTMLDivElement>}
-            />
+            <>
+              <GizmoOverlay
+                containerRect={playerContainerRect}
+                playerSize={playerSize}
+                projectSize={{ width: project.width, height: project.height }}
+                zoom={zoom}
+                hitAreaRef={backgroundRef as React.RefObject<HTMLDivElement>}
+              />
+              <MaskEditorContainer
+                containerRect={playerContainerRect}
+                playerSize={playerSize}
+                projectSize={{ width: project.width, height: project.height }}
+                zoom={zoom}
+              />
+              <CornerPinContainer
+                containerRect={playerContainerRect}
+                playerSize={playerSize}
+                projectSize={{ width: project.width, height: project.height }}
+                zoom={zoom}
+              />
+            </>
           )}
         </div>
       </div>

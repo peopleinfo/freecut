@@ -23,7 +23,7 @@ import { createLogger } from '@/shared/logging/logger';
 // Subsystem imports
 import { getAnimatedTransform } from './canvas-keyframes';
 import {
-  applyAllEffects,
+  applyAllEffectsAsync,
   getAdjustmentLayerEffects,
   combineEffects,
   type AdjustmentLayerWithTrackOrder,
@@ -39,6 +39,7 @@ import { gifFrameCache, type CachedGifFrames } from '@/features/export/deps/time
 import type { CanvasPool, TextMeasurementCache } from './canvas-pool';
 import type { VideoFrameSource } from './shared-video-extractor';
 import { getShapePath, rotatePath } from '@/features/export/deps/composition-runtime';
+import { hasCornerPin, drawCornerPinImage } from '@/features/export/deps/composition-runtime';
 
 const log = createLogger('CanvasItemRenderer');
 
@@ -118,6 +119,17 @@ export interface ItemRenderContext {
 
   // Pre-computed sub-composition render data (built once during preload)
   subCompRenderData: Map<string, SubCompRenderData>;
+
+  // GPU effects pipeline (lazily initialized)
+  gpuPipeline?: import('@/infrastructure/gpu/effects').EffectsPipeline | null;
+
+  // GPU transition pipeline (lazily initialized, shares device with gpuPipeline)
+  gpuTransitionPipeline?: import('@/infrastructure/gpu/transitions').TransitionPipeline | null;
+
+  // DOM video element provider for zero-copy playback rendering.
+  // During playback, the Remotion Player's <video> elements are already at
+  // the correct frame — use them directly instead of mediabunny decode.
+  domVideoElementProvider?: (itemId: string) => HTMLVideoElement | null;
 }
 
 /**
@@ -155,6 +167,12 @@ export async function renderItem(
   rctx: ItemRenderContext,
   sourceFrameOffset: number = 0,
 ): Promise<void> {
+  // Corner pin: render to temp canvas, then warp onto main canvas
+  if (hasCornerPin(item.cornerPin)) {
+    await renderItemWithCornerPin(ctx, item, transform, frame, rctx, sourceFrameOffset);
+    return;
+  }
+
   ctx.save();
 
   // Apply opacity only if it's not the default value (1.0)
@@ -180,6 +198,22 @@ export async function renderItem(
     ctx.clip();
   }
 
+  await renderItemContent(ctx, item, transform, frame, rctx, sourceFrameOffset);
+
+  ctx.restore();
+}
+
+/**
+ * Render item content (dispatches to type-specific renderers).
+ */
+async function renderItemContent(
+  ctx: OffscreenCanvasRenderingContext2D,
+  item: TimelineItem,
+  transform: ItemTransform,
+  frame: number,
+  rctx: ItemRenderContext,
+  sourceFrameOffset: number,
+): Promise<void> {
   switch (item.type) {
     case 'video':
       await renderVideoItem(ctx, item as VideoItem, transform, frame, rctx, sourceFrameOffset);
@@ -200,7 +234,73 @@ export async function renderItem(
       await renderCompositionItem(ctx, item as CompositionItem, transform, frame, rctx);
       break;
   }
+}
 
+/**
+ * Render an item with corner pin perspective warp.
+ * Renders to a temporary canvas at item dimensions, then warps onto the main canvas.
+ */
+async function renderItemWithCornerPin(
+  ctx: OffscreenCanvasRenderingContext2D,
+  item: TimelineItem,
+  transform: ItemTransform,
+  frame: number,
+  rctx: ItemRenderContext,
+  sourceFrameOffset: number,
+): Promise<void> {
+  const itemW = Math.ceil(transform.width);
+  const itemH = Math.ceil(transform.height);
+  if (itemW <= 0 || itemH <= 0) return;
+
+  // Render item content to a temp canvas at item dimensions
+  const tempCanvas = new OffscreenCanvas(itemW, itemH);
+  const tempCtx = tempCanvas.getContext('2d');
+  if (!tempCtx) return;
+
+  // Create a centered transform for the temp canvas
+  const tempTransform: ItemTransform = {
+    ...transform,
+    x: 0,
+    y: 0,
+  };
+  const tempRctx: ItemRenderContext = {
+    ...rctx,
+    canvasSettings: { width: itemW, height: itemH, fps: rctx.canvasSettings.fps },
+  };
+
+  // Render content to temp canvas
+  await renderItemContent(tempCtx, item, tempTransform, frame, tempRctx, sourceFrameOffset);
+
+  // Apply corner radius clipping on temp canvas if needed
+  if (transform.cornerRadius > 0) {
+    tempCtx.save();
+    tempCtx.globalCompositeOperation = 'destination-in';
+    tempCtx.beginPath();
+    tempCtx.roundRect(0, 0, itemW, itemH, transform.cornerRadius);
+    tempCtx.fill();
+    tempCtx.restore();
+  }
+
+  // Draw warped image onto main canvas
+  ctx.save();
+  if (transform.opacity !== 1) {
+    ctx.globalAlpha = transform.opacity;
+  }
+
+  // Apply rotation around item center
+  const centerX = rctx.canvasSettings.width / 2 + transform.x;
+  const centerY = rctx.canvasSettings.height / 2 + transform.y;
+  if (transform.rotation !== 0) {
+    ctx.translate(centerX, centerY);
+    ctx.rotate((transform.rotation * Math.PI) / 180);
+    ctx.translate(-centerX, -centerY);
+  }
+
+  // Item position on canvas
+  const left = rctx.canvasSettings.width / 2 + transform.x - transform.width / 2;
+  const top = rctx.canvasSettings.height / 2 + transform.y - transform.height / 2;
+
+  drawCornerPinImage(ctx, tempCanvas, itemW, itemH, left, top, item.cornerPin!);
   ctx.restore();
 }
 
@@ -236,6 +336,39 @@ async function renderVideoItem(
   // sourceStart is in source-native FPS frames, so divide by sourceFps (not project fps)
   const adjustedSourceStart = sourceStart + sourceFrameOffset;
   const sourceTime = adjustedSourceStart / sourceFps + localTime * speed;
+
+  // === TRY DOM VIDEO ELEMENT (zero-copy playback path) ===
+  // During playback, the Remotion Player's <video> elements are already playing
+  // at the correct frame. Drawing from them avoids mediabunny decode entirely.
+  if (isPreviewMode && rctx.domVideoElementProvider && sourceFrameOffset === 0) {
+    const domVideo = rctx.domVideoElementProvider(item.id);
+    if (domVideo && domVideo.readyState >= 2 && domVideo.videoWidth > 0) {
+      // Reject videos that are too far from the expected time. This catches
+      // videos that haven't finished seeking yet (e.g. newly mounted shadow
+      // elements during transitions). The threshold must align with the RVFC
+      // drift correction in video-content.tsx (corrects at ±150ms), otherwise
+      // the render engine rejects frames that RVFC hasn't corrected yet,
+      // causing intermittent mediabunny fallback and visible jitter.
+      const drift = Math.abs(domVideo.currentTime - sourceTime);
+      const driftThreshold = 0.2; // 200ms — slightly above RVFC correction threshold (150ms)
+      if (drift <= driftThreshold) {
+        const drawDimensions = calculateMediaDrawDimensions(
+          domVideo.videoWidth,
+          domVideo.videoHeight,
+          transform,
+          canvasSettings,
+        );
+        ctx.drawImage(
+          domVideo,
+          drawDimensions.x,
+          drawDimensions.y,
+          drawDimensions.width,
+          drawDimensions.height,
+        );
+        return;
+      }
+    }
+  }
 
   if (
     isPreviewMode
@@ -969,51 +1102,78 @@ export async function renderTransitionToCanvas(
   const { canvasPool, canvasSettings, keyframesMap, adjustmentLayers } = rctx;
   const { leftClip, rightClip } = activeTransition;
 
-  const leftEffectiveFrame = frame;
-  const rightEffectiveFrame = frame;
-
-  // === PERFORMANCE: Use pooled canvases for transition rendering ===
+  // === PERFORMANCE: Render both clips in parallel ===
+  // Video decode (mediabunny or DOM zero-copy) is the bottleneck.
+  // Running both clips concurrently halves the decode wait time.
   const { canvas: leftCanvas, ctx: leftCtx } = canvasPool.acquire();
-  const leftKeyframes = keyframesMap.get(leftClip.id);
-  const leftTransform = getAnimatedTransform(leftClip, leftKeyframes, leftEffectiveFrame, canvasSettings);
-
-  await renderItem(leftCtx, leftClip, leftTransform, leftEffectiveFrame, rctx, 0);
-
-  // Apply effects to left (outgoing) clip
-  const leftAdjEffects = getAdjustmentLayerEffects(trackOrder, adjustmentLayers, leftEffectiveFrame);
-  const leftCombinedEffects = combineEffects(leftClip.effects, leftAdjEffects);
-  let leftFinalCanvas: OffscreenCanvas = leftCanvas;
-
-  if (leftCombinedEffects.length > 0) {
-    const { canvas: leftEffectCanvas, ctx: leftEffectCtx } = canvasPool.acquire();
-    applyAllEffects(leftEffectCtx, leftCanvas, leftCombinedEffects, leftEffectiveFrame, canvasSettings);
-    leftFinalCanvas = leftEffectCanvas;
-  }
-
   const { canvas: rightCanvas, ctx: rightCtx } = canvasPool.acquire();
-  const rightKeyframes = keyframesMap.get(rightClip.id);
-  const rightTransform = getAnimatedTransform(rightClip, rightKeyframes, rightEffectiveFrame, canvasSettings);
-  await renderItem(rightCtx, rightClip, rightTransform, rightEffectiveFrame, rctx, 0);
 
-  // Apply effects to right (incoming) clip
-  const rightAdjEffects = getAdjustmentLayerEffects(trackOrder, adjustmentLayers, rightEffectiveFrame);
-  const rightCombinedEffects = combineEffects(rightClip.effects, rightAdjEffects);
+  const leftKeyframes = keyframesMap.get(leftClip.id);
+  const leftTransform = getAnimatedTransform(leftClip, leftKeyframes, frame, canvasSettings);
+  const rightKeyframes = keyframesMap.get(rightClip.id);
+  const rightTransform = getAnimatedTransform(rightClip, rightKeyframes, frame, canvasSettings);
+
+  await Promise.all([
+    renderItem(leftCtx, leftClip, leftTransform, frame, rctx, 0),
+    renderItem(rightCtx, rightClip, rightTransform, frame, rctx, 0),
+  ]);
+
+  // Apply effects to both clips (parallel when both have effects)
+  const adjEffects = getAdjustmentLayerEffects(trackOrder, adjustmentLayers, frame);
+  const leftCombinedEffects = combineEffects(leftClip.effects, adjEffects);
+  const rightCombinedEffects = combineEffects(rightClip.effects, adjEffects);
+
+  let leftFinalCanvas: OffscreenCanvas = leftCanvas;
   let rightFinalCanvas: OffscreenCanvas = rightCanvas;
 
-  if (rightCombinedEffects.length > 0) {
-    const { canvas: rightEffectCanvas, ctx: rightEffectCtx } = canvasPool.acquire();
-    applyAllEffects(rightEffectCtx, rightCanvas, rightCombinedEffects, rightEffectiveFrame, canvasSettings);
-    rightFinalCanvas = rightEffectCanvas;
+  const hasLeftEffects = leftCombinedEffects.length > 0;
+  const hasRightEffects = rightCombinedEffects.length > 0;
+
+  // Track pool effect canvases separately — in GPU batch mode the final
+  // source may be a GPU output canvas (not from the pool), but the pool
+  // canvases still need to be released.
+  let leftEffectPoolCanvas: OffscreenCanvas | null = null;
+  let rightEffectPoolCanvas: OffscreenCanvas | null = null;
+
+  if (hasLeftEffects || hasRightEffects) {
+    // In GPU batch mode, applyAllEffectsAsync returns a deferred GPU canvas
+    // instead of drawing back to the effect canvas. We must capture and use
+    // the returned canvas, otherwise effects are silently dropped.
+    let leftGpuPromise: Promise<OffscreenCanvas | null> | undefined;
+    let rightGpuPromise: Promise<OffscreenCanvas | null> | undefined;
+
+    if (hasLeftEffects) {
+      const { canvas: leftEffectCanvas, ctx: leftEffectCtx } = canvasPool.acquire();
+      leftEffectPoolCanvas = leftEffectCanvas;
+      leftFinalCanvas = leftEffectCanvas;
+      leftGpuPromise = applyAllEffectsAsync(leftEffectCtx, leftCanvas, leftCombinedEffects, frame, canvasSettings, rctx.gpuPipeline);
+    }
+    if (hasRightEffects) {
+      const { canvas: rightEffectCanvas, ctx: rightEffectCtx } = canvasPool.acquire();
+      rightEffectPoolCanvas = rightEffectCanvas;
+      rightFinalCanvas = rightEffectCanvas;
+      rightGpuPromise = applyAllEffectsAsync(rightEffectCtx, rightCanvas, rightCombinedEffects, frame, canvasSettings, rctx.gpuPipeline);
+    }
+
+    const [leftGpu, rightGpu] = await Promise.all([
+      leftGpuPromise ?? Promise.resolve(null),
+      rightGpuPromise ?? Promise.resolve(null),
+    ]);
+
+    // Use deferred GPU canvas when returned (batch mode), otherwise the
+    // effect canvas already has the result drawn into it.
+    if (leftGpu) leftFinalCanvas = leftGpu;
+    if (rightGpu) rightFinalCanvas = rightGpu;
   }
 
   // Render transition with effect-applied canvases
   const transitionSettings: TransitionCanvasSettings = canvasSettings;
-  renderTransition(ctx, activeTransition, leftFinalCanvas, rightFinalCanvas, transitionSettings);
+  renderTransition(ctx, activeTransition, leftFinalCanvas, rightFinalCanvas, transitionSettings, rctx.gpuTransitionPipeline);
 
-  // Release all canvases back to pool
-  if (leftFinalCanvas !== leftCanvas) canvasPool.release(leftFinalCanvas);
+  // Release all pool canvases (GPU output canvases are managed by the pipeline)
+  if (leftEffectPoolCanvas) canvasPool.release(leftEffectPoolCanvas);
   canvasPool.release(leftCanvas);
-  if (rightFinalCanvas !== rightCanvas) canvasPool.release(rightFinalCanvas);
+  if (rightEffectPoolCanvas) canvasPool.release(rightEffectPoolCanvas);
   canvasPool.release(rightCanvas);
 }
 
