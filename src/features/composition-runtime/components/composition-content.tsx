@@ -15,6 +15,15 @@ import { KeyframesProvider } from '../contexts/keyframes-context';
 import { CompositionSpaceProvider, useCompositionSpace } from '../contexts/composition-space-context';
 import { Item } from './item';
 import type { MaskInfo } from './item';
+import { resolveActiveShapeMasksAtFrame } from '../utils/frame-scene';
+import {
+  EMPTY_MASK_INFOS,
+  materializeMaskInfos,
+  reuseStableMaskInfos,
+} from '../utils/mask-info';
+import {
+  resolveTrackRenderState,
+} from '../utils/scene-assembly';
 
 interface CompositionContentProps {
   item: CompositionItemType;
@@ -72,8 +81,18 @@ export const CompositionContent = React.memo<CompositionContentProps>(({ item, p
   // === Compute parent container dimensions ===
   // Replicates the same priority chain as useItemVisualState:
   // unified preview > gizmo preview > keyframes > base
-  const activeGizmo = useGizmoStore((s) => s.activeGizmo);
-  const previewTransform = useGizmoStore((s) => s.previewTransform);
+  //
+  // Granular selectors: extract only the values we need to avoid
+  // re-renders when unrelated gizmo store fields change reference.
+  const isGizmoTarget = useGizmoStore(
+    useCallback((s) => s.activeGizmo?.itemId === item.id, [item.id])
+  );
+  const previewTransform = useGizmoStore(
+    useCallback(
+      (s) => (s.activeGizmo?.itemId === item.id ? s.previewTransform : null),
+      [item.id]
+    )
+  );
   const itemPreview = useGizmoStore(
     useCallback((s) => s.preview?.[item.id], [item.id])
   );
@@ -86,12 +105,17 @@ export const CompositionContent = React.memo<CompositionContentProps>(({ item, p
     )
   );
   const itemKeyframes = contextKeyframes ?? storeKeyframes;
+  const hasAnimatedKeyframes = !!(itemKeyframes && hasKeyframeAnimation(itemKeyframes));
 
   const sequenceContext = useSequenceContext();
   const frame = sequenceContext?.localFrame ?? 0;
   const relativeFrame = frame - ((item as TimelineItem & { _sequenceFrameOffset?: number })._sequenceFrameOffset ?? 0);
   const sourceOffset = item.sourceStart ?? item.trimStart ?? 0;
   const subCompFrame = relativeFrame + sourceOffset;
+
+  // Only include relativeFrame as a dependency when keyframes are actually animated.
+  // This prevents per-frame recomputation during playback for non-animated sub-comps.
+  const keyframeFrame = hasAnimatedKeyframes ? relativeFrame : 0;
 
   const containerDims = useMemo(() => {
     const canvas = { width: projectWidth, height: projectHeight, fps: mainFps };
@@ -100,8 +124,8 @@ export const CompositionContent = React.memo<CompositionContentProps>(({ item, p
 
     // Apply keyframe animation if present
     let animatedResolved = baseResolved;
-    if (itemKeyframes && hasKeyframeAnimation(itemKeyframes)) {
-      animatedResolved = resolveAnimatedTransform(baseResolved, itemKeyframes, relativeFrame);
+    if (hasAnimatedKeyframes) {
+      animatedResolved = resolveAnimatedTransform(baseResolved, itemKeyframes!, keyframeFrame);
     }
 
     // Priority: unified preview > gizmo preview > keyframes > base
@@ -113,7 +137,7 @@ export const CompositionContent = React.memo<CompositionContentProps>(({ item, p
         ...unifiedPreviewTransform,
         cornerRadius: unifiedPreviewTransform.cornerRadius ?? animatedResolved.cornerRadius,
       } as ResolvedTransform;
-    } else if (activeGizmo?.itemId === item.id && previewTransform !== null) {
+    } else if (isGizmoTarget && previewTransform !== null) {
       resolved = {
         ...previewTransform,
         cornerRadius: previewTransform.cornerRadius ?? animatedResolved.cornerRadius,
@@ -130,56 +154,50 @@ export const CompositionContent = React.memo<CompositionContentProps>(({ item, p
     mainFps,
     item,
     itemKeyframes,
-    relativeFrame,
+    hasAnimatedKeyframes,
+    keyframeFrame,
     itemPreview,
-    activeGizmo,
+    isGizmoTarget,
     previewTransform,
     renderScaleX,
     renderScaleY,
   ]);
 
-  const visibleTrackIds = useMemo(
-    () => subComp ? new Set(subComp.tracks.filter((t) => t.visible).map((t) => t.id)) : new Set<string>(),
-    [subComp?.tracks]
+  const trackRenderState = useMemo(
+    () => subComp ? resolveTrackRenderState(subComp.tracks) : null,
+    [subComp]
   );
+  const visibleTrackIds = trackRenderState?.visibleTrackIds ?? new Set<string>();
+  const sortedTracks = trackRenderState?.visibleTracksByOrderDesc ?? [];
+  const previousMaskInfosRef = React.useRef<MaskInfo[]>(EMPTY_MASK_INFOS);
 
   // Resolve active sub-comp masks for the current local frame.
   // This allows masks authored inside a pre-comp to clip items when viewed
   // from the parent timeline.
   const activeMaskInfos = useMemo<MaskInfo[]>(() => {
-    if (!subComp) return [];
+    if (!subComp) {
+      previousMaskInfosRef.current = EMPTY_MASK_INFOS;
+      return EMPTY_MASK_INFOS;
+    }
     const canvas = { width: subComp.width, height: subComp.height, fps: subComp.fps };
     const keyframesById = new Map((subComp.keyframes ?? []).map((kf) => [kf.itemId, kf]));
+    const activeMasks = resolvedItems.filter((subItem): subItem is ShapeItem => (
+      subItem.type === 'shape'
+      && subItem.isMask === true
+      && visibleTrackIds.has(subItem.trackId)
+    ));
 
-    return resolvedItems
-      .filter((subItem): subItem is ShapeItem => (
-        subItem.type === 'shape'
-        && subItem.isMask === true
-        && visibleTrackIds.has(subItem.trackId)
-        && subCompFrame >= subItem.from
-        && subCompFrame < subItem.from + subItem.durationInFrames
-      ))
-      .map((maskShape) => {
-        const baseResolved = resolveTransform(maskShape, canvas, getSourceDimensions(maskShape));
-        const maskKeyframes = keyframesById.get(maskShape.id);
-        const maskRelativeFrame = subCompFrame - maskShape.from;
-        const animatedResolved = (maskKeyframes && hasKeyframeAnimation(maskKeyframes))
-          ? resolveAnimatedTransform(baseResolved, maskKeyframes, maskRelativeFrame)
-          : baseResolved;
-
-        return {
-          shape: maskShape,
-          transform: {
-            x: animatedResolved.x,
-            y: animatedResolved.y,
-            width: animatedResolved.width,
-            height: animatedResolved.height,
-            rotation: animatedResolved.rotation,
-            opacity: animatedResolved.opacity,
-            cornerRadius: animatedResolved.cornerRadius,
-          },
-        };
-      });
+    const nextMaskInfos = materializeMaskInfos(resolveActiveShapeMasksAtFrame(
+      activeMasks,
+      {
+        canvas,
+        frame: subCompFrame,
+        getKeyframes: (itemId) => keyframesById.get(itemId),
+      }
+    ));
+    const stableMaskInfos = reuseStableMaskInfos(previousMaskInfosRef.current, nextMaskInfos);
+    previousMaskInfosRef.current = stableMaskInfos;
+    return stableMaskInfos;
   }, [resolvedItems, visibleTrackIds, subComp?.width, subComp?.height, subComp?.fps, subComp?.keyframes, subCompFrame]);
 
   if (!subComp) {
@@ -200,9 +218,6 @@ export const CompositionContent = React.memo<CompositionContentProps>(({ item, p
   // CSS scale from sub-comp native resolution to parent container dimensions
   const scaleX = subComp.width > 0 ? containerDims.width / subComp.width : 1;
   const scaleY = subComp.height > 0 ? containerDims.height / subComp.height : 1;
-
-  // Sort tracks so lower order renders first (bottom), higher order on top
-  const sortedTracks = [...subComp.tracks].sort((a, b) => b.order - a.order);
 
   return (
     <div style={{

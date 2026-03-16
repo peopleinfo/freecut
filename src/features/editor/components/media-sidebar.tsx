@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, memo, Activity } from 'react';
+import { useCallback, useMemo, useRef, useEffect, memo, Activity } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,19 +12,9 @@ import {
   Hexagon,
   Heart,
   Pentagon,
-  Sun,
-  Contrast,
-  Droplets,
-  Wind,
-  Palette,
-  CircleDot,
-  ImageOff,
   Sparkles,
-  Zap,
-  Scan,
-  Wand2,
-  Grid3X3,
   Blend,
+  Pen,
 } from 'lucide-react';
 import { useEditorStore } from '@/shared/state/editor';
 import { useTimelineStore } from '@/features/editor/deps/timeline-store';
@@ -35,14 +25,14 @@ import { MediaLibrary } from '@/features/editor/deps/media-library';
 import { TransitionsPanel } from './transitions-panel';
 import { findNearestAvailableSpace } from '@/features/editor/deps/timeline-utils';
 import type { TextItem, ShapeItem, ShapeType, AdjustmentItem } from '@/types/timeline';
-import type { VisualEffect, CSSFilterType, GlitchVariant } from '@/types/effects';
-import {
-  CSS_FILTER_CONFIGS,
-  GLITCH_CONFIGS,
-  EFFECT_PRESETS,
-  HALFTONE_CONFIG,
-  VIGNETTE_CONFIG,
-} from '@/types/effects';
+import { useMaskEditorStore } from '@/features/editor/deps/preview';
+import type { VisualEffect, GpuEffect } from '@/types/effects';
+import { EFFECT_PRESETS } from '@/types/effects';
+import { getGpuCategoriesWithEffects, getGpuEffectDefaultParams } from '@/infrastructure/gpu/effects';
+import { useEffectPreviews } from '@/features/editor/deps/effects-contract';
+import { createLogger } from '@/shared/logging/logger';
+
+const logger = createLogger('MediaSidebar');
 
 export const MediaSidebar = memo(function MediaSidebar() {
   // Use granular selectors - Zustand v5 best practice
@@ -115,7 +105,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
     }
 
     if (!targetTrack) {
-      console.warn('No available track for text item');
+      logger.warn('No available track for text item');
       return;
     }
 
@@ -187,7 +177,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
     }
 
     if (!targetTrack) {
-      console.warn('No available track for shape item');
+      logger.warn('No available track for shape item');
       return;
     }
 
@@ -261,7 +251,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
     }
 
     if (!targetTrack) {
-      console.warn('No available track for adjustment layer');
+      logger.warn('No available track for adjustment layer');
       return;
     }
 
@@ -301,98 +291,51 @@ export const MediaSidebar = memo(function MediaSidebar() {
     selectItems([adjustmentItem.id]);
   }, []);
 
-  // Effect card configurations with icons
-  const effectCards: Array<{
-    type: CSSFilterType;
-    icon: typeof Sun;
-  }> = [
-    { type: 'brightness', icon: Sun },
-    { type: 'contrast', icon: Contrast },
-    { type: 'saturate', icon: Droplets },
-    { type: 'blur', icon: Wind },
-    { type: 'hue-rotate', icon: Palette },
-    { type: 'grayscale', icon: CircleDot },
-    { type: 'sepia', icon: ImageOff },
-    { type: 'invert', icon: Sparkles },
-  ];
-
-  const glitchCards: Array<{
-    type: GlitchVariant;
-    icon: typeof Zap;
-  }> = [
-    { type: 'rgb-split', icon: Zap },
-    { type: 'scanlines', icon: Scan },
-    { type: 'color-glitch', icon: Wand2 },
-  ];
-
-  // Create adjustment layer with a CSS filter effect
-  const handleAddFilterEffect = useCallback((filterType: CSSFilterType) => {
-    const config = CSS_FILTER_CONFIGS[filterType];
-    handleAddAdjustmentLayer(
-      [{ type: 'css-filter', filter: filterType, value: config.default }],
-      config.label
-    );
-  }, [handleAddAdjustmentLayer]);
-
-  // Create adjustment layer with a glitch effect
-  const handleAddGlitchEffect = useCallback((variant: GlitchVariant) => {
-    const config = GLITCH_CONFIGS[variant];
-    handleAddAdjustmentLayer(
-      [{
-        type: 'glitch',
-        variant,
-        intensity: 0.5,
-        speed: 1,
-        seed: Math.floor(Math.random() * 10000),
-      }],
-      config.label
-    );
-  }, [handleAddAdjustmentLayer]);
-
-  // Create adjustment layer with halftone effect
-  const handleAddHalftoneEffect = useCallback(() => {
-    handleAddAdjustmentLayer(
-      [{
-        type: 'canvas-effect',
-        variant: 'halftone',
-        patternType: HALFTONE_CONFIG.patternType.default,
-        dotSize: HALFTONE_CONFIG.dotSize.default,
-        spacing: HALFTONE_CONFIG.spacing.default,
-        angle: HALFTONE_CONFIG.angle.default,
-        intensity: HALFTONE_CONFIG.intensity.default,
-        softness: HALFTONE_CONFIG.softness.default,
-        blendMode: HALFTONE_CONFIG.blendMode.default,
-        inverted: HALFTONE_CONFIG.inverted.default,
-        fadeAngle: HALFTONE_CONFIG.fadeAngle.default,
-        fadeAmount: HALFTONE_CONFIG.fadeAmount.default,
-        dotColor: '#000000',
-      }],
-      'Halftone'
-    );
-  }, [handleAddAdjustmentLayer]);
-
-  // Create adjustment layer with vignette effect
-  const handleAddVignetteEffect = useCallback(() => {
-    handleAddAdjustmentLayer(
-      [{
-        type: 'overlay-effect',
-        variant: 'vignette',
-        intensity: VIGNETTE_CONFIG.intensity.default,
-        size: VIGNETTE_CONFIG.size.default,
-        softness: VIGNETTE_CONFIG.softness.default,
-        color: '#000000',
-        shape: 'elliptical',
-      }],
-      'Vignette'
-    );
-  }, [handleAddAdjustmentLayer]);
-
   // Create adjustment layer with preset effects
   const handleAddPreset = useCallback((presetId: string) => {
     const preset = EFFECT_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
     handleAddAdjustmentLayer(preset.effects, preset.name);
   }, [handleAddAdjustmentLayer]);
+
+  // Add a single GPU effect — to selected clips, or as adjustment layer if nothing selected
+  const handleAddGpuEffect = useCallback((gpuEffectId: string) => {
+    const { selectedItemIds } = useSelectionStore.getState();
+    const { items, addEffect } = useTimelineStore.getState();
+
+    // Find selected visual items (not audio)
+    const visualIds = selectedItemIds.filter((id) => {
+      const item = items.find((i) => i.id === id);
+      return item && item.type !== 'audio';
+    });
+
+    if (visualIds.length > 0) {
+      const defaults = getGpuEffectDefaultParams(gpuEffectId);
+      const effect: GpuEffect = {
+        type: 'gpu-effect',
+        gpuEffectType: gpuEffectId,
+        params: defaults,
+      };
+      visualIds.forEach((id) => addEffect(id, effect));
+    } else {
+      // No visual selection — create adjustment layer with this effect
+      const defaults = getGpuEffectDefaultParams(gpuEffectId);
+      handleAddAdjustmentLayer(
+        [{ type: 'gpu-effect', gpuEffectType: gpuEffectId, params: defaults }],
+      );
+    }
+  }, [handleAddAdjustmentLayer]);
+
+  // GPU effect categories and preview thumbnails (static data, memoize once)
+  const gpuCategories = useMemo(() => getGpuCategoriesWithEffects(), []);
+  const allEffectEntries = useMemo(
+    () => gpuCategories.flatMap(({ effects: catEffects }) =>
+      catEffects.map((def) => ({ id: def.id, def }))
+    ),
+    [gpuCategories],
+  );
+  const presetIds = useMemo(() => EFFECT_PRESETS.map((p) => p.id), []);
+  const { previews: effectPreviews, trigger: triggerPreviews } = useEffectPreviews(allEffectEntries, presetIds);
 
   // Category items for the vertical nav
   const categories = [
@@ -434,6 +377,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                 } else {
                   setActiveTab(id);
                   if (!leftSidebarOpen) toggleLeftSidebar();
+                  if (id === 'effects') triggerPreviews();
                 }
               }}
               className={`
@@ -577,112 +521,43 @@ export const MediaSidebar = memo(function MediaSidebar() {
                       Heart
                     </span>
                   </button>
+
+                  <button
+                    onClick={() => useMaskEditorStore.getState().startShapePenMode()}
+                    className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-colors group"
+                    title="Draw a custom shape mask with the pen tool"
+                  >
+                    <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
+                      <Pen className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
+                    </div>
+                    <span className="text-[9px] text-muted-foreground group-hover:text-foreground">
+                      Pen
+                    </span>
+                  </button>
             </div>
           </div>
 
           {/* Effects Tab */}
           <div className={`flex-1 overflow-y-auto p-3 ${activeTab === 'effects' ? 'block' : 'hidden'}`}>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {/* Blank Adjustment Layer */}
-              <div>
-                <button
-                  onClick={() => handleAddAdjustmentLayer()}
-                  className="w-full flex items-center gap-3 p-3 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-colors group"
-                >
-                  <div className="w-9 h-9 rounded-md border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70 flex-shrink-0">
-                    <Layers className="w-4 h-4 text-muted-foreground group-hover:text-foreground" />
+              <button
+                onClick={() => handleAddAdjustmentLayer()}
+                className="w-full flex items-center gap-3 p-2.5 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-colors group"
+              >
+                <div className="w-8 h-8 rounded-md border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70 flex-shrink-0">
+                  <Layers className="w-4 h-4 text-muted-foreground group-hover:text-foreground" />
+                </div>
+                <div className="text-left">
+                  <div className="text-xs text-muted-foreground group-hover:text-foreground">
+                    Blank Adjustment Layer
                   </div>
-                  <div className="text-left">
-                    <div className="text-sm text-muted-foreground group-hover:text-foreground">
-                      Blank Adjustment Layer
-                    </div>
-                    <div className="text-[10px] text-muted-foreground/70">
-                      Add effects manually
-                    </div>
-                  </div>
-                </button>
-              </div>
-
-              {/* Color Adjustments */}
-              <div>
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                  Color Adjustments
                 </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {effectCards.map(({ type, icon: Icon }) => (
-                    <button
-                      key={type}
-                      onClick={() => handleAddFilterEffect(type)}
-                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-colors group"
-                    >
-                      <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
-                        <Icon className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
-                      </div>
-                      <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight">
-                        {CSS_FILTER_CONFIGS[type].label}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Glitch Effects */}
-              <div>
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                  Glitch Effects
-                </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {glitchCards.map(({ type, icon: Icon }) => (
-                    <button
-                      key={type}
-                      onClick={() => handleAddGlitchEffect(type)}
-                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-colors group"
-                    >
-                      <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
-                        <Icon className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
-                      </div>
-                      <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight">
-                        {GLITCH_CONFIGS[type].label}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Stylized Effects */}
-              <div>
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                  Stylized
-                </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  <button
-                    onClick={handleAddHalftoneEffect}
-                    className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-colors group"
-                  >
-                    <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
-                      <Grid3X3 className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
-                    </div>
-                    <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight">
-                      Halftone
-                    </span>
-                  </button>
-                  <button
-                    onClick={handleAddVignetteEffect}
-                    className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-colors group"
-                  >
-                    <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
-                      <CircleDot className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
-                    </div>
-                    <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight">
-                      Vignette
-                    </span>
-                  </button>
-                </div>
-              </div>
+              </button>
 
               {/* Presets */}
               <div>
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
                   Presets
                 </div>
                 <div className="grid grid-cols-3 gap-1.5">
@@ -690,11 +565,19 @@ export const MediaSidebar = memo(function MediaSidebar() {
                     <button
                       key={preset.id}
                       onClick={() => handleAddPreset(preset.id)}
-                      className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-colors group"
+                      className="flex flex-col items-center gap-1 p-1.5 rounded-md border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-colors group"
                     >
-                      <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
-                        <Sparkles className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
-                      </div>
+                      {effectPreviews.has(`preset:${preset.id}`) ? (
+                        <img
+                          src={effectPreviews.get(`preset:${preset.id}`)}
+                          alt=""
+                          className="w-full aspect-video rounded-sm object-cover"
+                        />
+                      ) : (
+                        <div className="w-full aspect-video rounded-sm bg-muted flex items-center justify-center">
+                          <Sparkles className="w-3 h-3 text-muted-foreground/50" />
+                        </div>
+                      )}
                       <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight">
                         {preset.name}
                       </span>
@@ -702,6 +585,37 @@ export const MediaSidebar = memo(function MediaSidebar() {
                   ))}
                 </div>
               </div>
+
+              {/* GPU Effects by Category */}
+              {gpuCategories.map(({ category, effects: catEffects }) => (
+                <div key={category}>
+                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+                    {category}
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {catEffects.map((def) => (
+                      <button
+                        key={def.id}
+                        onClick={() => handleAddGpuEffect(def.id)}
+                        className="flex flex-col items-center gap-1 p-1.5 rounded-md border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-colors group"
+                      >
+                        {effectPreviews.has(def.id) ? (
+                          <img
+                            src={effectPreviews.get(def.id)}
+                            alt=""
+                            className="w-full aspect-video rounded-sm object-cover"
+                          />
+                        ) : (
+                          <div className="w-full aspect-video rounded-sm bg-muted" />
+                        )}
+                        <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight truncate w-full">
+                          {def.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 

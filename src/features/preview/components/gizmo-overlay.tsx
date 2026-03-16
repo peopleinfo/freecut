@@ -6,6 +6,8 @@ import { useTimelineStore } from '@/features/preview/deps/timeline-store';
 import { usePlaybackStore } from '@/shared/state/playback';
 import { getResolvedPlaybackFrame } from '@/shared/state/playback/frame-resolution';
 import { useGizmoStore } from '../stores/gizmo-store';
+import { useCornerPinStore } from '../stores/corner-pin-store';
+import { useMaskEditorStore } from '../stores/mask-editor-store';
 import { TransformGizmo } from './transform-gizmo';
 import { GroupGizmo } from './group-gizmo';
 import { SelectableItem } from './selectable-item';
@@ -149,6 +151,8 @@ export function GizmoOverlay({
   const setCanvasSize = useGizmoStore((s) => s.setCanvasSize);
   const setSnappingEnabled = useGizmoStore((s) => s.setSnappingEnabled);
   const snapLines = useGizmoStore((s) => s.snapLines);
+  const isCornerPinEditing = useCornerPinStore((s) => s.isEditing);
+  const isMaskEditing = useMaskEditorStore((s) => s.isEditing);
   const startTranslate = useGizmoStore((s) => s.startTranslate);
   const updateInteraction = useGizmoStore((s) => s.updateInteraction);
   const endInteraction = useGizmoStore((s) => s.endInteraction);
@@ -580,10 +584,11 @@ export function GizmoOverlay({
       }}
       onDoubleClick={(e) => e.stopPropagation()}
     >
-      {/* Marquee selection rectangle */}
-      <MarqueeOverlay marqueeState={marqueeState} />
+      {/* Marquee selection rectangle - hidden during corner pin / mask editing */}
+      {!isCornerPinEditing && !isMaskEditing && <MarqueeOverlay marqueeState={marqueeState} />}
 
       {/* Player area - receives clicks for deselection and contains gizmos */}
+      {/* Disabled entirely during corner pin / mask editing so the overlay gets exclusive input */}
       <div
         className="absolute"
         style={{
@@ -591,7 +596,7 @@ export function GizmoOverlay({
           left: overlayPadding,
           width: playerSize.width,
           height: playerSize.height,
-          pointerEvents: 'auto',
+          pointerEvents: (isCornerPinEditing || isMaskEditing) ? 'none' : 'auto',
         }}
         onClick={handleBackgroundClick}
         onContextMenu={handleContextMenu}
@@ -621,8 +626,8 @@ export function GizmoOverlay({
           );
         })}
 
-        {/* Transform gizmo(s) for selected items - single or group */}
-        {selectedItems.length === 1 && selectedItems[0] ? (
+        {/* Transform gizmo(s) for selected items - hidden during corner pin / mask editing */}
+        {(isCornerPinEditing || isMaskEditing) ? null : selectedItems.length === 1 && selectedItems[0] ? (
           <TransformGizmo
             item={selectedItems[0]}
             coordParams={coordParams}

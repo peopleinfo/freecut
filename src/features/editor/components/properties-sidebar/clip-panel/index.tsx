@@ -18,6 +18,7 @@ import { GifSection } from './gif-section';
 import { AudioSection } from './audio-section';
 import { TextSection } from './text-section';
 import { ShapeSection } from './shape-section';
+import { CornerPinSection } from './corner-pin-section';
 import { EffectsSection } from '@/features/editor/deps/effects-contract';
 import { resolveClipPanelTab, type ClipPanelTab } from './tab-selection';
 
@@ -227,6 +228,8 @@ export const ClipPanel = memo(function ClipPanel() {
                 canvas={canvas}
                 onTransformChange={handleTransformChange}
               />
+              <Separator />
+              <CornerPinSection items={layoutFillItems} />
             </>
           )}
         </TabsContent>
@@ -251,7 +254,7 @@ export const ClipPanel = memo(function ClipPanel() {
           {/* Text - only for text items */}
           {hasTextItems && (
             <>
-              <TextSection items={selectedItems} />
+              <TextSection items={selectedItems} canvas={canvas} />
               {(hasShapeItems || hasVideoItems || hasGifItems || hasAudioItems) && <Separator />}
             </>
           )}

@@ -5,27 +5,19 @@ import { useGizmoStore, type ItemPropertiesPreview } from '@/features/compositio
 import { useTimelineStore } from '@/features/composition-runtime/deps/stores';
 import type { TimelineItem } from '@/types/timeline';
 import type { ResolvedTransform, CanvasSettings } from '@/types/transform';
-import type { ItemEffect, GlitchEffect } from '@/types/effects';
 import {
-  resolveTransform,
-  getSourceDimensions,
   toTransformStyle,
 } from '../../utils/transform-resolver';
-import { resolveAnimatedTransform, hasKeyframeAnimation } from '@/features/composition-runtime/deps/keyframes';
-import {
-  effectsToCSSFilter,
-  getGlitchEffects,
-  getHalftoneEffect,
-  getHalftoneStyles,
-  getVignetteEffect,
-  getVignetteStyle,
-} from '@/features/composition-runtime/deps/effects';
-import { getScanlinesStyle, getGlitchFilterString } from '@/features/composition-runtime/deps/effects';
 import { getShapePath, rotatePath } from '../../utils/shape-path';
 import { useItemKeyframesFromContext } from '../../contexts/keyframes-context';
 import { useCompositionSpace } from '../../contexts/composition-space-context';
 import type { MaskInfo } from '../item';
 import type React from 'react';
+import {
+  applyTransformOverride,
+  resolveItemTransformAtRelativeFrame,
+} from '../../utils/frame-scene';
+import { expandTextTransformToFitContent } from '../../utils/text-layout';
 
 /**
  * Consolidated visual state for an item.
@@ -41,18 +33,14 @@ interface ItemVisualState {
   /** Final opacity (transform.opacity * fadeOpacity) */
   finalOpacity: number;
 
-  /** Combined CSS filter string (includes CSS filters + glitch filters) */
+  /** Combined CSS filter string (legacy — always empty, effects render via GPU) */
   cssFilter: string;
-  /** Scanlines effect if present */
-  scanlinesEffect: (GlitchEffect & { id: string }) | null;
-  /** Halftone styles if present */
-  halftoneStyles: {
-    containerStyle: React.CSSProperties;
-    fadeWrapperStyle?: React.CSSProperties;
-    patternStyle: React.CSSProperties;
-  } | null;
-  /** Vignette style if present */
-  vignetteStyle: React.CSSProperties | null;
+  /** Scanlines effect (legacy — always null, effects render via GPU) */
+  scanlinesEffect: null;
+  /** Halftone styles (legacy — always null, effects render via GPU) */
+  halftoneStyles: null;
+  /** Vignette style (legacy — always null, effects render via GPU) */
+  vignetteStyle: null;
 
   /** Mask clip-path style (for CSS clip-path masks) */
   maskClipPath: string | null;
@@ -140,29 +128,22 @@ export function useItemVisualState(
     // Check for item properties preview (fades)
     const propertiesPreview = itemPreview?.properties;
 
-    // Resolve base transform from item
-    const baseResolved = resolveTransform(item, logicalCanvas, getSourceDimensions(item));
-
-    // Apply keyframe animation to base transform
-    // Use relativeFrame (relative to item.from) for correct keyframe interpolation
-    let animatedResolved = baseResolved;
-    if (itemKeyframes && hasKeyframeAnimation(itemKeyframes)) {
-      animatedResolved = resolveAnimatedTransform(baseResolved, itemKeyframes, relativeFrame);
-    }
+    const animatedResolved = resolveItemTransformAtRelativeFrame(item, {
+      canvas: logicalCanvas,
+      relativeFrame,
+      keyframes: itemKeyframes,
+    });
 
     // Priority: Unified preview (group/properties) > Single gizmo preview > Keyframe animation > Base
     let resolved = animatedResolved;
     if (isUnifiedPreviewActive && unifiedPreviewTransform) {
-      resolved = {
-        ...animatedResolved,
-        ...unifiedPreviewTransform,
-        cornerRadius: unifiedPreviewTransform.cornerRadius ?? animatedResolved.cornerRadius,
-      } as ResolvedTransform;
+      resolved = applyTransformOverride(animatedResolved, unifiedPreviewTransform);
     } else if (isGizmoPreviewActive && previewTransform) {
-      resolved = {
-        ...previewTransform,
-        cornerRadius: previewTransform.cornerRadius ?? 0,
-      };
+      resolved = applyTransformOverride(animatedResolved, previewTransform);
+    }
+
+    if (item.type === 'text') {
+      resolved = expandTextTransformToFitContent(item, resolved, propertiesPreview);
     }
 
     // Calculate fade opacity based on fadeIn/fadeOut (in seconds)
@@ -252,57 +233,15 @@ export function useItemVisualState(
   ]);
 
   // === EFFECTS COMPUTATION ===
+  // Legacy CSS effects removed — all effects now render via GPU pipeline in client-render-engine
   const { cssFilter, scanlinesEffect, halftoneStyles, vignetteStyle } = useMemo(() => {
-    // Use preview effects if available, otherwise use item's stored effects
-    const effects: ItemEffect[] = itemPreview?.effects ?? item.effects ?? [];
-
-    // Build CSS filter string from CSS filter effects
-    let cssFilterString = '';
-    if (effects.length > 0) {
-      cssFilterString = effectsToCSSFilter(effects);
-    }
-
-    // Get glitch effects for special rendering
-    let glitchEffects: Array<GlitchEffect & { id: string }> = [];
-    if (effects.length > 0) {
-      glitchEffects = getGlitchEffects(effects) as Array<GlitchEffect & { id: string }>;
-    }
-
-    // Calculate glitch-based filters (color glitch adds hue-rotate)
-    let glitchFilterString = '';
-    if (glitchEffects.length > 0) {
-      glitchFilterString = getGlitchFilterString(glitchEffects, frame);
-    }
-
-    // Get halftone effect for CSS-based rendering
-    const halftoneEffect = effects.length > 0 ? getHalftoneEffect(effects) : null;
-    const computedHalftoneStyles = halftoneEffect ? getHalftoneStyles(halftoneEffect) : null;
-
-    // Get vignette effect for overlay rendering
-    const computedVignetteEffect = effects.length > 0 ? getVignetteEffect(effects) : null;
-    const computedVignetteStyle = computedVignetteEffect ? getVignetteStyle(computedVignetteEffect) : null;
-
-    // Combine all CSS filters
-    let combinedFilter = [cssFilterString, glitchFilterString].filter(Boolean).join(' ');
-
-    // Merge halftone container filter with other filters
-    if (computedHalftoneStyles) {
-      const halftoneFilter = computedHalftoneStyles.containerStyle.filter;
-      if (halftoneFilter) {
-        combinedFilter = [combinedFilter, halftoneFilter].filter(Boolean).join(' ');
-      }
-    }
-
-    // Check for scanlines effect
-    const foundScanlines = glitchEffects.find((e) => e.variant === 'scanlines') ?? null;
-
     return {
-      cssFilter: combinedFilter,
-      scanlinesEffect: foundScanlines,
-      halftoneStyles: computedHalftoneStyles,
-      vignetteStyle: computedVignetteStyle,
+      cssFilter: '',
+      scanlinesEffect: null,
+      halftoneStyles: null,
+      vignetteStyle: null,
     };
-  }, [itemPreview?.effects, item.effects, frame]);
+  }, []);
 
   // === MASK COMPUTATION ===
   const maskState = useMemo(() => {
@@ -341,15 +280,10 @@ export function useItemVisualState(
       };
 
       if (isGizmoPreviewActive && previewTransform) {
-        resolvedMaskTransform = {
-          ...resolvedMaskTransform,
-          x: previewTransform.x,
-          y: previewTransform.y,
-          width: previewTransform.width,
-          height: previewTransform.height,
-          rotation: previewTransform.rotation,
-          opacity: previewTransform.opacity,
-        };
+        resolvedMaskTransform = applyTransformOverride(
+          resolvedMaskTransform as ResolvedTransform,
+          previewTransform
+        );
       }
 
       const scaledMaskTransform = {
@@ -452,8 +386,3 @@ export function useItemVisualState(
     propertiesPreview,
   };
 }
-
-/**
- * Generate scanlines overlay style.
- */
-export { getScanlinesStyle };

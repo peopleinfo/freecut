@@ -145,6 +145,13 @@ export interface WheelsEffect {
   saturation: number; // -100..100
 }
 
+// GPU shader effect configuration
+export interface GpuEffect {
+  type: 'gpu-effect';
+  gpuEffectType: string; // ID from GPU_EFFECT_REGISTRY (e.g. 'gpu-brightness')
+  params: Record<string, number | boolean | string>;
+}
+
 // Union of all visual effects
 export type VisualEffect =
   | CSSFilterEffect
@@ -153,7 +160,8 @@ export type VisualEffect =
   | VignetteEffect
   | LUTEffect
   | CurvesEffect
-  | WheelsEffect;
+  | WheelsEffect
+  | GpuEffect;
 
 // Effect instance applied to a timeline item
 export interface ItemEffect {
@@ -162,6 +170,7 @@ export interface ItemEffect {
   enabled: boolean;
 }
 
+<<<<<<< HEAD
 // Filter configuration metadata for UI
 interface FilterConfig {
   label: string;
@@ -356,6 +365,7 @@ export const WHEELS_CONFIG = {
   saturation: { label: 'Saturation', min: -100, max: 100, default: 0, step: 1, unit: '' },
 } as const;
 
+
 // Effect presets (combinations of multiple effects)
 interface EffectPreset {
   id: string;
@@ -368,50 +378,50 @@ export const EFFECT_PRESETS: EffectPreset[] = [
     id: 'vintage',
     name: 'Vintage',
     effects: [
-      { type: 'css-filter', filter: 'sepia', value: 40 },
-      { type: 'css-filter', filter: 'contrast', value: 110 },
-      { type: 'css-filter', filter: 'brightness', value: 90 },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-sepia', params: { amount: 0.4 } },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-contrast', params: { amount: 1.1 } },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-brightness', params: { amount: -0.1 } },
     ],
   },
   {
     id: 'noir',
     name: 'Noir',
     effects: [
-      { type: 'css-filter', filter: 'grayscale', value: 100 },
-      { type: 'css-filter', filter: 'contrast', value: 130 },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-grayscale', params: { amount: 1 } },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-contrast', params: { amount: 1.3 } },
     ],
   },
   {
     id: 'cold',
     name: 'Cold',
     effects: [
-      { type: 'css-filter', filter: 'hue-rotate', value: 180 },
-      { type: 'css-filter', filter: 'saturate', value: 80 },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-hue-shift', params: { shift: 0.5 } },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-saturation', params: { amount: 0.8 } },
     ],
   },
   {
     id: 'warm',
     name: 'Warm',
     effects: [
-      { type: 'css-filter', filter: 'sepia', value: 20 },
-      { type: 'css-filter', filter: 'saturate', value: 120 },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-sepia', params: { amount: 0.2 } },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-saturation', params: { amount: 1.2 } },
     ],
   },
   {
     id: 'dramatic',
     name: 'Dramatic',
     effects: [
-      { type: 'css-filter', filter: 'contrast', value: 150 },
-      { type: 'css-filter', filter: 'saturate', value: 130 },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-contrast', params: { amount: 1.5 } },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-saturation', params: { amount: 1.3 } },
     ],
   },
   {
     id: 'faded',
     name: 'Faded',
     effects: [
-      { type: 'css-filter', filter: 'contrast', value: 80 },
-      { type: 'css-filter', filter: 'brightness', value: 110 },
-      { type: 'css-filter', filter: 'saturate', value: 70 },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-contrast', params: { amount: 0.8 } },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-brightness', params: { amount: 0.1 } },
+      { type: 'gpu-effect', gpuEffectType: 'gpu-saturation', params: { amount: 0.7 } },
     ],
   },
 ];
