@@ -170,7 +170,7 @@ export interface ItemEffect {
   enabled: boolean;
 }
 
-<<<<<<< HEAD
+
 // Filter configuration metadata for UI
 interface FilterConfig {
   label: string;
