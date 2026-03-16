@@ -12,8 +12,6 @@ export {
   cleanupBlobUrls,
 } from '@/features/media-library/utils/media-resolver';
 
-export { mediaLibraryService } from '@/features/media-library/services/media-library-service';
-
 export function getMediaAudioCodecById(mediaId: string | undefined): string | undefined {
   if (!mediaId) return undefined;
 

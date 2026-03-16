@@ -137,13 +137,15 @@ async function renderPresetPreview(
   const preset = EFFECT_PRESETS.find((p) => p.id === presetId);
   if (!preset) return null;
 
-  const instances: GpuEffectInstance[] = preset.effects.map((e, i) => ({
-    id: `preset-${i}`,
-    type: e.gpuEffectType,
-    name: e.gpuEffectType,
-    enabled: true,
-    params: e.params,
-  }));
+  const instances: GpuEffectInstance[] = preset.effects
+    .filter((e): e is import('@/types/effects').GpuEffect => e.type === 'gpu-effect')
+    .map((e, i) => ({
+      id: `preset-${i}`,
+      type: e.gpuEffectType,
+      name: e.gpuEffectType,
+      enabled: true,
+      params: e.params,
+    }));
 
   const result = pipeline.applyEffectsToCanvas(source, instances);
   if (!result) return null;

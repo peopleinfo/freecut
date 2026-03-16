@@ -256,8 +256,11 @@ export function colorGradingEffectToCssFilters(effect: ColorGradingEffect): stri
 }
 
 export function getColorGradingFilterString(effects: ItemEffect[]): string {
-  return effects
-    .filter((entry) => entry.enabled && isColorGradingEffect(entry.effect))
+  const colorGradingEffects = effects
+    .filter((entry): entry is ItemEffect & { effect: ColorGradingEffect } =>
+      entry.enabled && isColorGradingEffect(entry.effect)
+    );
+  return colorGradingEffects
     .flatMap((entry) => colorGradingEffectToCssFilters(entry.effect))
     .join(' ');
 }
