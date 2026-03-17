@@ -203,6 +203,9 @@ Architecture boundary policy and migration plan: `docs/architecture-boundaries.m
 1. **Report bugs** — open an issue
 2. **Suggest features** — start a discussion
 
+## useful links
+https://github.com/mifi/lossless-cut
+
 ## License
 
 [MIT](LICENSE)
