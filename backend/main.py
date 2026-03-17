@@ -10,6 +10,7 @@ import json
 import os
 import platform
 import subprocess
+import sys
 import tempfile
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -59,26 +60,32 @@ FRONTEND_DIST = BASE_DIR / "dist"
 
 # ============= FFmpeg Path Resolution =============
 
+# User-managed FFmpeg directory — set up properly later in the file,
+# but we define a helper here for path resolution.
+def _user_ffmpeg_dir() -> Path:
+    """Get the directory where user-downloaded FFmpeg binaries live."""
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent / "ffmpeg"
+    return BASE_DIR / "ffmpeg-bin"
+
+
 def get_ffmpeg_path() -> str:
     """Get the FFmpeg binary path.
     
     Priority:
-    1. imageio-ffmpeg bundled binary (Python package)
+    1. User-managed download directory (downloaded via Settings UI)
     2. Local bin directory (for development)
     3. System PATH fallback
     """
-    # 1. Use imageio-ffmpeg (bundled, no system install needed)
-    try:
-        import imageio_ffmpeg
-        path = imageio_ffmpeg.get_ffmpeg_exe()
-        if path and os.path.exists(path):
-            return path
-    except ImportError:
-        pass
-    
-    # 2. Check local bin directory
     system = platform.system()
     binary_name = "ffmpeg.exe" if system == "Windows" else "ffmpeg"
+    
+    # 1. User-managed download directory
+    user_path = _user_ffmpeg_dir() / binary_name
+    if user_path.exists():
+        return str(user_path)
+    
+    # 2. Check local bin directory
     local_bin = BASE_DIR / "bin" / f"{platform.system().lower()}-{platform.machine()}" / binary_name
     
     if local_bin.exists():
@@ -91,26 +98,20 @@ def get_ffmpeg_path() -> str:
 def get_ffprobe_path() -> str:
     """Get the FFprobe binary path.
     
-    Uses imageio-ffmpeg's bundled binary directory to find ffprobe,
-    or falls back to local bin / system PATH.
+    Priority:
+    1. User-managed download directory (downloaded via Settings UI)
+    2. Local bin directory (for development)
+    3. System PATH fallback
     """
-    # 1. Try to find ffprobe next to imageio-ffmpeg's bundled ffmpeg
-    try:
-        import imageio_ffmpeg
-        ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
-        if ffmpeg_path:
-            ffmpeg_dir = os.path.dirname(ffmpeg_path)
-            system = platform.system()
-            probe_name = "ffprobe.exe" if system == "Windows" else "ffprobe"
-            probe_path = os.path.join(ffmpeg_dir, probe_name)
-            if os.path.exists(probe_path):
-                return probe_path
-    except ImportError:
-        pass
-    
-    # 2. Check local bin directory
     system = platform.system()
     binary_name = "ffprobe.exe" if system == "Windows" else "ffprobe"
+    
+    # 1. User-managed download directory
+    user_path = _user_ffmpeg_dir() / binary_name
+    if user_path.exists():
+        return str(user_path)
+    
+    # 2. Check local bin directory
     local_bin = BASE_DIR / "bin" / f"{platform.system().lower()}-{platform.machine()}" / binary_name
     
     if local_bin.exists():
@@ -1424,11 +1425,39 @@ async def _read_compose_progress(job: ComposeExportJob):
 
 @api_router.post("/ffmpeg/export-frame")
 async def ffmpeg_export_frame(request: Request):
-    """Receive a raw RGBA frame and write it to FFmpeg stdin."""
-    body = await request.json()
-    job_id = body.get("jobId")
-    frame_index = body.get("frameIndex", 0)
-    data_b64 = body.get("data")
+    """Receive a raw RGBA frame and write it to FFmpeg stdin.
+    
+    Supports two formats:
+    1. Binary (preferred, ~3x faster): Content-Type: application/octet-stream
+       Body = jobId (36 bytes, null-padded) + frameIndex (4 bytes LE) + RGBA data
+    2. JSON (legacy): Content-Type: application/json
+       Body = { "jobId": "...", "frameIndex": 0, "data": "<base64>" }
+    """
+    content_type = request.headers.get("content-type", "")
+    
+    if "octet-stream" in content_type:
+        # Binary protocol: header (40 bytes) + RGBA data
+        raw = await request.body()
+        if len(raw) < 40:
+            return JSONResponse({"error": "Binary frame too small (need 40-byte header)"}, status_code=400)
+        
+        job_id = raw[:36].decode("ascii").rstrip("\x00")
+        frame_index = int.from_bytes(raw[36:40], byteorder="little")
+        frame_data = raw[40:]
+    else:
+        # JSON + base64 (backward compatibility)
+        body = await request.json()
+        job_id = body.get("jobId")
+        frame_index = body.get("frameIndex", 0)
+        data_b64 = body.get("data")
+        
+        if not data_b64:
+            return JSONResponse({"error": "Missing frame data"}, status_code=400)
+        
+        try:
+            frame_data = base64.b64decode(data_b64)
+        except Exception as e:
+            return JSONResponse({"error": f"Invalid base64 data: {e}"}, status_code=400)
 
     if not job_id or job_id not in compose_jobs:
         return JSONResponse({"error": "Invalid jobId"}, status_code=400)
@@ -1438,16 +1467,8 @@ async def ffmpeg_export_frame(request: Request):
     if job.status not in ("encoding",):
         return JSONResponse({"error": f"Job not accepting frames (status: {job.status})"}, status_code=400)
 
-    if not data_b64:
-        return JSONResponse({"error": "Missing frame data"}, status_code=400)
-
     if not job.process or not job.process.stdin:
         return JSONResponse({"error": "FFmpeg process not available"}, status_code=500)
-
-    try:
-        frame_data = base64.b64decode(data_b64)
-    except Exception as e:
-        return JSONResponse({"error": f"Invalid base64 data: {e}"}, status_code=400)
 
     expected_size = job.width * job.height * 4  # RGBA = 4 bytes per pixel
     if len(frame_data) != expected_size:
@@ -1697,6 +1718,335 @@ async def ffmpeg_export_cancel(job_id: str):
     return {"success": True}
 
 
+# ============= Proxy Generation (Backend FFmpeg) =============
+
+# Active proxy generation jobs
+proxy_jobs: dict[str, dict] = {}
+
+
+@api_router.post("/media/generate-proxy")
+async def generate_proxy(request: Request):
+    """Generate a 720p proxy video using FFmpeg with GPU acceleration.
+    
+    Accepts either:
+    - An uploaded media file (mediaId in uploaded_media)
+    - Binary file data in request body with X-Media-Id header
+    
+    Returns a job ID for tracking; result is downloadable via /media/proxy-download/{jobId}.
+    This replaces the browser-only mediabunny proxy generation for massive speedup.
+    """
+    media_id = request.headers.get("X-Media-Id", "")
+    
+    if not media_id:
+        return JSONResponse({"error": "X-Media-Id header required"}, status_code=400)
+    
+    # Resolve source file path
+    source_path = uploaded_media.get(media_id)
+    if not source_path or not os.path.exists(source_path):
+        return JSONResponse({"error": f"Media not found: {media_id}. Upload it first via /api/media/upload"}, status_code=400)
+    
+    # Check FFmpeg
+    ffmpeg_result = await check_ffmpeg()
+    if not ffmpeg_result.available:
+        return JSONResponse({"error": "FFmpeg not available"}, status_code=500)
+    
+    ffmpeg_path = get_ffmpeg_path()
+    hw_info = ffmpeg_result.hw_accel
+    
+    # Probe source to get dimensions
+    try:
+        probe_result = await probe_file(source_path)
+        source_width = probe_result.width
+        source_height = probe_result.height
+    except Exception:
+        source_width = 1920
+        source_height = 1080
+    
+    # Calculate proxy dimensions (720p, preserving aspect ratio, even numbers)
+    proxy_max_height = 720
+    proxy_max_width = 1280
+    if source_width > source_height:
+        # Landscape
+        proxy_width = min(source_width, proxy_max_width)
+        proxy_height = int(proxy_width * source_height / source_width)
+    else:
+        # Portrait
+        proxy_height = min(source_height, proxy_max_height)
+        proxy_width = int(proxy_height * source_width / source_height)
+    
+    # Ensure even numbers (required by most codecs)
+    proxy_width = proxy_width + (proxy_width % 2)
+    proxy_height = proxy_height + (proxy_height % 2)
+    
+    # Create output
+    job_id = str(uuid.uuid4())
+    output_dir = tempfile.mkdtemp(prefix="freecut_proxy_")
+    output_path = os.path.join(output_dir, f"proxy_{media_id}.mp4")
+    
+    # Build FFmpeg command
+    args = [ffmpeg_path, "-y", "-hide_banner"]
+    
+    # Hardware decode
+    if hw_info.available and hw_info.hwaccel:
+        args.extend(["-hwaccel", hw_info.hwaccel])
+    
+    args.extend(["-i", source_path])
+    
+    # Scale to proxy resolution, drop audio for preview performance
+    args.extend(["-vf", f"scale={proxy_width}:{proxy_height}"])
+    
+    # Use fast encoder settings for proxy (speed > quality)
+    encoder = hw_info.encoder if hw_info.available else "libx264"
+    args.extend(["-c:v", encoder])
+    
+    if "nvenc" in encoder:
+        args.extend(["-preset", "p1", "-cq", "30", "-pix_fmt", "yuv420p"])
+    elif "videotoolbox" in encoder:
+        args.extend(["-q:v", "40", "-pix_fmt", "yuv420p"])
+    else:
+        args.extend(["-crf", "28", "-preset", "ultrafast", "-pix_fmt", "yuv420p"])
+    
+    # Keep audio for proxy playback (re-encode to AAC for browser compatibility)
+    args.extend(["-c:a", "aac", "-b:a", "128k"])
+    args.extend(["-movflags", "+faststart"])
+    args.append(output_path)
+    
+    print(f"[ProxyGen] Starting: {' '.join(args[:15])}...")
+    
+    # Track job
+    proxy_jobs[job_id] = {
+        "media_id": media_id,
+        "status": "encoding",
+        "output_path": output_path,
+        "source_width": source_width,
+        "source_height": source_height,
+        "proxy_width": proxy_width,
+        "proxy_height": proxy_height,
+        "created_at": time.time(),
+        "error": None,
+    }
+    
+    # Run FFmpeg in thread
+    def run_proxy_ffmpeg():
+        try:
+            proc = subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+            )
+            _, stderr = proc.communicate(timeout=300)
+            return proc.returncode, stderr
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            return -1, b"Proxy generation timeout (300s)"
+        except Exception as e:
+            return -1, str(e).encode()
+    
+    try:
+        start_time = time.time()
+        returncode, stderr = await asyncio.to_thread(run_proxy_ffmpeg)
+        elapsed = time.time() - start_time
+        
+        if returncode != 0:
+            error_msg = stderr.decode()[-300:] if stderr else "Unknown error"
+            proxy_jobs[job_id]["status"] = "error"
+            proxy_jobs[job_id]["error"] = error_msg
+            print(f"[ProxyGen] FAILED: {error_msg}")
+            return JSONResponse({"error": f"Proxy generation failed: {error_msg}"}, status_code=500)
+        
+        file_size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+        proxy_jobs[job_id]["status"] = "done"
+        
+        print(f"[ProxyGen] Complete in {elapsed:.1f}s: {file_size} bytes ({proxy_width}x{proxy_height})")
+        
+        return {
+            "success": True,
+            "jobId": job_id,
+            "mediaId": media_id,
+            "fileSize": file_size,
+            "elapsed": round(elapsed, 2),
+            "width": proxy_width,
+            "height": proxy_height,
+            "encoder": encoder,
+        }
+    except Exception as e:
+        proxy_jobs[job_id]["status"] = "error"
+        proxy_jobs[job_id]["error"] = str(e)
+        return JSONResponse({"error": f"Proxy generation failed: {e}"}, status_code=500)
+
+
+@api_router.get("/media/proxy-download/{job_id}")
+async def proxy_download(job_id: str):
+    """Download a generated proxy video."""
+    if job_id not in proxy_jobs:
+        return JSONResponse({"error": "Invalid jobId"}, status_code=404)
+    
+    job = proxy_jobs[job_id]
+    if job["status"] != "done":
+        return JSONResponse({"error": f"Proxy not ready (status: {job['status']})"}, status_code=400)
+    
+    output_path = job["output_path"]
+    if not os.path.exists(output_path):
+        return JSONResponse({"error": "Proxy file not found"}, status_code=404)
+    
+    return FileResponse(
+        output_path,
+        media_type="video/mp4",
+        filename=f"proxy_{job['media_id']}.mp4",
+    )
+
+
+# ============= Waveform Extraction (Backend FFmpeg) =============
+
+@api_router.post("/media/waveform")
+async def extract_waveform(request: Request):
+    """Extract audio waveform peaks from a media file using FFmpeg.
+    
+    Returns an array of peak values suitable for rendering a waveform display.
+    This replaces the browser-only mediabunny audio decoding for better performance.
+    
+    Expected: X-Media-Id header or JSON body with { mediaId, samplesPerSecond }
+    """
+    content_type = request.headers.get("content-type", "")
+    
+    if "json" in content_type:
+        body = await request.json()
+        media_id = body.get("mediaId", "")
+        samples_per_second = body.get("samplesPerSecond", 50)
+    else:
+        media_id = request.headers.get("X-Media-Id", "")
+        samples_per_second = int(request.headers.get("X-Samples-Per-Second", "50"))
+    
+    if not media_id:
+        return JSONResponse({"error": "mediaId required"}, status_code=400)
+    
+    # Resolve source file path
+    source_path = uploaded_media.get(media_id)
+    if not source_path or not os.path.exists(source_path):
+        return JSONResponse({"error": f"Media not found: {media_id}"}, status_code=400)
+    
+    ffmpeg_path = get_ffmpeg_path()
+    
+    # Use FFmpeg to extract raw audio samples as 16-bit PCM mono
+    # Then compute peaks at the requested resolution
+    with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as tmp:
+        raw_audio_path = tmp.name
+    
+    try:
+        # Extract audio as raw PCM s16le mono at a reasonable sample rate
+        # Use a lower sample rate (8000 Hz) for peak extraction — we only need peaks
+        extract_args = [
+            ffmpeg_path, "-y", "-hide_banner",
+            "-i", source_path,
+            "-vn",  # No video
+            "-ac", "1",  # Mono
+            "-ar", "8000",  # 8kHz sample rate (enough for peaks)
+            "-f", "s16le",  # Raw 16-bit signed little-endian
+            "-acodec", "pcm_s16le",
+            raw_audio_path,
+        ]
+        
+        def run_extract():
+            proc = subprocess.Popen(
+                extract_args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+            )
+            _, stderr = proc.communicate(timeout=60)
+            return proc.returncode, stderr
+        
+        returncode, stderr = await asyncio.to_thread(run_extract)
+        
+        if returncode != 0:
+            error_msg = stderr.decode()[-200:] if stderr else "Unknown error"
+            return JSONResponse({"error": f"Waveform extraction failed: {error_msg}"}, status_code=500)
+        
+        # Read raw PCM data
+        with open(raw_audio_path, "rb") as f:
+            raw_data = f.read()
+        
+        if len(raw_data) < 2:
+            return JSONResponse({"error": "No audio data extracted"}, status_code=400)
+        
+        # Convert to numpy-like processing (without numpy dependency)
+        import struct
+        sample_count = len(raw_data) // 2  # 16-bit = 2 bytes per sample
+        samples = struct.unpack(f"<{sample_count}h", raw_data[:sample_count * 2])
+        
+        # Get duration from probe
+        try:
+            probe_result = await probe_file(source_path)
+            duration = probe_result.duration
+        except Exception:
+            duration = sample_count / 8000.0
+        
+        # Calculate peaks — samples_per_second peaks per second of audio
+        total_peaks = max(1, int(duration * samples_per_second))
+        samples_per_peak = max(1, sample_count // total_peaks)
+        
+        peaks = []
+        for i in range(total_peaks):
+            start = i * samples_per_peak
+            end = min(start + samples_per_peak, sample_count)
+            if start >= sample_count:
+                break
+            
+            chunk = samples[start:end]
+            if chunk:
+                peak = max(abs(s) for s in chunk) / 32768.0  # Normalize to 0-1
+                peaks.append(round(peak, 4))
+            else:
+                peaks.append(0)
+        
+        return {
+            "success": True,
+            "mediaId": media_id,
+            "peaks": peaks,
+            "duration": duration,
+            "sampleRate": 8000,
+            "totalPeaks": len(peaks),
+            "samplesPerSecond": samples_per_second,
+        }
+    finally:
+        if os.path.exists(raw_audio_path):
+            os.unlink(raw_audio_path)
+
+
+# ============= Thumbnail from Uploaded Media =============
+
+@api_router.post("/media/thumbnail")
+async def media_thumbnail(request: Request):
+    """Generate a thumbnail from an uploaded media file.
+    
+    Uses FFmpeg to extract a frame, much faster than browser-based mediabunny.
+    Returns base64 JPEG data.
+    
+    Accepts JSON: { mediaId, timeSeconds?, maxSize? }
+    """
+    body = await request.json()
+    media_id = body.get("mediaId", "")
+    time_seconds = body.get("timeSeconds", 1.0)
+    max_size = body.get("maxSize", 320)
+    
+    if not media_id:
+        return JSONResponse({"error": "mediaId required"}, status_code=400)
+    
+    # Resolve source file path
+    source_path = uploaded_media.get(media_id)
+    if not source_path or not os.path.exists(source_path):
+        return JSONResponse({"error": f"Media not found: {media_id}"}, status_code=400)
+    
+    # Generate thumbnail using existing function
+    try:
+        result = await generate_thumbnail(source_path, time_seconds)
+        return {"thumbnail": result, "mediaId": media_id}
+    except Exception as e:
+        return JSONResponse({"error": f"Thumbnail generation failed: {e}"}, status_code=500)
+
+
 # ============= File System =============
 
 @api_router.post("/fs/write-file")
@@ -1733,6 +2083,239 @@ async def system_info():
         "cpu_count": psutil.cpu_count(),
         "memory_total": psutil.virtual_memory().total,
     }
+
+
+# ============= FFmpeg Setup / Download =============
+
+# Directory where user-downloaded FFmpeg binaries are stored.
+# In production (PyInstaller), use a persistent writable directory next to the exe.
+# In development, use <project>/ffmpeg-bin/.
+if getattr(sys, 'frozen', False):
+    # PyInstaller: write to a directory alongside the exe
+    _exe_dir = Path(sys.executable).parent
+    FFMPEG_DIR = _exe_dir / "ffmpeg"
+else:
+    FFMPEG_DIR = BASE_DIR / "ffmpeg-bin"
+
+# FFmpeg download URLs per platform
+# These point to well-known community builds
+FFMPEG_DOWNLOAD_URLS = {
+    "Windows": {
+        "x86_64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+        "AMD64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+    },
+    "Darwin": {
+        "x86_64": "https://evermeet.cx/ffmpeg/getrelease/zip",
+        "arm64": "https://evermeet.cx/ffmpeg/getrelease/zip",
+    },
+    "Linux": {
+        "x86_64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+        "aarch64": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz",
+    },
+}
+
+
+def _get_user_ffmpeg_paths() -> tuple[Optional[str], Optional[str]]:
+    """Check if user-downloaded FFmpeg binaries exist in our managed directory."""
+    system = platform.system()
+    ext = ".exe" if system == "Windows" else ""
+    
+    ffmpeg_path = FFMPEG_DIR / f"ffmpeg{ext}"
+    ffprobe_path = FFMPEG_DIR / f"ffprobe{ext}"
+    
+    ff = str(ffmpeg_path) if ffmpeg_path.exists() else None
+    fp = str(ffprobe_path) if ffprobe_path.exists() else None
+    return ff, fp
+
+
+@api_router.get("/ffmpeg/setup-status")
+async def ffmpeg_setup_status():
+    """Check FFmpeg availability and provide setup guidance.
+    
+    Returns the current status of FFmpeg: whether it's available,
+    where it was found, and if the user needs to download it.
+    """
+    # 1. Check our managed download directory first
+    user_ff, user_fp = _get_user_ffmpeg_paths()
+    
+    # 2. Check system-level availability
+    ffmpeg_path = get_ffmpeg_path()
+    ffprobe_path = get_ffprobe_path()
+    
+    # Test if ffmpeg actually works
+    ffmpeg_works = False
+    ffmpeg_version = ""
+    try:
+        result = subprocess.run(
+            [ffmpeg_path, "-version"],
+            capture_output=True, timeout=5
+        )
+        if result.returncode == 0:
+            ffmpeg_works = True
+            output = result.stdout.decode()
+            if "ffmpeg version" in output:
+                ffmpeg_version = output.split("ffmpeg version ")[1].split()[0]
+    except Exception:
+        pass
+    
+    # Test if ffprobe works
+    ffprobe_works = False
+    try:
+        result = subprocess.run(
+            [ffprobe_path, "-version"],
+            capture_output=True, timeout=5
+        )
+        ffprobe_works = result.returncode == 0
+    except Exception:
+        pass
+    
+    # Determine download URL for this platform
+    system = platform.system()
+    arch = platform.machine()
+    download_url = FFMPEG_DOWNLOAD_URLS.get(system, {}).get(arch, "")
+    
+    return {
+        "ffmpegAvailable": ffmpeg_works,
+        "ffprobeAvailable": ffprobe_works,
+        "ffmpegPath": ffmpeg_path if ffmpeg_works else None,
+        "ffprobePath": ffprobe_path if ffprobe_works else None,
+        "ffmpegVersion": ffmpeg_version,
+        "source": "user-download" if user_ff else ("system" if ffmpeg_works else "none"),
+        "downloadUrl": download_url,
+        "downloadDir": str(FFMPEG_DIR),
+        "needsSetup": not ffmpeg_works,
+        "platform": system,
+        "arch": arch,
+    }
+
+
+@api_router.post("/ffmpeg/download")
+async def ffmpeg_download():
+    """Download and extract FFmpeg binaries for the current platform.
+    
+    Downloads from well-known community builds and extracts ffmpeg + ffprobe
+    to the managed ffmpeg directory.
+    """
+    system = platform.system()
+    arch = platform.machine()
+    
+    download_url = FFMPEG_DOWNLOAD_URLS.get(system, {}).get(arch, "")
+    if not download_url:
+        return JSONResponse(
+            {"error": f"No FFmpeg download available for {system}/{arch}"},
+            status_code=400
+        )
+    
+    FFMPEG_DIR.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        import urllib.request
+        import zipfile
+        import tarfile
+        import shutil
+        
+        # Download to temp file
+        print(f"[FFmpegSetup] Downloading from {download_url}...")
+        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
+        tmp_path = tmp_file.name
+        tmp_file.close()
+        
+        def do_download():
+            urllib.request.urlretrieve(download_url, tmp_path)
+        
+        await asyncio.to_thread(do_download)
+        
+        file_size = os.path.getsize(tmp_path)
+        print(f"[FFmpegSetup] Downloaded {file_size / 1024 / 1024:.1f} MB")
+        
+        # Extract
+        extract_dir = tempfile.mkdtemp(prefix="freecut_ffmpeg_extract_")
+        
+        def do_extract():
+            if tmp_path.endswith(".tmp"):
+                # Detect format from URL
+                if download_url.endswith(".zip") or "zip" in download_url:
+                    with zipfile.ZipFile(tmp_path, 'r') as zf:
+                        zf.extractall(extract_dir)
+                elif download_url.endswith(".tar.xz"):
+                    with tarfile.open(tmp_path, 'r:xz') as tf:
+                        tf.extractall(extract_dir)
+                elif download_url.endswith(".tar.gz"):
+                    with tarfile.open(tmp_path, 'r:gz') as tf:
+                        tf.extractall(extract_dir)
+                else:
+                    # Try zip first, then tar
+                    try:
+                        with zipfile.ZipFile(tmp_path, 'r') as zf:
+                            zf.extractall(extract_dir)
+                    except zipfile.BadZipFile:
+                        with tarfile.open(tmp_path) as tf:
+                            tf.extractall(extract_dir)
+        
+        await asyncio.to_thread(do_extract)
+        print(f"[FFmpegSetup] Extracted to {extract_dir}")
+        
+        # Find ffmpeg and ffprobe binaries in extracted files
+        ext = ".exe" if system == "Windows" else ""
+        ffmpeg_name = f"ffmpeg{ext}"
+        ffprobe_name = f"ffprobe{ext}"
+        
+        def find_binary(name):
+            for root, dirs, files in os.walk(extract_dir):
+                if name in files:
+                    return os.path.join(root, name)
+            return None
+        
+        ffmpeg_src = find_binary(ffmpeg_name)
+        ffprobe_src = find_binary(ffprobe_name)
+        
+        if not ffmpeg_src:
+            return JSONResponse(
+                {"error": "Could not find ffmpeg binary in downloaded archive"},
+                status_code=500
+            )
+        
+        # Copy to managed directory
+        ffmpeg_dest = FFMPEG_DIR / ffmpeg_name
+        shutil.copy2(ffmpeg_src, str(ffmpeg_dest))
+        os.chmod(str(ffmpeg_dest), 0o755)
+        print(f"[FFmpegSetup] Installed ffmpeg to {ffmpeg_dest}")
+        
+        if ffprobe_src:
+            ffprobe_dest = FFMPEG_DIR / ffprobe_name
+            shutil.copy2(ffprobe_src, str(ffprobe_dest))
+            os.chmod(str(ffprobe_dest), 0o755)
+            print(f"[FFmpegSetup] Installed ffprobe to {ffprobe_dest}")
+        
+        # Cleanup
+        try:
+            os.unlink(tmp_path)
+            shutil.rmtree(extract_dir, ignore_errors=True)
+        except Exception:
+            pass
+        
+        # Verify
+        result = subprocess.run(
+            [str(ffmpeg_dest), "-version"],
+            capture_output=True, timeout=5
+        )
+        
+        version = ""
+        if result.returncode == 0:
+            output = result.stdout.decode()
+            if "ffmpeg version" in output:
+                version = output.split("ffmpeg version ")[1].split()[0]
+        
+        return {
+            "success": True,
+            "ffmpegPath": str(ffmpeg_dest),
+            "ffprobePath": str(FFMPEG_DIR / ffprobe_name) if ffprobe_src else None,
+            "version": version,
+        }
+        
+    except Exception as e:
+        print(f"[FFmpegSetup] Error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ============= Include API Router =============

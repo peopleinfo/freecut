@@ -459,3 +459,158 @@ export async function exportComposition(
   });
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// Backend Proxy Generation
+// ---------------------------------------------------------------------------
+
+export interface ProxyGenerationResult {
+  success: boolean;
+  jobId: string;
+  mediaId: string;
+  fileSize: number;
+  elapsed: number;
+  width: number;
+  height: number;
+  encoder: string;
+}
+
+/**
+ * Generate a 720p proxy video on the backend using FFmpeg/NVENC.
+ *
+ * The media must be uploaded first via uploadMediaFile().
+ * Returns proxy metadata; download the proxy via downloadProxy().
+ *
+ * 10-50x faster than browser-based mediabunny proxy generation.
+ */
+export async function generateProxy(
+  mediaId: string,
+): Promise<ProxyGenerationResult> {
+  log.info("Requesting backend proxy generation", { mediaId });
+
+  const response = await fetch(`${BACKEND_URL}/api/media/generate-proxy`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-Media-Id": mediaId,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ error: "Unknown error" }));
+    throw new Error(`Proxy generation failed: ${error.error}`);
+  }
+
+  const result: ProxyGenerationResult = await response.json();
+  log.info("Backend proxy generated", {
+    mediaId,
+    elapsed: result.elapsed,
+    encoder: result.encoder,
+    size: `${result.width}x${result.height}`,
+  });
+  return result;
+}
+
+/**
+ * Download a generated proxy video from the backend as a Blob.
+ */
+export async function downloadProxy(jobId: string): Promise<Blob> {
+  const response = await fetch(
+    `${BACKEND_URL}/api/media/proxy-download/${jobId}`,
+  );
+  if (!response.ok) {
+    throw new Error("Failed to download proxy");
+  }
+  return await response.blob();
+}
+
+// ---------------------------------------------------------------------------
+// Backend Waveform Extraction
+// ---------------------------------------------------------------------------
+
+export interface WaveformResult {
+  success: boolean;
+  mediaId: string;
+  peaks: number[];
+  duration: number;
+  sampleRate: number;
+  totalPeaks: number;
+  samplesPerSecond: number;
+}
+
+/**
+ * Extract audio waveform peaks from a media file on the backend.
+ *
+ * FFmpeg extracts audio samples and computes peaks server-side,
+ * avoiding the heavy browser-based mediabunny audio decoding.
+ *
+ * The media must be uploaded first via uploadMediaFile().
+ */
+export async function extractWaveform(
+  mediaId: string,
+  samplesPerSecond: number = 50,
+): Promise<WaveformResult> {
+  log.info("Requesting backend waveform extraction", {
+    mediaId,
+    samplesPerSecond,
+  });
+
+  const response = await fetch(`${BACKEND_URL}/api/media/waveform`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mediaId, samplesPerSecond }),
+  });
+
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ error: "Unknown error" }));
+    throw new Error(`Waveform extraction failed: ${error.error}`);
+  }
+
+  const result: WaveformResult = await response.json();
+  log.info("Backend waveform extracted", {
+    mediaId,
+    totalPeaks: result.totalPeaks,
+    duration: result.duration,
+  });
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Backend Thumbnail Generation
+// ---------------------------------------------------------------------------
+
+export interface BackendThumbnailResult {
+  thumbnail: string; // base64 data URI
+  mediaId: string;
+}
+
+/**
+ * Generate a thumbnail from an uploaded media file on the backend.
+ *
+ * Uses FFmpeg to extract a frame — faster than mediabunny in the browser.
+ * The media must be uploaded first via uploadMediaFile().
+ */
+export async function generateThumbnail(
+  mediaId: string,
+  timeSeconds: number = 1.0,
+  maxSize: number = 320,
+): Promise<BackendThumbnailResult> {
+  const response = await fetch(`${BACKEND_URL}/api/media/thumbnail`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mediaId, timeSeconds, maxSize }),
+  });
+
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ error: "Unknown error" }));
+    throw new Error(`Thumbnail generation failed: ${error.error}`);
+  }
+
+  return await response.json();
+}

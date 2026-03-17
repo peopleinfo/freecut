@@ -109,10 +109,11 @@ export const ffmpeg = {
   cancelExport: (): Promise<{ success: boolean }> =>
     apiRequest("/ffmpeg/cancel-export", "POST"),
 
-  onExportProgress: (_callback: (progress: number) => void): (() => void) => {  // eslint-disable-line @typescript-eslint/no-unused-vars
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onExportProgress: (_callback: (progress: number) => void): (() => void) => {
     // For HTTP-based implementation, polling is handled in export()
     // This is a no-op to maintain API compatibility
-    return () => { };
+    return () => {};
   },
 };
 
@@ -127,22 +128,28 @@ export const dialog = {
     // Use browser File System Access API if available
     if ("showOpenFilePicker" in window) {
       try {
-        const handles = await (window as any).showOpenFilePicker({
+        const handles = await (
+          window as unknown as {
+            showOpenFilePicker: (
+              opts: unknown,
+            ) => Promise<FileSystemFileHandle[]>;
+          }
+        ).showOpenFilePicker({
           multiple: options?.multiple || false,
           types: options?.filters?.map((f) => ({
             description: f.name,
             accept: { "*": f.extensions.map((e) => `.${e}`) },
           })) || [
-              {
-                description: "All Files",
-                accept: { "*": ["*"] },
-              },
-            ],
+            {
+              description: "All Files",
+              accept: { "*": ["*"] },
+            },
+          ],
         });
 
         // Get file paths from handles (Chromium only)
         if (options?.multiple) {
-          return handles.map((h: any) => h.name || "");
+          return handles.map((h: FileSystemFileHandle) => h.name || "");
         }
         return handles[0]?.name || "";
       } catch {
@@ -186,17 +193,23 @@ export const dialog = {
     // Use browser File System Access API if available
     if ("showSaveFilePicker" in window) {
       try {
-        const handle = await (window as any).showSaveFilePicker({
+        const handle = await (
+          window as unknown as {
+            showSaveFilePicker: (
+              opts: unknown,
+            ) => Promise<FileSystemFileHandle>;
+          }
+        ).showSaveFilePicker({
           suggestedName: options?.defaultPath,
           types: options?.filters?.map((f) => ({
             description: f.name,
             accept: { "*": f.extensions.map((e) => `.${e}`) },
           })) || [
-              {
-                description: "All Files",
-                accept: { "*": ["*"] },
-              },
-            ],
+            {
+              description: "All Files",
+              accept: { "*": ["*"] },
+            },
+          ],
         });
 
         return handle.name || "";
@@ -229,7 +242,13 @@ export const fs = {
     // In browser, use File System Access API or download
     if ("showSaveFilePicker" in window) {
       try {
-        const handle = await (window as any).showSaveFilePicker({
+        const handle = await (
+          window as unknown as {
+            showSaveFilePicker: (
+              opts: unknown,
+            ) => Promise<FileSystemFileHandle>;
+          }
+        ).showSaveFilePicker({
           suggestedName: filePath.split(/[\\/]/).pop(),
         });
         const writable = await handle.createWritable();

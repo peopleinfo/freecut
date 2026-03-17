@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { AbsoluteFill, Sequence, useSequenceContext } from '@/features/composition-runtime/deps/player';
 import type { CompositionItem as CompositionItemType, TimelineItem, ShapeItem } from '@/types/timeline';
 import type { ResolvedTransform } from '@/types/transform';

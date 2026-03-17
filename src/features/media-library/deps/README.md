@@ -13,3 +13,5 @@ Media-library-local adapters for external feature dependencies.
   above. Prefer importing the more specific module directly in new code.
 - `projects.ts`: the preferred entry point for media-library modules that need
   project metadata/state stores.
+- `export.ts`: FFmpeg client helpers (capabilities check, upload, proxy
+  generation, download) used by proxy-service for backend-accelerated proxies.

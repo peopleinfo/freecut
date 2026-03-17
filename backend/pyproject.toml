@@ -8,7 +8,6 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "python-multipart>=0.0.12",
     "psutil>=6.1.0",
-    "imageio-ffmpeg>=0.5.1",
 ]
 
 [project.optional-dependencies]
@@ -17,7 +16,9 @@ dev = [
 ]
 
 [tool.uv]
-dev-dependencies = []
+dev-dependencies = [
+    "pyinstaller>=6.19.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = []

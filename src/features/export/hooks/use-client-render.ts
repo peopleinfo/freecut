@@ -27,8 +27,21 @@ import type {
   ExportRenderWorkerRequest,
   ExportRenderWorkerResponse,
 } from '../workers/export-render-worker.types';
+import {
+  checkFFmpegCapabilities,
+  uploadMediaFile,
+  exportComposition,
+  downloadExport,
+} from '../utils/ffmpeg-export-client';
+import type { FFmpegCapabilities } from '../utils/ffmpeg-export-client';
+import { getMimeType } from '../utils/client-renderer';
 
 const log = createLogger('Export');
+
+// FFmpeg capabilities cache (avoid repeated HEAD requests)
+const FFMPEG_CACHE_TTL = 30_000;
+let ffmpegCapabilitiesCache: FFmpegCapabilities | null = null;
+let ffmpegCapabilitiesCacheTime = 0;
 
 type ClientRenderStatus =
   | 'idle'
@@ -391,29 +404,208 @@ export function useClientRender(): UseClientRenderReturn {
         const signal = abortControllerRef.current.signal;
         let renderPath: 'worker' | 'main-thread' = 'worker';
 
-        try {
-          renderResult = await renderInWorker(clientSettings, composition, signal);
-        } catch (workerError) {
-          if (workerError instanceof DOMException && workerError.name === 'AbortError') {
-            throw workerError;
+        // === FFmpeg GPU-accelerated path (preferred for video exports) ===
+        let usedFFmpeg = false;
+        if (exportMode === "video") {
+          try {
+            // Check FFmpeg availability (cached)
+            const now = Date.now();
+            if (
+              !ffmpegCapabilitiesCache ||
+              now - ffmpegCapabilitiesCacheTime > FFMPEG_CACHE_TTL
+            ) {
+              ffmpegCapabilitiesCache = await checkFFmpegCapabilities();
+              ffmpegCapabilitiesCacheTime = now;
+            }
+
+            if (ffmpegCapabilitiesCache.available) {
+              log.info("FFmpeg available — using backend composition export", {
+                encoder: ffmpegCapabilitiesCache.hwAccel.encoder,
+                hwAccel: ffmpegCapabilitiesCache.hwAccel.available,
+              });
+
+              // Step 1: Upload all media files to the backend
+              handleProgress({
+                phase: "preparing",
+                progress: 5,
+                totalFrames: composition.durationInFrames ?? 0,
+                message: "Uploading media to GPU encoder...",
+              });
+
+              const mediaMap: Record<string, string> = {};
+              const mediaIds = new Set<string>();
+
+              // Collect all unique mediaIds from the composition
+              for (const track of composition.tracks) {
+                for (const item of track.items) {
+                  if (
+                    item.mediaId &&
+                    (item.type === "video" ||
+                      item.type === "audio" ||
+                      item.type === "image")
+                  ) {
+                    mediaIds.add(item.mediaId);
+                  }
+                }
+              }
+
+              // Upload each media file to backend
+              const mediaLibraryService = await (
+                await import("@/features/export/deps/media-library")
+              ).importMediaLibraryService();
+
+              let uploadedCount = 0;
+              const totalMedia = mediaIds.size;
+
+              for (const mediaId of mediaIds) {
+                if (signal?.aborted) {
+                  throw new DOMException("Export cancelled", "AbortError");
+                }
+
+                try {
+                  const media = await mediaLibraryService.getMedia(mediaId);
+                  const blob = await mediaLibraryService.getMediaFile(mediaId);
+
+                  if (!blob || !media) {
+                    log.warn(`Media not found for upload: ${mediaId}`);
+                    continue;
+                  }
+
+                  const ffmpegUploadResult = await uploadMediaFile(
+                    mediaId,
+                    blob,
+                    media.fileName ?? "media.mp4",
+                  );
+                  mediaMap[mediaId] = ffmpegUploadResult.path;
+                  uploadedCount++;
+
+                  handleProgress({
+                    phase: "preparing",
+                    progress: 5 + Math.round((uploadedCount / totalMedia) * 15),
+                    totalFrames: composition.durationInFrames ?? 0,
+                    message: ffmpegUploadResult.cached
+                      ? `Media cached (${uploadedCount}/${totalMedia})`
+                      : `Uploading media (${uploadedCount}/${totalMedia})...`,
+                  });
+
+                  log.info(`Uploaded media ${mediaId}`, {
+                    path: ffmpegUploadResult.path,
+                    cached: ffmpegUploadResult.cached,
+                  });
+                } catch (uploadError) {
+                  log.error(`Failed to upload media ${mediaId}`, uploadError);
+                }
+              }
+
+              if (Object.keys(mediaMap).length === 0) {
+                log.warn(
+                  "No media files uploaded, falling back to browser export",
+                );
+                throw new Error("No media files could be uploaded to backend");
+              }
+
+              // Step 2: Export the composition via backend FFmpeg
+              handleProgress({
+                phase: "encoding",
+                progress: 25,
+                totalFrames: composition.durationInFrames ?? 0,
+                message: "GPU encoding with NVENC...",
+              });
+
+              const compResult = await exportComposition({
+                composition: composition as unknown as Record<string, unknown>,
+                mediaMap,
+                settings: {
+                  codec: clientSettings.codec,
+                  quality: clientSettings.quality,
+                  container: clientSettings.container,
+                  width: clientSettings.resolution.width,
+                  height: clientSettings.resolution.height,
+                  videoBitrate: clientSettings.videoBitrate,
+                  audioBitrate: clientSettings.audioBitrate,
+                },
+                useHardwareAccel: true,
+              });
+
+              handleProgress({
+                phase: "finalizing",
+                progress: 90,
+                totalFrames: composition.durationInFrames ?? 0,
+                message: "Downloading result...",
+              });
+
+              // Step 3: Download the result
+              const downloadBlob = await downloadExport(compResult.jobId);
+
+              renderResult = {
+                blob: downloadBlob,
+                mimeType: getMimeType(
+                  clientSettings.container,
+                  clientSettings.codec,
+                ),
+                duration: (composition.durationInFrames ?? 0) / composition.fps,
+                fileSize: downloadBlob.size,
+              };
+              usedFFmpeg = true;
+              renderPath = 'worker'; // label as non-main-thread
+
+              log.info(
+                `Composition export completed in ${compResult.elapsed}s`,
+                {
+                  encoder: compResult.encoder,
+                  hwAccel: compResult.hwAccel,
+                  fileSize: compResult.fileSize,
+                },
+              );
+            }
+          } catch (ffmpegError) {
+            if (
+              ffmpegError instanceof DOMException &&
+              ffmpegError.name === "AbortError"
+            ) {
+              throw ffmpegError;
+            }
+
+            // CRITICAL: Log the actual error so we can diagnose GPU pipeline failures
+            console.error(
+              "[GPU Export] FFmpeg composition export failed, falling back to browser export:",
+              ffmpegError instanceof Error ? ffmpegError.message : ffmpegError,
+              ffmpegError instanceof Error ? ffmpegError.stack : "",
+            );
+            log.warn(
+              "FFmpeg composition export failed, falling back to browser export",
+              ffmpegError instanceof Error ? ffmpegError.message : ffmpegError,
+            );
+            // Fall through to browser-based rendering
           }
+        }
 
-          const workerMessage = workerError instanceof Error
-            ? workerError.message
-            : String(workerError);
+        // === Browser-based rendering (Worker → main-thread fallback) ===
+        if (!usedFFmpeg) {
+          try {
+            renderResult = await renderInWorker(clientSettings, composition, signal);
+          } catch (workerError) {
+            if (workerError instanceof DOMException && workerError.name === 'AbortError') {
+              throw workerError;
+            }
 
-          const shouldFallbackToMainThread = workerMessage.startsWith('WORKER_REQUIRES_MAIN_THREAD:')
-            || workerMessage.startsWith('WORKER_UNAVAILABLE')
-            || workerMessage.startsWith('EXPORT_WORKER_RUNTIME_ERROR:');
+            const workerMessage = workerError instanceof Error
+              ? workerError.message
+              : String(workerError);
 
-          if (!shouldFallbackToMainThread) {
-            throw workerError;
+            const shouldFallbackToMainThread = workerMessage.startsWith('WORKER_REQUIRES_MAIN_THREAD:')
+              || workerMessage.startsWith('WORKER_UNAVAILABLE')
+              || workerMessage.startsWith('EXPORT_WORKER_RUNTIME_ERROR:');
+
+            if (!shouldFallbackToMainThread) {
+              throw workerError;
+            }
+
+            renderPath = 'main-thread';
+            event.set('workerFallbackReason', workerMessage);
+
+            renderResult = await renderOnMainThread(exportMode, clientSettings, composition, signal);
           }
-
-          renderPath = 'main-thread';
-          event.set('workerFallbackReason', workerMessage);
-
-          renderResult = await renderOnMainThread(exportMode, clientSettings, composition, signal);
         }
 
         setResult(renderResult);
@@ -470,12 +662,8 @@ export function useClientRender(): UseClientRenderReturn {
   /**
    * Download the rendered video/audio
    */
-  const downloadVideo = useCallback(() => {
+  const downloadVideo = useCallback(async () => {
     if (!result) return;
-
-    const url = URL.createObjectURL(result.blob);
-    const a = document.createElement('a');
-    a.href = url;
 
     // Determine file extension from MIME type
     let extension = 'mp4';
@@ -488,7 +676,84 @@ export function useClientRender(): UseClientRenderReturn {
     else if (mime.includes('audio/flac') || mime.includes('flac')) extension = 'flac';
     else if (mime.includes('audio/aac') || mime.includes('adts')) extension = 'aac';
 
-    a.download = `export-${Date.now()}.${extension}`;
+    const defaultFileName = `export-${Date.now()}.${extension}`;
+
+    // NATIVE ELECTRON SAVING:
+    // Only use when inside Electron with real IPC-based filesystem.
+    // The imported `opencut` from api.ts is always defined (HTTP fallback),
+    // so we check window.opencut which is only set by Electron's preload.
+    const electronApi = (window as unknown as Record<string, unknown>)
+      .opencut as
+      | {
+          dialog?: {
+            saveFile: (opts: {
+              title: string;
+              defaultPath: string;
+            }) => Promise<string | undefined>;
+          };
+          fs?: {
+            writeFile: (path: string, data: ArrayBuffer) => Promise<void>;
+          };
+        }
+      | undefined;
+    if (electronApi?.dialog?.saveFile && electronApi?.fs?.writeFile) {
+      try {
+        const savePath = await electronApi.dialog.saveFile({
+          title: "Save Export",
+          defaultPath: defaultFileName,
+        });
+
+        if (!savePath) return; // User cancelled the save dialog
+
+        const arrayBuffer = await result.blob.arrayBuffer();
+        await electronApi.fs.writeFile(savePath, arrayBuffer);
+        return; // Early return on successful native save
+      } catch (err) {
+        log.warn(
+          "Failed to save natively, falling back to browser download",
+          err,
+        );
+      }
+    }
+
+    // BROWSER SAVING: Use File System Access API for a native-like save dialog
+    if ("showSaveFilePicker" in window) {
+      try {
+        const handle = await (
+          window as unknown as Record<string, unknown> & {
+            showSaveFilePicker: (
+              opts: unknown,
+            ) => Promise<FileSystemFileHandle>;
+          }
+        ).showSaveFilePicker({
+          suggestedName: defaultFileName,
+          types: [
+            {
+              description: "Video file",
+              accept: {
+                [`video/${extension === "mkv" ? "x-matroska" : extension}`]: [
+                  `.${extension}`,
+                ],
+              },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(result.blob);
+        await writable.close();
+        return;
+      } catch (err) {
+        // User cancelled (AbortError) — just return silently
+        if ((err as DOMException)?.name === 'AbortError') return;
+        log.warn('showSaveFilePicker failed, using fallback download', err);
+      }
+    }
+
+    // FALLBACK WEB SAVING:
+    const url = URL.createObjectURL(result.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = defaultFileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

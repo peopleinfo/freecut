@@ -34,6 +34,13 @@ out
 
 # Testing
 coverage
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# E2E test fixtures (auto-generated videos)
+e2e/fixtures/
 
 # Misc
 .cache
@@ -43,7 +50,42 @@ coverage
 # TanStack Router auto-generated files
 # Note: Some teams commit this, uncomment if you prefer to commit
 # src/routeTree.gen.ts
+# IDE agent skill directories (per-dev, created by npx skills)
+# See: https://github.com/vercel-labs/skills
+.agents/
+.agent/
+.augment/
 .claude/
+.codebuddy/
+.commandcode/
+.continue/
+.cortex/
+.crush/
+.cursor/
+.factory/
+.gemini/
+.goose/
+.iflow/
+.junie/
+.kilocode/
+.kiro/
+.kode/
+.mcpjam/
+.mux/
+.neovate/
+.openhands/
+.pi/
+.pochi/
+.qoder/
+.qwen/
+.roo/
+.trae/
+.vibe/
+.windsurf/
+.zencoder/
+.adal/
+.codex/
+.opencode/
 
 .vercel
 .env*.local
@@ -51,3 +93,15 @@ CLAUDE.md
 crates/*/target/
 crates/*/Cargo.lock
 .knip-report.json
+release
+dist-electron
+backend-dist
+backend/build
+ffmpeg-bin
+__pycache__
+nul
+
+# Playwright / test screenshots
+*.png
+!public/**/*.png
+!src/**/*.png
