@@ -1,5 +1,16 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type {
+  MediaTranscriptModel,
+  MediaTranscriptQuantization,
+} from "@/types/storage";
+import {
+  DEFAULT_WHISPER_LANGUAGE,
+  DEFAULT_WHISPER_MODEL,
+  DEFAULT_WHISPER_QUANTIZATION,
+} from "@/shared/utils/whisper-settings";
+import type { EditorDensityPresetName } from "@/shared/ui/editor-layout";
+import { DEFAULT_EDITOR_DENSITY_PRESET } from "@/shared/ui/editor-layout";
 
 /**
  * App-wide settings stored in localStorage
@@ -13,6 +24,7 @@ interface AppSettings {
 
   // Preview
   previewQuality: "low" | "medium" | "high";
+  editorDensity: EditorDensityPresetName;
 
   // Export defaults
   defaultExportFormat: "mp4" | "webm";
@@ -24,6 +36,11 @@ interface AppSettings {
 
   // Updates (Electron desktop only)
   autoUpdate: boolean;
+
+  // Whisper defaults
+  defaultWhisperModel: MediaTranscriptModel;
+  defaultWhisperQuantization: MediaTranscriptQuantization;
+  defaultWhisperLanguage: string;
 }
 
 interface SettingsActions {
@@ -45,6 +62,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 
   // Preview
   previewQuality: "high",
+  editorDensity: DEFAULT_EDITOR_DENSITY_PRESET,
 
   // Export defaults
   defaultExportFormat: "mp4",
@@ -56,6 +74,11 @@ const DEFAULT_SETTINGS: AppSettings = {
 
   // Updates
   autoUpdate: true, // Auto-update enabled by default
+
+  // Whisper defaults
+  defaultWhisperModel: DEFAULT_WHISPER_MODEL,
+  defaultWhisperQuantization: DEFAULT_WHISPER_QUANTIZATION,
+  defaultWhisperLanguage: DEFAULT_WHISPER_LANGUAGE,
 };
 
 /**
