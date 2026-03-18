@@ -24,7 +24,10 @@ window.addEventListener('error', (event) => {
 // When Vercel deploys a new version, old chunk hashes become 404s.
 // Prompt the user to save before reloading so they don't lose work.
 window.addEventListener('vite:preloadError', () => {
-  const projectIdMatch = window.location.pathname.match(/\/editor\/([^/]+)/);
+  const currentRoute = window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : window.location.pathname;
+  const projectIdMatch = currentRoute.match(/\/editor\/([^/]+)/);
   const projectId = projectIdMatch?.[1];
 
   if (projectId) {

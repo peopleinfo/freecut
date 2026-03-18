@@ -83,12 +83,12 @@ async function getGpuInfo(): Promise<{
  * Create a project and open the editor.
  */
 async function createProjectAndOpenEditor(page: Page, projectName: string) {
-  await page.goto("/#/projects/new");
+  await page.goto("/projects/new");
   await page.getByLabel(/Project Name/i).fill(projectName);
   const createBtn = page.getByRole("button", { name: /Create Project/i });
   await expect(createBtn).toBeEnabled();
   await createBtn.click();
-  await expect(page).toHaveURL(/#\/editor\//, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/editor\//, { timeout: 15_000 });
   // Wait for editor to fully initialise
   await page.waitForSelector(".h-screen", { timeout: 10_000 });
 }

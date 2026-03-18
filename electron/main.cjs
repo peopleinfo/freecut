@@ -8,8 +8,9 @@
  * In production:  loads from the built dist/ folder + auto-updates
  */
 
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, ipcMain, dialog } = require("electron");
 const path = require("path");
+const fs = require("fs");
 const { spawn } = require("child_process");
 
 // Check if running in development
@@ -58,6 +59,63 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+  });
+}
+
+// ── IPC Handlers (opencut bridge) ───────────────────────────────
+
+function registerIpcHandlers() {
+  // dialog:save-file — native save dialog
+  ipcMain.handle("dialog:save-file", async (_event, options) => {
+    const win = BrowserWindow.getFocusedWindow();
+    const result = await dialog.showSaveDialog(win, {
+      title: options?.title ?? "Save file",
+      defaultPath: options?.defaultPath,
+      filters: options?.filters ?? [
+        { name: "Video files", extensions: ["mp4", "mov", "webm", "mkv"] },
+        { name: "Audio files", extensions: ["mp3", "aac", "wav"] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+    if (result.canceled || !result.filePath) return null;
+    return result.filePath;
+  });
+
+  // dialog:open-file — native open dialog
+  ipcMain.handle("dialog:open-file", async (_event, options) => {
+    const win = BrowserWindow.getFocusedWindow();
+    const result = await dialog.showOpenDialog(win, {
+      title: options?.title ?? "Open file",
+      properties: options?.multiple ? ["openFile", "multiSelections"] : ["openFile"],
+      filters: options?.filters ?? [
+        { name: "Media files", extensions: ["mp4", "mov", "webm", "mkv", "mp3", "wav", "aac", "png", "jpg", "jpeg", "gif", "webp"] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return options?.multiple ? result.filePaths : result.filePaths[0];
+  });
+
+  // fs:write-file — write binary data to disk
+  ipcMain.handle("fs:write-file", async (_event, filePath, data) => {
+    try {
+      const buffer = Buffer.from(data);
+      await fs.promises.writeFile(filePath, buffer);
+      return true;
+    } catch (err) {
+      console.error("[IPC] fs:write-file failed:", err.message);
+      return false;
+    }
+  });
+
+  // shell:open-external — open URL in system browser
+  ipcMain.handle("shell:open-external", async (_event, url) => {
+    await shell.openExternal(url);
+  });
+
+  // shell:show-item-in-folder — reveal file in file explorer
+  ipcMain.handle("shell:show-item-in-folder", async (_event, fullPath) => {
+    shell.showItemInFolder(fullPath);
   });
 }
 
@@ -142,6 +200,9 @@ app.whenReady().then(() => {
   if (!isDev) {
     startBackend();
   }
+
+  // Register IPC handlers for the opencut bridge (dialog, fs, shell)
+  registerIpcHandlers();
 
   // Setup auto-updater (production only — no updates in dev)
   if (!isDev) {

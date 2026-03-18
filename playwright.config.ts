@@ -4,6 +4,9 @@ import { defineConfig, devices } from "@playwright/test";
  * Playwright E2E configuration for FreeCut.
  * Spins up a Vite dev server on port 5173 before running tests.
  */
+const devPort = Number(process.env.PLAYWRIGHT_PORT || "5173");
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${devPort}`;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -14,7 +17,7 @@ export default defineConfig({
   timeout: 60_000,
 
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -27,8 +30,8 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:5173",
+    command: `npm run dev -- --port ${devPort}`,
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
   },

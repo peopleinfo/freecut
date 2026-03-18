@@ -1,12 +1,19 @@
 import { useEffect } from 'react';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
+import { createHashHistory } from '@tanstack/history';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { GlobalTooltip } from '@/components/ui/global-tooltip';
 import { Toaster } from '@/components/ui/sonner';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { routeTree } from './routeTree.gen';
 
-const router = createRouter({ routeTree });
+const usesFileProtocol =
+  typeof window !== 'undefined' && window.location.protocol === 'file:';
+
+const router = createRouter({
+  routeTree,
+  ...(usesFileProtocol ? { history: createHashHistory() } : {}),
+});
 
 declare module '@tanstack/react-router' {
   interface Register {
